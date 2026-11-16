@@ -10,8 +10,10 @@ from __future__ import annotations
 import binascii
 import os
 import socket
+import time
 import urllib.parse
 from dataclasses import dataclass
+from typing import Any
 
 try:
     import requests
@@ -57,12 +59,40 @@ class Transport:
         raise NotImplementedError
 
 
-class ClearnetTransport(Transport):
-    """Direct or proxied clearnet. Identity pinned to one proxy for its lifetime."""
+def test_proxy(proxy_url: str, test_url: str = "http://1.1.1.1", timeout: float = 2.5) -> float | None:
+    """Test a proxy for connectivity and latency in milliseconds; returns None if bad/slow."""
+    try:
+        t0 = time.time()
+        proxies = {"http": proxy_url, "https": proxy_url}
+        resp = requests.head(test_url, proxies=proxies, timeout=timeout, allow_redirects=False)
+        latency = (time.time() - t0) * 1000.0
+        return latency if resp.status_code < 500 else None
+    except Exception:
+        return None
 
-    def __init__(self, proxy: str | None = None):
+
+class ClearnetTransport(Transport):
+    """Direct or proxied clearnet. Proxies are strictly optional and tested for health."""
+
+    def __init__(self, proxy: str | None = None, proxy_pool: list[str] | None = None,
+                 test_proxies: bool = False, max_latency: float = 3.0):
         self.proxy = proxy
+        self.proxy_pool = list(proxy_pool) if proxy_pool else ([proxy] if proxy else [])
+        self.max_latency = max_latency
         self.dimmed = False
+        if test_proxies and self.proxy_pool:
+            self.filter_healthy_proxies()
+
+    def filter_healthy_proxies(self) -> list[str]:
+        """Test and retain only fast, responsive proxies; discard slow or dead ones."""
+        healthy = []
+        for p in self.proxy_pool:
+            lat = test_proxy(p, timeout=self.max_latency)
+            if lat is not None:
+                healthy.append(p)
+        self.proxy_pool = healthy
+        self.proxy = healthy[0] if healthy else None
+        return healthy
 
     def hit(self, identity: Identity, target: Target) -> HitResult:
         proxies = {"http": self.proxy, "https": self.proxy} if self.proxy else None
@@ -163,6 +193,54 @@ class TorTransport(Transport):
                 return ok
         except OSError:
             return False
+
+    def check_status(self) -> dict[str, Any]:
+        """Inspect Tor daemon reachability and bootstrap state."""
+        res: dict[str, Any] = {
+            "socks_host": self.socks_host,
+            "socks_port": self.socks_port,
+            "socks_ok": False,
+            "control_ok": False,
+            "bootstrap": None,
+            "version": None,
+            "error": None,
+        }
+        try:
+            with socket.create_connection((self.socks_host, self.socks_port), timeout=2):
+                res["socks_ok"] = True
+        except OSError as exc:
+            res["error"] = f"SOCKS port unreachable: {exc}"
+
+        if self.control:
+            chost, _, cport = self.control.partition(":")
+            try:
+                with socket.create_connection((chost, int(cport)), timeout=2) as sock:
+                    sf = sock.makefile("rw", newline="\r\n")
+                    sf.write("AUTHENTICATE\r\n"); sf.flush()
+                    resp = sf.readline()
+                    if "250" not in resp and self.control_password:
+                        sf.write(f'AUTHENTICATE "{self.control_password}"\r\n'); sf.flush()
+                        resp = sf.readline()
+                    if "250" in resp:
+                        res["control_ok"] = True
+                        sf.write("GETINFO version\r\n"); sf.flush()
+                        v_line = sf.readline()
+                        if "250-version=" in v_line:
+                            res["version"] = v_line.partition("250-version=")[2].strip()
+                        sf.write("GETINFO status/bootstrap-phase\r\n"); sf.flush()
+                        b_line = sf.readline()
+                        if "250-status/bootstrap-phase=" in b_line:
+                            res["bootstrap"] = b_line.partition("250-status/bootstrap-phase=")[2].strip()
+                        sf.write("QUIT\r\n"); sf.flush()
+            except OSError:
+                pass
+        return res
+
+    def reconnect(self) -> bool:
+        """Reset circuit seed and request fresh circuits via NEWNYM."""
+        self.circuit_seed = binascii.hexlify(os.urandom(8)).decode()
+        self.dimmed = False
+        return self.renew_circuits()
 
 
 def _identity_headers(identity: Identity) -> dict[str, str]:

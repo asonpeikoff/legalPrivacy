@@ -16,20 +16,84 @@ from html.parser import HTMLParser
 
 from .transports import Target
 
-SEARCH_ENDPOINTS = [
-    "https://duckduckgo.com/?q=",
-    "https://www.bing.com/search?q=",
-    "https://search.brave.com/search?q=",
-    "https://lite.duckduckgo.com/lite/?q=",
-    "https://www.startpage.com/sp/search?query=",
-    "https://www.ecosia.org/search?q=",
-    "https://www.mojeek.com/search?q=",
+# Search engine endpoint probability tiers:
+# 1. Most likely group: Google & DuckDuckGo (~70% weight)
+# 2. Next most likely group: Bing, Brave, Startpage (~24% weight)
+# 3. Less likely group: Ecosia, Mojeek, Qwant, DuckDuckGo Lite (~6% weight)
+SEARCH_ENGINE_TIERS: list[tuple[str, float]] = [
+    # Tier 1 (Highest probability: Google + DuckDuckGo)
+    ("https://www.google.com/search?q=", 35.0),
+    ("https://duckduckgo.com/?q=", 35.0),
+    # Tier 2 (Next most likely: Bing, Brave, StartPage)
+    ("https://www.bing.com/search?q=", 8.0),
+    ("https://search.brave.com/search?q=", 8.0),
+    ("https://www.startpage.com/sp/search?query=", 8.0),
+    # Tier 3 (Less likely group: alternative engines)
+    ("https://www.ecosia.org/search?q=", 1.5),
+    ("https://www.mojeek.com/search?q=", 1.5),
+    ("https://www.qwant.com/?q=", 1.5),
+    ("https://lite.duckduckgo.com/lite/?q=", 1.5),
+]
+SEARCH_ENDPOINTS = [url for url, _ in SEARCH_ENGINE_TIERS]
+SEARCH_WEIGHTS = [w for _, w in SEARCH_ENGINE_TIERS]
+
+# Curated thematic pools of real internet search topics:
+REAL_INTERNET_THEMES: dict[str, list[str]] = {
+    "tech": [
+        "python", "linux", "docker", "kubernetes", "rust language", "git commands",
+        "sqlite database", "bash scripting", "ssh keys setup", "arch linux",
+        "raspberry pi projects", "home assistant", "nginx reverse proxy", "rest api",
+        "tailwind css", "react components", "typescript tutorial", "dns record types",
+    ],
+    "cooking": [
+        "sourdough bread recipe", "cast iron seasoning", "pasta carbonara authentic",
+        "easy weeknight dinner", "air fryer chicken breast", "chocolate chip cookies chewy",
+        "thai green curry paste", "vegetarian chili slow cooker", "meal prep containers",
+        "french press ratio", "roasted root vegetables", "homemade pizza dough cold ferment",
+    ],
+    "travel": [
+        "flight tracker live", "national park annual pass", "hiking boots lightweight",
+        "camping checklist essentials", "carry on bag dimensions", "scenic train routes",
+        "hotel booking discounts", "travel insurance comparison", "mountain trail conditions",
+        "road trip map offline", "campsite reservation tips", "passport renewal expedited",
+    ],
+    "entertainment": [
+        "movie showtimes today", "sci fi novels recommendations", "indie video games 2026",
+        "soundtrack vinyl record", "streaming series release dates", "audio drama podcasts",
+        "fantasy book series", "director commentary analysis", "concert tour dates",
+        "tabletop board games strategy",
+    ],
+    "health_fitness": [
+        "5k running schedule beginner", "morning mobility routine 10 min", "core strength exercises",
+        "whey protein isolate reviews", "stretching for lower back", "healthy meal prep ideas",
+        "kettlebell workout full body", "sleep tracking accuracy", "electrolyte hydration drinks",
+    ],
+    "science_nature": [
+        "james webb space telescope images", "solar eclipse path map", "bird migration tracker",
+        "mycelium network biology", "quantum computing fundamentals", "deep sea exploration discoveries",
+        "renewable energy grid battery", "fossil discovery news", "night sky constellation guide",
+    ],
+    "home_daily": [
+        "indoor plants low light tolerant", "compost tumbler bin", "drip irrigation raised bed",
+        "soil ph test kit garden", "hand woodworking tools beginner", "post office hours tracking",
+        "local public transit schedule", "recycling guidelines city", "lawn aeration schedule",
+    ],
+}
+
+QUERY_PATTERNS = [
+    "{topic}",
+    "{topic} tutorial",
+    "how to use {topic}",
+    "best {topic} guide",
+    "{topic} tips",
+    "{topic} review",
+    "how to fix {topic} issue",
+    "what is {topic}",
+    "{topic} vs {alt}",
+    "{topic} beginner guide",
 ]
 
-COMMON_TOPICS = [
-    "weather", "news", "recipes", "jobs", "movies", "music", "gardening",
-    "hiking", "coffee", "books", "travel", "fitness", "history", "art",
-]
+COMMON_TOPICS = [topic for topics in REAL_INTERNET_THEMES.values() for topic in topics]
 
 DOH_RESOLVERS = [
     "https://cloudflare-dns.com/dns-query?name=%s&type=A",
@@ -49,16 +113,29 @@ def load_wordlist(path: str, fallback: list[str] | None = None) -> list[str]:
 
 @dataclass
 class SearchTargetFactory:
-    """Search noise with per-identity taste mixed into global topic spread."""
+    """Search noise with realistic intent patterns, thematic taste, and weighted engine selection."""
     rng: random.Random
     words: list[str]
 
     def make(self, identity) -> Target:
-        # 70% taste words, 30% global picks: mixes identity distributions.
-        pool = (identity.query_taste * 2 + self.words) if self.words else COMMON_TOPICS
-        n = self.rng.choice([1, 1, 2, 3])
-        query = " ".join(self.rng.choice(pool) for _ in range(n))
-        endpoint = self.rng.choice(SEARCH_ENDPOINTS)
+        # Weighted search engine selection (Google & DDG prioritized per user directive)
+        endpoint = self.rng.choices(SEARCH_ENDPOINTS, weights=SEARCH_WEIGHTS)[0]
+
+        # Generate realistic internet query
+        taste = getattr(identity, "query_taste", None) or []
+        pool = taste if taste else (self.words or COMMON_TOPICS)
+
+        # 70% of the time, apply realistic human search intent templates
+        if self.rng.random() < 0.70 and pool:
+            topic = self.rng.choice(pool)
+            pattern = self.rng.choice(QUERY_PATTERNS)
+            alt = self.rng.choice(pool)
+            query = pattern.format(topic=topic, alt=alt)
+        else:
+            # 30% sample 1-3 words naturally
+            n = self.rng.choice([1, 1, 2, 3])
+            query = " ".join(self.rng.choice(pool) for _ in range(n))
+
         url = endpoint + urllib.parse.quote_plus(query)
         return Target(url=url)
 

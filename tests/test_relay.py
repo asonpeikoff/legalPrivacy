@@ -62,3 +62,22 @@ def test_exit_scanner_defense():
     assert not warn_if_exit_requested(generate_torrc(RelaySpec()))
     torrc = generate_torrc(RelaySpec()) + "ExitPolicy accept *:*\n"
     assert warn_if_exit_requested(torrc)
+
+
+def test_generate_client_torrc_snowflake():
+    from noisycricket.relay import generate_client_torrc
+    torrc = generate_client_torrc(bridge_type="snowflake")
+    assert "UseBridges 1" in torrc
+    assert "ClientTransportPlugin snowflake" in torrc
+    assert "Bridge snowflake" in torrc
+    assert "SocksPort 127.0.0.1:9050" in torrc
+
+
+def test_tor_transport_check_status_handles_offline_gracefully():
+    from noisycricket.transports import TorTransport
+    # Non-existent port to test offline status handling
+    tor = TorTransport(socks="127.0.0.1:1", control="127.0.0.1:2")
+    status = tor.check_status()
+    assert status["socks_ok"] is False
+    assert status["control_ok"] is False
+    assert status["error"] is not None

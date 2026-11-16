@@ -7,8 +7,10 @@ optional **community contribution** mode that runs a Tor *middle/bridge*
 relay — never an exit.
 
 ```
-cricket run --profile profiles/example.yaml [--once] [--dry-run]
+cricket run --profile profiles/example.yaml [--verbose] [--reconnect-tor] [--once] [--dry-run]
 cricket doctor --profile profiles/example.yaml
+cricket relay bridges
+cricket relay gen-client --type snowflake [--out torrc.client]
 cricket relay gen --bandwidth 5Mbit --nickname mycricket [--bridge]
 ```
 
@@ -149,13 +151,64 @@ seconds between hits; lognormal body, burst-suppressed at min_gap
 - **clearnet lane**: direct or a proxy pool; identity pinned to a proxy +
   UA + language for its lifetime; dead proxies dim instead of failing a lane.
 
+## Tor visibility, diagnostics & resilience
+
+noisyCricket v2 provides full visibility into local Tor daemon health:
+
+* **Live Health Check (`cricket doctor`)**: Probes the local Tor SOCKS daemon
+  (`127.0.0.1:9050`) and Control port (`127.0.0.1:9051`), reporting bootstrap
+  phase, Tor version, and authentication state. If Tor is offline, it provides
+  actionable start commands and troubleshooting tips.
+* **Circuit Isolation**: Each identity uses distinct SOCKS5 credentials
+  (`ident-<id>-<seed>`), leveraging Tor's `IsolateSOCKSAuth` so that different
+  personas never share circuits, cookies, or TLS state.
+* **Manual & Automated Reconnects**:
+  - `cricket run --reconnect-tor`: sends `AUTHENTICATE` + `signal NEWNYM` to the
+    control port to build fresh circuits across the board before starting.
+  - **Consecutive-Failure Self-Healing**: If an identity encounters 3 consecutive
+    network/HTTP blocks (403/429/timeout), noisyCricket automatically retires
+    the burned identity, resets circuit seeds, and acquires fresh circuits.
+* **Transport Dimming**: When a transport encounters blocks or disconnects, it is
+  automatically dimmed (selection weight reduced by 90%) so traffic dynamically
+  routes through healthy lanes rather than failing the schedule.
+
+## Censorship circumvention: Tor bridges & Pluggable Transports
+
+If Tor's public directory is blocked or monitored by your ISP/network firewall,
+you can run Tor via **Bridges** (unlisted relays):
+
+1. **View Bundled Bridges**:
+   ```bash
+   cricket relay bridges
+   ```
+   Inspects collected bridge configurations stored in `data/bridges/bridges.example.txt`,
+   including official Tor Project **Snowflake** bridges (WebRTC with Fastly/Cloudflare
+   domain fronting, no registration required), **obfs4** templates, and **WebTunnel**
+   templates.
+
+2. **Generate a Client Bridge torrc**:
+   ```bash
+   cricket relay gen-client --type snowflake --out torrc.client
+   ```
+   Generates a ready-to-run client configuration with Snowflake pluggable transport
+   pre-configured. Start Tor with it via:
+   ```bash
+   tor -f torrc.client
+   ```
+
+3. **Verify Connection**:
+   ```bash
+   cricket doctor --profile profiles/example.yaml
+   ```
+
 ## Community contribution — never an exit
 
 `cricket relay gen` emits a **middle-relay or bridge** torrc with
-`ExitPolicy reject *:*` pinned. Tor has no "DNS node" role, so the
-community-minded equivalent of "a DNS node" is exactly this non-exit relay:
-it carries every end-to-end DNS resolution that exits perform, without ever
-exiting plaintext. See `docs/DESIGN.md`.
+`ExitPolicy reject *:*` and `ExitPolicy reject6 *:*` pinned, with `SocksPort 0`
+and safe `DirPort` configuration (`DirPort 0` enforced for bridges to prevent IP
+enumeration). Tor has no "DNS node" role, so the community-minded equivalent of
+"a DNS node" is exactly this non-exit relay: it carries every end-to-end DNS
+resolution that exits perform, without ever exiting plaintext. See `docs/DESIGN.md`.
 
 ## Stealth strategies
 
@@ -224,7 +277,7 @@ local (routing noise queries through a hosted LLM would add a fresh, highly
 reportable signal and defeat the point), no telemetry, and model downloads
 themselves should go over the tor lane.
 
-Tests: `python -m pytest`. Run: `pip install . && cricket --help`.
+Tests: `python3 run_tests.py` (zero external dependencies) or `python -m pytest`. Run: `pip install . && cricket --help`.
 Legacy Java prototype preserved in `legacy-src/`.
 
 The plots above live in `docs/plots/*.txt` and are generated from the

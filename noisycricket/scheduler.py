@@ -71,6 +71,7 @@ class Runner:
     sleep_fn: object = time.sleep
     probe_fn: object = None            # injectable: (lane, identity, target) -> HitResult
     max_iterations: int = 10_000       # safety net for --once-style testing
+    verbose: bool = False
 
     def __post_init__(self) -> None:
         self.rng = random.Random()
@@ -161,6 +162,11 @@ class Runner:
                 lane.hits_by_identity = 0
                 lane.consecutive_failures = 0
         total_failures = sum(b.failures for l in self.lanes for b in l.budgets.values())
+        if self.verbose:
+            status_str = f"HTTP {result.status}" if result.status else (result.error or "ERROR")
+            print(f"[{time.strftime('%H:%M:%S')}] [{lane.name}] {eng_name:6s} -> {target.url[:65]} ({status_str})")
+        if not result.ok and lane.name == "tor" and self.verbose:
+            print(f"  [tor notice] {result.error or 'Hit failed'}. Dimming Tor lane.", file=sys.stderr)
         if total_failures > self.profile.daily_max_failures:
             raise MaxFailuresExceeded("daily_max_failures exceeded — stopping run")
         if result.dim_transport and hasattr(lane.transport, "dimmed"):

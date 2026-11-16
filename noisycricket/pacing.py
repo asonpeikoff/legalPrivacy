@@ -10,11 +10,13 @@ from dataclasses import dataclass, field
 
 @dataclass
 class Pacer:
-    """Lognormal inter-hit pacing with persona multiplier and diurnal modulation."""
+    """Randomized pacing within configurable ranges with natural human entropy."""
     rng: random.Random
-    mu: float = 2.2            # median delay ~ e^2.2 ≈ 9s
-    sigma: float = 0.9
-    min_gap: float = 1.5       # burst suppression
+    min_delay: float = 3.0     # min bound for standard interval
+    max_delay: float = 25.0    # max bound for standard interval
+    mu: float = 2.2            # legacy parameter preserved for backwards-compatibility
+    sigma: float = 0.9         # legacy parameter preserved
+    min_gap: float = 1.5       # burst suppression lower bound
     realtime_scale: float = 1.0
     pace_multiplier: float = 1.0
     diurnal: bool = True
@@ -22,16 +24,31 @@ class Pacer:
     sleep_fn: object = time.sleep
 
     def next_delay(self, now_local_hour: float | None = None) -> float:
-        """Seconds until the next hit for this identity."""
+        """Seconds until next hit: randomly selected within reasonable range."""
         if self._backoff:
             delay = self._backoff          # backoff is real time, never scaled down
             self._backoff = 0.0
             return delay
-        base = self.rng.lognormvariate(self.mu, self.sigma) * self.pace_multiplier
-        gap = max(base, self.min_gap)
+
+        # Random sampling across natural human browsing activities:
+        roll = self.rng.random()
+        if roll < 0.20:
+            # Rapid follow-up (clicking a search result or related link)
+            base = self.rng.uniform(self.min_gap, max(self.min_gap, self.min_delay))
+        elif roll < 0.85:
+            # Standard browsing: randomly drawn within the user's reasonable range
+            base = self.rng.uniform(self.min_delay, self.max_delay) * self.pace_multiplier
+        else:
+            # Reading / dwell pause (looking through an article or reading results)
+            base = self.rng.uniform(self.max_delay, self.max_delay * 2.2) * self.pace_multiplier
+
+        # Optional diurnal context modulation with high-entropy jitter (never a rigid mathematical divisor)
         if self.diurnal and now_local_hour is not None:
-            gap /= diurnal_factor(now_local_hour)
-        return gap * self.realtime_scale
+            df = diurnal_factor(now_local_hour)
+            jitter = self.rng.uniform(0.85, 1.15)
+            base = base / (df * jitter)
+
+        return max(base, self.min_gap) * self.realtime_scale
 
     def wait(self, now_local_hour: float | None = None) -> float:
         delay = self.next_delay(now_local_hour)

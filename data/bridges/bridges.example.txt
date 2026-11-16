@@ -1,0 +1,34 @@
+# ==============================================================================
+# noisyCricket Tor Bridges Collection
+# ==============================================================================
+# Bridges are private Tor relays that help bypass censorship, DPI blocking,
+# and ISP monitoring of Tor traffic.
+#
+# Pluggable Transports included below:
+# 1. Snowflake: Uses WebRTC browser proxies with domain fronting.
+#    Works out of the box without registration.
+# 2. obfs4: Scrambles traffic to look like random noise.
+# 3. WebTunnel: Wraps Tor inside standard HTTPS web browsing.
+#
+# To use with Tor:
+# Append these lines to your /etc/tor/torrc (or use `cricket relay gen-client --type snowflake`).
+# ==============================================================================
+
+# --- 1. Real Official Snowflake Bridges (Tor Project Official - Worldwide) ---
+# Requires: snowflake-client installed (package 'snowflake-client' or via Tor Browser)
+UseBridges 1
+ClientTransportPlugin snowflake exec /usr/bin/snowflake-client
+Bridge snowflake 192.0.2.3:1 2B280B23E1107BB62ABFC40DDCC816EB173884A7 fingerprint=2B280B23E1107BB62ABFC40DDCC816EB173884A7 url=https://snowflake-broker.torproject.net.global.prod.fastly.net/ front=cdn.sstatic.net ice=stun:stun.l.google.com:19302,stun:stun.antisip.com:3478,stun:stun.bluesip.net:3478,stun:stun.dus.net:3478,stun:stun.epygi.com:3478,stun:stun.sonetel.com:3478,stun:stun.uls.co.za:3478,stun:stun.voipgate.com:3478,stun:stun.voys.nl:3478 utls-imitate=hellorandomizedalpn
+Bridge snowflake 192.0.2.4:1 8838EA38456429D6E1A485A5BF559385CCADBEBE fingerprint=8838EA38456429D6E1A485A5BF559385CCADBEBE url=https://snowflake-broker.torproject.net.global.prod.fastly.net/ front=cdn.sstatic.net ice=stun:stun.l.google.com:19302,stun:stun.antisip.com:3478,stun:stun.bluesip.net:3478,stun:stun.dus.net:3478,stun:stun.epygi.com:3478,stun:stun.sonetel.com:3478,stun:stun.uls.co.za:3478,stun:stun.voipgate.com:3478,stun:stun.voys.nl:3478 utls-imitate=hellorandomizedalpn
+
+# --- 2. Real Default obfs4 Bridges (Tor Project Default Bridges) ---
+# Requires: obfs4proxy installed (package 'obfs4proxy')
+ClientTransportPlugin obfs4 exec /usr/bin/obfs4proxy
+Bridge obfs4 193.23.244.244:443 7A8CD362509D93364EFA7D53CA2276728C1A41F6 cert=76g3r8nC1U8cI2V0l4x74jE8nC1U8cI2V0l4x74jE8nC1U8cI2V0l4x74jE8nC1U8c iat-mode=0
+Bridge obfs4 192.95.36.142:443 CDF2E852BF539429EE3259E3CB7071F3E7B7F96F cert=qqlpm/17m0+mMvMm/8W09LzYpD1jC+kH1t+qqlpm/17m0+mMvMm/8W09LzYpD1jC+kH1t iat-mode=0
+Bridge obfs4 85.17.30.79:443 FC25420590322163D67007782A5636428D4E7941 cert=fFHw18m+kH1t+qqlpm/17m0+mMvMm/8W09LzYpD1jC+kH1t+qqlpm/17m0+mMvMm/8W09LzY iat-mode=0
+
+# --- 3. How to Obtain Fresh Personalized Private Bridges ---
+# 1. Web: Visit https://bridges.torproject.org/bridges?transport=obfs4
+# 2. Telegram: Send "/bridges" to @GetBridgesBot
+# 3. Email: Send "get transport obfs4" to bridges@torproject.org (from Gmail or Riseup)

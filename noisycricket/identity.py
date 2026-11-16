@@ -147,9 +147,15 @@ def _client_hints(identity: Identity) -> dict[str, str]:
 
 
 def _query_taste(rng: random.Random, wordlist: list[str], size: int = 12) -> list[str]:
+    from .engines import REAL_INTERNET_THEMES
     if not wordlist:
-        return ["weather", "news", "recipes"]
-    return rng.sample(wordlist, min(size, len(wordlist)))
+        themes = rng.sample(list(REAL_INTERNET_THEMES.values()), k=min(2, len(REAL_INTERNET_THEMES)))
+        combined = [t for sub in themes for t in sub]
+        return rng.sample(combined, min(size, len(combined)))
+    # Sample from wordlist, filtering archaic noise when large dictionary files are used
+    clean_pool = [w for w in wordlist if len(w) >= 3 and not w.startswith("'")] if len(wordlist) > 100 else wordlist
+    pool = clean_pool or wordlist
+    return rng.sample(pool, min(size, len(pool)))
 
 
 def make_identity(rng: random.Random, ident_id: int, wordlist: list[str]) -> Identity:
