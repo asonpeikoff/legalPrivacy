@@ -40,12 +40,29 @@ class EngineConfig:
 
 @dataclass
 class TransportConfig:
+    """One transport lane. Tor-only fields are ignored by the clearnet lane.
+
+    Tor is OPTIONAL and off by default. When enabled it does two independent,
+    individually switchable things:
+      * onion          — visit .onion sites (darknet noise)        [default on]
+      * clearnet_via_tor — also route clearnet noise through Tor   [default OFF,
+        discouraged: it burdens exit relays and clearnet-over-Tor is a
+        distinctive pattern]
+    """
     enabled: bool = True
-    proxy: str | None = None          # http:// or socks5:// URL
-    socks: str = DEFAULT_TOR_SOCKS    # tor lane only
-    control: str | None = None        # tor lane only, enables NEWNYM
-    identities_per_circuit: int = 8   # tor lane only
+    proxy: str | None = None          # clearnet: http:// or socks5:// URL
+    # --- tor lane only ---
+    socks: str = DEFAULT_TOR_SOCKS
+    control: str | None = None
+    identities_per_circuit: int = 8
     control_password: str | None = None
+    manage: bool = True               # True: app runs its own private Tor; False: use existing Tor
+    auto_install: bool = True         # download official Tor bundle if none is installed
+    onion: bool = True                # run the onion engine on the Tor lane
+    clearnet_via_tor: bool = False    # route clearnet engines through Tor (not recommended)
+    onion_seeds: list[str] = field(default_factory=list)   # extra seeds; empty = built-ins
+    onion_follow_offsite: bool = True
+    bridges: list[str] = field(default_factory=list)       # bridge lines for censored networks
 
     def validate(self, name: str) -> None:
         if self.identities_per_circuit < 1:
@@ -78,17 +95,35 @@ class Profile:
         "search": EngineConfig(budget_per_day=120),
         "crawl": EngineConfig(budget_per_day=40),
         "dns": EngineConfig(budget_per_day=200),
+        "onion": EngineConfig(budget_per_day=40, max_depth=3),
     })
     transports: dict[str, TransportConfig] = field(default_factory=lambda: {
         "clearnet": TransportConfig(),
-        "tor": TransportConfig(socks=DEFAULT_TOR_SOCKS, control=DEFAULT_TOR_CONTROL),
+        "tor": TransportConfig(enabled=False, socks=DEFAULT_TOR_SOCKS, control=DEFAULT_TOR_CONTROL),
     })
     relay: RelayConfig = field(default_factory=RelayConfig)
     daily_max_failures: int = 30
 
     def active_engines(self, transport: str) -> list[str]:
-        return [name for name, eng in self.engines.items() if eng.enabled] \
-            if transport in ("clearnet", "tor") else []
+        """Engines a lane runs. Onion is Tor-only; clearnet engines run on Tor
+        only when the user explicitly opted into clearnet_via_tor."""
+        on = [n for n, e in self.engines.items() if e.enabled]
+        if transport == "clearnet":
+            return [n for n in on if n != "onion"]
+        if transport == "tor":
+            tor = self.transports.get("tor")
+            out = []
+            if tor and tor.clearnet_via_tor:
+                out += [n for n in on if n != "onion"]
+            if tor and tor.onion and "onion" in on:
+                out.append("onion")
+            return out
+        return []
+
+    def clearnet_lane_count(self) -> int:
+        """How many lanes share the clearnet engines' daily budgets."""
+        c, t = self.transports.get("clearnet"), self.transports.get("tor")
+        return (1 if c and c.enabled else 0) + (1 if t and t.enabled and t.clearnet_via_tor else 0) or 1
 
 
 def _engine(raw: dict[str, Any] | None) -> EngineConfig:
@@ -101,6 +136,58 @@ def _transport(raw: dict[str, Any] | None) -> TransportConfig:
                               TransportConfig.__dataclass_fields__})
 
 
+def profile_to_dict(profile: Profile) -> dict[str, Any]:
+    from dataclasses import asdict
+    return {"profile": {
+        "name": profile.name,
+        "realtime_scale": profile.realtime_scale,
+        "engines": {n: asdict(e) for n, e in profile.engines.items()},
+        "transports": {n: asdict(t) for n, t in profile.transports.items()},
+        "daily_max_failures": profile.daily_max_failures,
+        "contribute": {"relay": asdict(profile.relay)},
+    }}
+
+
+def save_profile(profile: Profile, path: str) -> None:
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        yaml.safe_dump(profile_to_dict(profile), fh, sort_keys=False)
+    os.replace(tmp, path)
+
+
+def apply_overrides(profile: Profile, raw: dict[str, Any]) -> Profile:
+    """Merge a (possibly partial) profile dict over an existing Profile, validating."""
+    p = raw.get("profile", raw)
+    profile.name = p.get("name", profile.name)
+    if "realtime_scale" in p:
+        profile.realtime_scale = float(p["realtime_scale"])
+    for name, raw_eng in (p.get("engines") or {}).items():
+        if name in profile.engines:
+            merged = profile.engines[name].__dict__ | (raw_eng or {})
+            profile.engines[name] = EngineConfig(
+                **{k: v for k, v in merged.items() if k in EngineConfig.__dataclass_fields__})
+    for name, raw_tr in (p.get("transports") or {}).items():
+        if name in profile.transports:
+            merged = profile.transports[name].__dict__ | (raw_tr or {})
+            profile.transports[name] = TransportConfig(
+                **{k: v for k, v in merged.items() if k in TransportConfig.__dataclass_fields__})
+    contribute = p.get("contribute") or {}
+    if "relay" in contribute:
+        merged = profile.relay.__dict__ | contribute["relay"]
+        profile.relay = RelayConfig(**{k: v for k, v in merged.items() if k in RelayConfig.__dataclass_fields__})
+    if "daily_max_failures" in p:
+        profile.daily_max_failures = int(p["daily_max_failures"])
+    for name, eng in profile.engines.items():
+        eng.validate(name)
+    for name, tr in profile.transports.items():
+        tr.validate(name)
+    profile.relay.validate()
+    if profile.realtime_scale <= 0:
+        raise ConfigError("realtime_scale must be > 0")
+    return profile
+
+
 def load_profile(path: str | None) -> Profile:
     """Load a YAML profile, merged over defaults."""
     profile = Profile(name="default")
@@ -110,29 +197,4 @@ def load_profile(path: str | None) -> Profile:
         raise ConfigError(f"profile not found: {path}")
     with open(path, encoding="utf-8") as fh:
         raw = yaml.safe_load(fh) or {}
-    p = raw.get("profile", raw)
-    profile.name = p.get("name", profile.name)
-    profile.realtime_scale = float(p.get("realtime_scale", 1.0))
-    for name, raw_eng in (p.get("engines") or {}).items():
-        if name in profile.engines:
-            merged = profile.engines[name].__dict__ | (raw_eng or {})
-            valid = {k: v for k, v in merged.items() if k in EngineConfig.__dataclass_fields__}
-            profile.engines[name] = EngineConfig(**valid)
-    for name, raw_tr in (p.get("transports") or {}).items():
-        if name in profile.transports:
-            merged = profile.transports[name].__dict__ | (raw_tr or {})
-            valid = {k: v for k, v in merged.items() if k in TransportConfig.__dataclass_fields__}
-            profile.transports[name] = TransportConfig(**valid)
-    contribute = p.get("contribute") or {}
-    if "relay" in contribute:
-        profile.relay = RelayConfig(**{k: v for k, v in contribute["relay"].items()
-                                       if k in RelayConfig.__dataclass_fields__})
-    profile.daily_max_failures = int(p.get("daily_max_failures", 30))
-    for name, eng in profile.engines.items():
-        eng.validate(name)
-    for name, tr in profile.transports.items():
-        tr.validate(name)
-    profile.relay.validate()
-    if profile.realtime_scale <= 0:
-        raise ConfigError("realtime_scale must be > 0")
-    return profile
+    return apply_overrides(profile, raw)

@@ -103,8 +103,9 @@ DOH_RESOLVERS = [
 
 
 def load_wordlist(path: str, fallback: list[str] | None = None) -> list[str]:
+    from .paths import resolve_resource
     try:
-        with open(path, encoding="utf-8", errors="ignore") as fh:
+        with open(resolve_resource(path), encoding="utf-8", errors="ignore") as fh:
             words = [w.strip() for w in fh if w.strip()]
         return words if words else (fallback or COMMON_TOPICS)
     except OSError:

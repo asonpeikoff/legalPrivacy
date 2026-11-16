@@ -18,13 +18,23 @@ profile:
     dns:
       enabled: true
       budget_per_day: 200
+    onion:                      # darknet noise; runs only when transports.tor.enabled
+      enabled: true
+      budget_per_day: 40
+      max_depth: 3
   transports:
     clearnet:
       enabled: true
       proxy: null
-    tor:
+    tor:                        # OPTIONAL. Off unless you turn it on.
       enabled: true
-      socks: 127.0.0.1:9050
+      manage: true              # true: app runs its own private Tor (auto-installs); false: use socks/control below
+      onion: true               # visit .onion sites
+      clearnet_via_tor: false   # route ordinary clearnet noise through Tor — NOT recommended
+      auto_install: true
+      onion_seeds: []           # extra v3 onion URLs; empty = built-in official mirrors
+      bridges: []               # e.g. "obfs4 1.2.3.4:443 FINGERPRINT cert=… iat-mode=0"
+      socks: 127.0.0.1:9050     # only used when manage: false
       control: 127.0.0.1:9051
       identities_per_circuit: 8
   daily_max_failures: 30

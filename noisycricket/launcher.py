@@ -1,167 +1,87 @@
-"""noisyCricket launcher — just run this, no flags needed."""
+"""noisyCricket launcher — double-click me.
+
+Opens the dashboard in your browser (first run: 3 quick questions, then it
+starts). Use --text for the old terminal menu.
+"""
 from __future__ import annotations
 
+import argparse
 import os
-import platform
 import sys
-import time
+import traceback
 
-# ── optional colour (safe fallback) ──────────────────────────────────────────
-_TTY = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
-def _c(code: str, t: str) -> str: return f"\033[{code}m{t}\033[0m" if _TTY else t
-def green(t):  return _c("32;1", t)
-def yellow(t): return _c("33;1", t)
-def cyan(t):   return _c("36;1", t)
-def red(t):    return _c("31;1", t)
-def bold(t):   return _c("1",    t)
-def dim(t):    return _c("2",    t)
 
-BANNER = """\
-  ╔══════════════════════════════════════════╗
-  ║   🦗  noisyCricket  v2.2                ║
-  ║   Privacy noise generator               ║
-  ╚══════════════════════════════════════════╝
-"""
-
-def _clear():
-    os.system("cls" if platform.system() == "Windows" else "clear")
-
-def _ask(prompt: str, default: str = "") -> str:
-    hint = f" [{default}]" if default else ""
-    try:
-        v = input(f"  {prompt}{hint}: ").strip()
-        return v or default
-    except (EOFError, KeyboardInterrupt):
-        return default
-
-def _pause():
-    try: input(dim("\n  Press Enter to return to menu…"))
-    except (EOFError, KeyboardInterrupt): pass
-
-# ── Tor check ────────────────────────────────────────────────────────────────
-def _tor_running() -> bool:
-    import socket
-    try:
-        s = socket.create_connection(("127.0.0.1", 9050), timeout=1); s.close(); return True
-    except OSError:
-        return False
-
-# ── runners ───────────────────────────────────────────────────────────────────
-def _run(once: bool = False, verbose: bool = False) -> None:
-    import argparse
-    try:
-        from noisycricket.cli import cmd_run
-        from noisycricket.scheduler import MaxFailuresExceeded
-    except ImportError as e:
-        print(red(f"\n  Import error: {e}"))
-        print(dim("  Try:  pip install -e ."))
-        _pause(); return
-
-    args = argparse.Namespace(
-        profile=None, once=once, dry_run=False,
-        verbose=verbose, reconnect_tor=False,
-    )
-    if once:
-        print(green("\n  Sending one noise round…\n"))
-    else:
-        print(green("\n  Running — press Ctrl+C to stop.\n"))
-    try:
-        cmd_run(args)
-        if once:
-            print(green("  ✓ Done."))
-    except KeyboardInterrupt:
-        print(yellow("\n\n  Stopped."))
-    except MaxFailuresExceeded as e:
-        print(red(f"\n  Stopped after too many failures: {e}"))
-    except Exception as e:
-        print(red(f"\n  Error: {e}"))
-    _pause()
-
-def _health() -> None:
-    _clear()
-    print(bold("\n  Health check\n"))
-
-    # Tor
-    tor = _tor_running()
-    print(f"  {'✓' if tor else '⚠'}  Tor (port 9050): " +
-          (green("running") if tor else yellow("not detected — clearnet only")))
-
-    # required libs
-    for lib in ("requests", "yaml"):
+def _pause_on_windows_error() -> None:
+    # A double-clicked console closes instantly on crash; keep it readable.
+    if sys.platform == "win32" and sys.stdin and sys.stdin.isatty():
         try:
-            __import__(lib); ok = True
-        except ImportError:
-            ok = False
-        print(f"  {'✓' if ok else '✗'}  {lib}: " +
-              (green("OK") if ok else red(f"missing — pip install {'pyyaml' if lib=='yaml' else lib}")))
+            input("\nPress Enter to close…")
+        except EOFError:
+            pass
 
-    # full doctor
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="cricket-launch", description=__doc__)
+    ap.add_argument("--text", action="store_true", help="terminal menu instead of the dashboard")
+    ap.add_argument("--no-browser", action="store_true", help="don't open a browser automatically")
+    ap.add_argument("--port", type=int, help="dashboard port (default 8765)")
+    ap.add_argument("--profile", help="use this profile YAML instead of the saved config")
+    args = ap.parse_args(argv)
+    if args.text:
+        return _text_menu()
     try:
-        import argparse
-        from noisycricket.cli import cmd_doctor
-        print()
-        cmd_doctor(argparse.Namespace(profile=None))
-    except Exception as e:
-        print(dim(f"\n  (detailed check unavailable: {e})"))
-    _pause()
+        from .webui import run_ui
+        return run_ui(args.profile, args.port, False if args.no_browser else None)
+    except Exception:
+        traceback.print_exc()
+        _pause_on_windows_error()
+        return 1
 
-def _tor_help() -> None:
-    _clear()
-    sys_name = platform.system()
-    print(bold("\n  Tor setup\n"))
-    print("  Tor makes your noise traffic anonymous.\n")
-    if sys_name == "Linux":
-        print(dim("    Install:  sudo apt install tor   (or dnf / pacman)"))
-        print(dim("    Start:    sudo systemctl start tor"))
-    elif sys_name == "Darwin":
-        print(dim("    Install:  brew install tor"))
-        print(dim("    Start:    brew services start tor"))
-    elif sys_name == "Windows":
-        print(dim("    Download: https://www.torproject.org/download/"))
-        print(dim("    Run:      tor.exe"))
-    else:
-        print(dim("    See: https://www.torproject.org/download/"))
 
-    print(f"\n  Status: " + (green("Tor is running ✓") if _tor_running()
-                              else yellow("Tor not detected on port 9050")))
-    print(dim("\n  Bridges (bypass censorship):"))
-    print(dim("    cricket relay gen-client --type snowflake"))
-    print(dim("    tor -f torrc.client"))
-    _pause()
+# ── terminal fallback ────────────────────────────────────────────────────────
+def _text_menu() -> int:
+    import argparse as ap_
+    from .cli import cmd_doctor, cmd_run
+    from .controller import Controller
+    from .tormanager import find_tor_binary, port_open
 
-# ── main menu ─────────────────────────────────────────────────────────────────
-def main() -> None:
+    def ask(prompt: str, default: str = "") -> str:
+        try:
+            return input(f"  {prompt}" + (f" [{default}]" if default else "") + ": ").strip() or default
+        except (EOFError, KeyboardInterrupt):
+            return "q"
+
     while True:
-        _clear()
-        print(cyan(BANNER) if _TTY else BANNER)
-
-        tor_line = green("Tor: active 🧅") if _tor_running() else dim("Tor: not detected")
-        print(f"  {tor_line}\n")
-
-        print(f"  {bold('[1]')}  Start now              {dim('(continuous, recommended)')}")
-        print(f"  {bold('[2]')}  Quick test             {dim('(one round, then exit)')}")
-        print(f"  {bold('[3]')}  Health check")
-        print(f"  {bold('[4]')}  Tor setup guide")
-        print(f"  {bold('[Q]')}  Quit\n")
-
-        choice = _ask("Choice (or press Enter to start)", "1").upper()
-
-        if choice in ("1", ""):
-            _clear(); _run(once=False)
-        elif choice == "2":
-            _clear(); _run(once=True)
-        elif choice == "3":
-            _health()
-        elif choice == "4":
-            _tor_help()
-        elif choice == "Q":
-            print(green("\n  Goodbye 🦗\n")); break
-        else:
-            time.sleep(0.5)   # bad input — just redraw
+        ctl = Controller()
+        tor_cfg = ctl.profile.transports["tor"]
+        print("\n  🦗 noisyCricket (text mode)\n")
+        print(f"  Tor: {'ON' if tor_cfg.enabled else 'off'}  (program: {find_tor_binary() or 'not installed'}; "
+              f"other Tor running: {port_open('127.0.0.1', 9050) or port_open('127.0.0.1', 9150)})")
+        print("  [1] Start now   [2] One test round   [3] Health check   "
+              "[4] Toggle Tor (onion sites)   [5] Dashboard (browser)   [Q] Quit\n")
+        c = ask("Choice", "1").lower()
+        base = dict(profile=ctl.profile_path if os.path.exists(ctl.profile_path) else None,
+                    dry_run=False, verbose=True, reconnect_tor=False)
+        try:
+            if c == "1":
+                cmd_run(ap_.Namespace(once=False, **base))
+            elif c == "2":
+                cmd_run(ap_.Namespace(once=True, **base))
+            elif c == "3":
+                cmd_doctor(ap_.Namespace(profile=base["profile"]))
+            elif c == "4":
+                ctl.apply_config({"transports": {"tor": {"enabled": not tor_cfg.enabled, "onion": True}}})
+                print(f"  Tor is now {'ON' if not tor_cfg.enabled else 'off'}.")
+            elif c == "5":
+                from .webui import run_ui
+                return run_ui()
+            elif c in ("q", "quit"):
+                return 0
+        except KeyboardInterrupt:
+            print("\n  Stopped.")
+        except Exception as exc:
+            print(f"  Error: {exc}")
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print(yellow("\n  Interrupted.\n"))
+    raise SystemExit(main())

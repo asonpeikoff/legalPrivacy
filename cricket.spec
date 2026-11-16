@@ -13,15 +13,23 @@ from pathlib import Path
 block_cipher = None
 
 a = Analysis(
-    ['noisycricket/launcher.py'],
+    ['cricket_entry.py'],
     pathex=['.'],
     binaries=[],
     datas=[
         ('data', 'data'),               # bridges, example configs
         ('profiles', 'profiles'),       # optional — omit if dir absent
+        ('noisycricket/web', 'noisycricket/web'),   # dashboard UI
     ],
     hiddenimports=[
         'noisycricket.cli',
+        'noisycricket.controller',
+        'noisycricket.events',
+        'noisycricket.onion',
+        'noisycricket.paths',
+        'noisycricket.torcontrol',
+        'noisycricket.tormanager',
+        'noisycricket.webui',
         'noisycricket.config',
         'noisycricket.engines',
         'noisycricket.identity',
@@ -63,7 +71,7 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,           # terminal app — keep console window
+    console=True,           # keep a console: it shows the dashboard link and is how you quit
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

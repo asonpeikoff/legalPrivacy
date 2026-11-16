@@ -12,12 +12,16 @@ import tests.test_identity
 import tests.test_pacing
 import tests.test_relay
 import tests.test_scheduler
+import tests.test_tor_onion
+import tests.test_controller
 
 MODULES = [
     tests.test_identity,
     tests.test_pacing,
     tests.test_relay,
     tests.test_scheduler,
+    tests.test_tor_onion,
+    tests.test_controller,
 ]
 
 

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "noisycricket"
-version = "2.2.0"
-description = "noisyCricket v2 — conversation-driven web-noise generator with Tor/clearnet split and community relay contribution"
+version = "2.3.0"
+description = "noisyCricket — privacy noise generator with optional Tor/onion mode, a local dashboard, and community relay contribution"
 requires-python = ">=3.10"
 dependencies = [
   "requests[socks]>=2.31",
@@ -21,3 +21,6 @@ dev = ["pytest>=8.0"]
 
 [tool.setuptools.packages.find]
 include = ["noisycricket*"]
+
+[tool.setuptools.package-data]
+noisycricket = ["web/*.html"]

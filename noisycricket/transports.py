@@ -39,6 +39,7 @@ class HitResult:
         self.status = status
         self.html = html
         self.error = error
+        self.latency_ms: float | None = None
 
     @property
     def ok(self) -> bool:
@@ -130,7 +131,14 @@ class TorTransport(Transport):
         self.identities_per_circuit = identities_per_circuit
         self.control_password = control_password or os.environ.get("CRICKET_TOR_CONTROL_PW")
         self.circuit_seed = binascii.hexlify(os.urandom(8)).decode()
+        self.cookie_path: str | None = None    # set when a managed Tor owns the control port
         self.dimmed = False
+
+    def set_endpoint(self, socks: str, control: str | None, cookie_path: str | None = None) -> None:
+        """Re-point at a (managed) Tor whose ports were chosen at launch time."""
+        host, _, port = socks.partition(":")
+        self.socks_host, self.socks_port = host or "127.0.0.1", int(port) if port else 9050
+        self.control, self.cookie_path = control, cookie_path
 
     def _socks_proxies(self, identity: Identity) -> dict[str, str]:
         user = f"ident-{identity.id}-{self.circuit_seed}"
@@ -138,13 +146,14 @@ class TorTransport(Transport):
         return {"http": uri, "https": uri}
 
     def hit(self, identity: Identity, target: Target) -> HitResult:
-        headers = _identity_headers(identity)
+        onion = is_onion_host(target.url)
+        headers = dict(TOR_BROWSER_HEADERS) if onion else _identity_headers(identity)
         if target.kind == "doh":
             headers["Accept"] = "application/dns-json"
         try:
             resp = requests.get(
                 target.url,
-                timeout=target.timeout,
+                timeout=max(target.timeout, 60.0) if onion else target.timeout,
                 allow_redirects=True,
                 proxies=self._socks_proxies(identity),
                 headers=headers,
@@ -154,85 +163,39 @@ class TorTransport(Transport):
             return HitResult(None, error=str(exc))
 
     def renew_circuits(self) -> bool:
-        """NEWNYM via tor control port, if configured. Best-effort."""
+        """NEWNYM via the Tor control port, if configured. Best-effort."""
         if not self.control:
             return False
-        host, _, port = self.control.partition(":")
+        from .torcontrol import TorControl, TorControlError, split_hostport
+        host, port = split_hostport(self.control, 9051)
         try:
-            with socket.create_connection((host, int(port)), timeout=5) as sock:
-                sf = sock.makefile("rw", newline="\r\n")
-                sf.write("AUTHENTICATE\r\n"); sf.flush()
-                resp = sf.readline()
-                if "250" not in resp:
-                    if self.control_password:
-                        sf.write(f'AUTHENTICATE "{self.control_password}"\r\n'); sf.flush()
-                        if "250" not in sf.readline():
-                            return False
-                    else:
-                        cookie_path = os.environ.get("CRICKET_TOR_CONTROL_COOKIE")
-                        if not cookie_path:
-                            for default_cookie in ("/var/run/tor/control.authcookie",
-                                                   os.path.expanduser("~/.tor/control_authcookie")):
-                                if os.path.exists(default_cookie):
-                                    cookie_path = default_cookie
-                                    break
-                        if cookie_path:
-                            try:
-                                with open(cookie_path, "rb") as cf:
-                                    cookie_hex = binascii.hexlify(cf.read()).decode()
-                                sf.write(f"AUTHENTICATE {cookie_hex}\r\n"); sf.flush()
-                                if "250" not in sf.readline():
-                                    return False
-                            except OSError:
-                                return False
-                        else:
-                            return False
-                sf.write("signal NEWNYM\r\n"); sf.flush()
-                ok = "250" in sf.readline()
-                sf.write("QUIT\r\n"); sf.flush()
-                return ok
-        except OSError:
+            with TorControl(host, port, self.control_password, self.cookie_path, timeout=5) as c:
+                c.newnym()
+            return True
+        except (TorControlError, OSError):
             return False
 
     def check_status(self) -> dict[str, Any]:
         """Inspect Tor daemon reachability and bootstrap state."""
+        from .torcontrol import TorControl, TorControlError, split_hostport
         res: dict[str, Any] = {
-            "socks_host": self.socks_host,
-            "socks_port": self.socks_port,
-            "socks_ok": False,
-            "control_ok": False,
-            "bootstrap": None,
-            "version": None,
-            "error": None,
+            "socks_host": self.socks_host, "socks_port": self.socks_port,
+            "socks_ok": False, "control_ok": False,
+            "bootstrap": None, "version": None, "error": None,
         }
         try:
             with socket.create_connection((self.socks_host, self.socks_port), timeout=2):
                 res["socks_ok"] = True
         except OSError as exc:
             res["error"] = f"SOCKS port unreachable: {exc}"
-
         if self.control:
-            chost, _, cport = self.control.partition(":")
+            host, port = split_hostport(self.control, 9051)
             try:
-                with socket.create_connection((chost, int(cport)), timeout=2) as sock:
-                    sf = sock.makefile("rw", newline="\r\n")
-                    sf.write("AUTHENTICATE\r\n"); sf.flush()
-                    resp = sf.readline()
-                    if "250" not in resp and self.control_password:
-                        sf.write(f'AUTHENTICATE "{self.control_password}"\r\n'); sf.flush()
-                        resp = sf.readline()
-                    if "250" in resp:
-                        res["control_ok"] = True
-                        sf.write("GETINFO version\r\n"); sf.flush()
-                        v_line = sf.readline()
-                        if "250-version=" in v_line:
-                            res["version"] = v_line.partition("250-version=")[2].strip()
-                        sf.write("GETINFO status/bootstrap-phase\r\n"); sf.flush()
-                        b_line = sf.readline()
-                        if "250-status/bootstrap-phase=" in b_line:
-                            res["bootstrap"] = b_line.partition("250-status/bootstrap-phase=")[2].strip()
-                        sf.write("QUIT\r\n"); sf.flush()
-            except OSError:
+                with TorControl(host, port, self.control_password, self.cookie_path, timeout=2) as c:
+                    res["control_ok"] = True
+                    res["version"] = c.getinfo("version")
+                    res["bootstrap"] = c.getinfo("status/bootstrap-phase")
+            except (TorControlError, OSError):
                 pass
         return res
 
@@ -241,6 +204,25 @@ class TorTransport(Transport):
         self.circuit_seed = binascii.hexlify(os.urandom(8)).decode()
         self.dimmed = False
         return self.renew_circuits()
+
+
+# Tor Browser (Firefox ESR based) presents one uniform fingerprint to everyone so users blend
+# into a single large anonymity set. Onion traffic that wears a random Chrome UA would stand
+# out, so the onion lane mimics Tor Browser's uniform headers instead of per-identity ones.
+TOR_BROWSER_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; rv:153.0) Gecko/20100101 Firefox/153.0",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Upgrade-Insecure-Requests": "1",
+}
+
+
+def is_onion_host(url: str) -> bool:
+    try:
+        return (urllib.parse.urlparse(url).hostname or "").endswith(".onion")
+    except ValueError:
+        return False
 
 
 def _identity_headers(identity: Identity) -> dict[str, str]:
