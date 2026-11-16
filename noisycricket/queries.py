@@ -129,16 +129,29 @@ class QuerySource:
                 return self._finish(ident, q, "refine")
         pools = self._pools()
         names = list(pools)
-        for _ in range(8):
-            origin = self.rng.choices(names, weights=[WEIGHTS[n] for n in names])[0]
-            raw = self.rng.choice(pools[origin])
-            if origin == "builtin":
-                raw = self.rng.choice(PATTERNS).format(t=raw)
-            elif origin == "words":
-                raw = self.rng.choice(["{w}", "{w} meaning", "define {w}", "{w} synonym"]).format(w=raw)
-            if raw not in self._recent and safe_query(raw):
-                return self._finish(ident, raw, origin)
-        return self._finish(ident, self.rng.choice(BUILTIN_TOPICS), "builtin")
+        # de-dup window scales with how much material there is, so small pools aren't starved
+        window = max(10, min(500, sum(len(v) for k, v in pools.items() if k != "words") // 4))
+        recent = {r.lower() for r in list(self._recent)[-window:]}
+        minor = ("builtin", "words")
+        major_orig = sum(WEIGHTS[n] for n in names if n not in minor)
+        while names:
+            # an exhausted major source hands its share to the other major sources, never to the
+            # hand-written list — that list must stay a small minority (a big share is a fingerprint)
+            major_now = sum(WEIGHTS[n] for n in names if n not in minor)
+            scale = (major_orig / major_now) if major_now else 1.0
+            origin = self.rng.choices(names, weights=[WEIGHTS[n] * (1 if n in minor else scale)
+                                                      for n in names])[0]
+            for _ in range(6):              # stay with the chosen source; retry within it on a repeat
+                raw = self.rng.choice(pools[origin])
+                if origin == "builtin":
+                    raw = self.rng.choice(PATTERNS).format(t=raw)
+                elif origin == "words":
+                    raw = self.rng.choice(["{w}", "{w} meaning", "define {w}", "{w} synonym"]).format(w=raw)
+                if raw.lower() not in recent and safe_query(raw):
+                    return self._finish(ident, raw, origin)
+            names.remove(origin)            # this source is used up for now
+        biggest = max(pools, key=lambda n: len(pools[n]))  # everything recently used: allow a repeat
+        return self._finish(ident, self.rng.choice(pools[biggest]), biggest)
 
     def _finish(self, ident, q: str, origin: str) -> tuple[str, str]:
         q = re.sub(r"\s+", " ", q).strip()
