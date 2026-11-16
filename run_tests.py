@@ -14,6 +14,7 @@ import tests.test_relay
 import tests.test_scheduler
 import tests.test_tor_onion
 import tests.test_controller
+import tests.test_humanize
 
 MODULES = [
     tests.test_identity,
@@ -22,6 +23,7 @@ MODULES = [
     tests.test_scheduler,
     tests.test_tor_onion,
     tests.test_controller,
+    tests.test_humanize,
 ]
 
 

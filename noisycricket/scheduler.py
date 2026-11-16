@@ -35,6 +35,8 @@ class Lane:
     crawl_factory: object | None = None
     crawl_next: Target | None = None
     crawl_depth: int = 0
+    follow_next: Target | None = None         # click-through chain: search -> result -> page
+    search_factory: object | None = None
     onion_factory: object | None = None
     onion_next: Target | None = None
     onion_depth: int = 0
@@ -107,6 +109,9 @@ class Runner:
     log: EventLog | None = None        # shared event log (UI visibility)
     stop_event: threading.Event | None = None
     tor_seeds: list[str] | None = None  # extra onion seeds from the profile
+    queries: object | None = None      # QuerySource shared by all lanes (live/real queries)
+    domains: object | None = None      # DomainPool (real popular domains)
+    click_prob: float = 0.6            # chance a search is followed by opening a result
 
     def __post_init__(self) -> None:
         self.rng = random.Random()
@@ -168,7 +173,7 @@ class Runner:
         if not domain:
             return HitResult(None, error="malformed dns target")
         packet = build_dns_query(domain, qid=self.rng.randint(0, 0xFFFF))
-        noise = DnsNoise(self.rng, self.wordlist)
+        noise = DnsNoise(self.rng, self.wordlist, self.domains)
         if noise.fire(packet, server, timeout=target.timeout):
             return HitResult(200, "")
         return HitResult(None, error=f"dns query to {server} failed")
@@ -266,11 +271,13 @@ class Runner:
             "url": target.url, "status": result.status, "ok": result.ok,
             "error": result.error, "latency_ms": getattr(result, "latency_ms", None),
             "identity": getattr(identity, "id", None),
+            "note": target.note, "role": target.role,
         }
         self.hit_log.append(rec)
         short = target.url if len(target.url) <= 90 else target.url[:87] + "…"
+        tag = f" [{target.note}]" if target.note else (" [click]" if target.role == "result" else "")
         self._emit("info" if result.ok else "warn", lane.name,
-                   f"{eng_name:6s} {short} → {status}"
+                   f"{eng_name:6s} {short}{tag} → {status}"
                    + (f" ({rec['latency_ms']:.0f} ms)" if rec["latency_ms"] else ""), **{"hit": rec["seq"]})
         if self.verbose:
             print(f"[{time.strftime('%H:%M:%S')}] [{lane.name}] {eng_name:6s} -> {target.url[:65]} ({status})")
@@ -287,6 +294,17 @@ class Runner:
                 lane.onion_next, lane.onion_depth = nxt, lane.onion_depth + 1
             else:
                 lane.onion_next, lane.onion_depth = None, 0
+            return
+        if eng_name == "search":
+            lane.follow_next = None
+            if result.html:
+                if target.role == "search" and self.rng.random() < self.click_prob \
+                        and lane.search_factory is not None:
+                    lane.follow_next = lane.search_factory.result_target(result.html, target.url)
+                elif target.role == "result" and self.rng.random() < 0.25:
+                    from .engines import CrawlTargetFactory
+                    lane.follow_next = CrawlTargetFactory(rng=self.rng, seeds=[]).next_from(
+                        result.html, target.url)
             return
         if eng_name != "crawl" or not result.html:
             return
@@ -316,22 +334,29 @@ class Runner:
                     follow_offsite=bool(tor_cfg.onion_follow_offsite) if tor_cfg else True)
             return lane.onion_factory.make(identity)
         if eng_name == "search":
-            fac = SearchTargetFactory(rng=self.rng, words=words)
-            return fac.make(identity)
+            if lane.follow_next is not None:
+                nxt, lane.follow_next = lane.follow_next, None
+                return nxt
+            if lane.search_factory is None:
+                lane.search_factory = SearchTargetFactory(
+                    rng=self.rng, words=words, queries=self.queries,
+                    html_mode=not getattr(lane.transport, "is_browser", False))
+            return lane.search_factory.make(identity)
         if eng_name == "crawl":
             if lane.crawl_next is not None:
                 return lane.crawl_next
             cfg = self.profile.engines["crawl"]
             lane.crawl_factory = CrawlTargetFactory(rng=self.rng, seeds=cfg.seeds,
                                                     max_depth=cfg.max_depth,
-                                                    same_site_only=cfg.same_site_only)
+                                                    same_site_only=cfg.same_site_only,
+                                                    domains=self.domains)
             return lane.crawl_factory.make(identity)
         if eng_name == "dns":
             if lane.name == "tor":
                 # Arbitrary UDP cannot traverse Tor circuits: DoH over the circuit.
-                fac = DohNoise(rng=self.rng, words=words)
+                fac = DohNoise(rng=self.rng, words=words, domains=self.domains)
                 return fac.make(identity)
-            fac = DnsNoise(rng=self.rng, words=words)
+            fac = DnsNoise(rng=self.rng, words=words, domains=self.domains)
             _packet, domain, server = fac.make_query()
             return Target(url=f"dns://{server}/{domain}", kind="dns", timeout=3.0)
         raise ValueError(f"unknown engine '{eng_name}'")

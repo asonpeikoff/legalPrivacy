@@ -112,33 +112,80 @@ def load_wordlist(path: str, fallback: list[str] | None = None) -> list[str]:
         return fallback or COMMON_TOPICS
 
 
+_SEARCH_HOSTS = ("google.", "duckduckgo.", "bing.", "brave.", "startpage.", "ecosia.", "mojeek.", "qwant.",
+                 "yahoo.", "yandex.", "baidu.")
+
+
+def _unwrap_redirect(href: str, base: str) -> str:
+    """Resolve search-engine redirect links (DDG /l/?uddg=, Google /url?q=, Bing ck/a?u=a1<b64>)."""
+    import base64
+    absu = urllib.parse.urljoin(base, href)
+    p = urllib.parse.urlparse(absu)
+    qs = urllib.parse.parse_qs(p.query)
+    for key in ("uddg", "q", "url"):
+        if key in qs and qs[key][0].startswith("http"):
+            return qs[key][0]
+    if "u" in qs and qs["u"][0].startswith("a1"):
+        try:
+            raw = qs["u"][0][2:]
+            return base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)).decode()
+        except Exception:
+            pass
+    return absu
+
+
+def extract_result_links(html: str, search_url: str, limit: int = 12) -> list[str]:
+    """Organic result URLs from a SERP's HTML, in page order, one per site."""
+    from .safety import safe_domain
+    parser = _LinkExtractor()
+    try:
+        parser.feed(html)
+    except Exception:
+        pass
+    seen_hosts: set[str] = set()
+    out: list[str] = []
+    for href in parser.links:
+        u = _unwrap_redirect(href, search_url)
+        p = urllib.parse.urlparse(u)
+        host = (p.hostname or "").lower()
+        if p.scheme not in ("http", "https") or not host or any(h in host for h in _SEARCH_HOSTS):
+            continue
+        if host in seen_hosts or not safe_domain(host):
+            continue
+        seen_hosts.add(host)
+        out.append(u)
+        if len(out) >= limit:
+            break
+    return out
+
+
 @dataclass
 class SearchTargetFactory:
-    """Search noise with realistic intent patterns, thematic taste, and weighted engine selection."""
+    """Search noise: realistic queries from live/real sources, weighted engine choice,
+    and click-through to a result (position-biased, like real users)."""
     rng: random.Random
     words: list[str]
+    queries: object | None = None      # QuerySource; falls back to built-in topics
+    html_mode: bool = True             # True for requests-based transport (needs server-rendered SERPs)
+
+    def __post_init__(self) -> None:
+        if self.queries is None:
+            from .queries import QuerySource
+            self.queries = QuerySource(self.rng, None, words=self.words)
 
     def make(self, identity) -> Target:
-        # Weighted search engine selection (Google & DDG prioritized per user directive)
         endpoint = self.rng.choices(SEARCH_ENDPOINTS, weights=SEARCH_WEIGHTS)[0]
+        if self.html_mode and "duckduckgo.com/?q=" in endpoint and "lite." not in endpoint:
+            endpoint = "https://html.duckduckgo.com/html/?q="     # the JS-free results page
+        query, origin = self.queries.next(identity)
+        return Target(url=endpoint + urllib.parse.quote_plus(query), note=origin, role="search")
 
-        # Generate realistic internet query
-        taste = getattr(identity, "query_taste", None) or []
-        pool = taste if taste else (self.words or COMMON_TOPICS)
-
-        # 70% of the time, apply realistic human search intent templates
-        if self.rng.random() < 0.70 and pool:
-            topic = self.rng.choice(pool)
-            pattern = self.rng.choice(QUERY_PATTERNS)
-            alt = self.rng.choice(pool)
-            query = pattern.format(topic=topic, alt=alt)
-        else:
-            # 30% sample 1-3 words naturally
-            n = self.rng.choice([1, 1, 2, 3])
-            query = " ".join(self.rng.choice(pool) for _ in range(n))
-
-        url = endpoint + urllib.parse.quote_plus(query)
-        return Target(url=url)
+    def result_target(self, html: str, search_url: str) -> Target | None:
+        links = extract_result_links(html, search_url)
+        if not links:
+            return None
+        weights = [1.0 / (i + 1) ** 1.2 for i in range(len(links))]      # top results get most clicks
+        return Target(url=self.rng.choices(links, weights=weights)[0], referer=search_url, role="result")
 
 
 class _LinkExtractor(HTMLParser):
@@ -160,8 +207,12 @@ class CrawlTargetFactory:
     seeds: list[str]
     max_depth: int = 4
     same_site_only: bool = True
+    domains: object | None = None     # DomainPool: real popular sites as start points
+    domain_mix: float = 0.65          # share of walks that start at a ranked domain, not a configured seed
 
     def make(self, identity) -> Target:
+        if self.domains is not None and (not self.seeds or self.rng.random() < self.domain_mix):
+            return Target(url=f"https://{self.domains.hostname()}/", note="tranco")
         seeds = self.seeds or ["https://en.wikipedia.org/wiki/Special:Random"]
         return Target(url=self.rng.choice(seeds))
 
@@ -183,7 +234,7 @@ class CrawlTargetFactory:
             links.append(absu)
         if not links:
             return None
-        return Target(url=self.rng.choice(links))
+        return Target(url=self.rng.choice(links), referer=current_url)
 
 
 # --- raw crafted DNS packets (clearnet DNS engine, stdlib only) ---
@@ -227,21 +278,21 @@ def parse_dns_names(answer: bytes) -> list[str]:
 
 
 class DnsNoise:
-    """Random local DNS lookups to public resolvers, packets crafted by hand.
+    """Lookups of REAL, popular domains (Tranco ranking) to public resolvers, packets crafted by hand.
 
     Clearnet engine only — arbitrary UDP queries cannot traverse Tor circuits;
-    the tor lane uses DoH-over-Tor instead (see DohNoise).
+    the tor lane uses DoH-over-Tor instead (see DohNoise). Invented domains are
+    never generated: a stream of NXDOMAINs is itself a tell.
     """
 
-    def __init__(self, rng: random.Random, words: list[str]):
+    def __init__(self, rng: random.Random, words: list[str] | None = None, domains=None):
+        from .domains import DomainPool
         self.rng = rng
-        clean = [re.sub(r"[^a-zA-Z0-9]", "", w).lower() for w in (words or COMMON_TOPICS)]
-        self.words = [w for w in clean if 3 <= len(w) <= 20] or COMMON_TOPICS
+        self.domains = domains or DomainPool(rng)
 
     def make_query(self) -> tuple[bytes, str, str]:
         """(packet, domain, resolver_ip) — firing is the scheduler's probe step."""
-        tld = self.rng.choice([".com", ".net", ".org", ".io"])
-        domain = self.rng.choice(self.words).lower().replace(" ", "") + tld
+        domain = self.domains.hostname()
         packet = build_dns_query(domain, qid=self.rng.randint(0, 0xFFFF))
         return packet, domain, self.rng.choice(_DNS_SERVERS)
 
@@ -260,17 +311,15 @@ class DnsNoise:
 
 
 class DohNoise:
-    """DNS-over-HTTPS lookups; runs over the Tor transport's SOCKS daemon."""
+    """DNS-over-HTTPS lookups of real domains; runs over the Tor transport's SOCKS daemon."""
 
-    def __init__(self, rng: random.Random, words: list[str]):
+    def __init__(self, rng: random.Random, words: list[str] | None = None, domains=None):
+        from .domains import DomainPool
         self.rng = rng
-        clean = [re.sub(r"[^a-zA-Z0-9]", "", w).lower() for w in (words or COMMON_TOPICS)]
-        self.words = [w for w in clean if 3 <= len(w) <= 20] or COMMON_TOPICS
+        self.domains = domains or DomainPool(rng)
 
     def make(self, identity=None) -> Target:
-        tld = self.rng.choice([".com", ".net", ".org"])
-        domain = self.rng.choice(self.words).lower().replace(" ", "") + tld
-        url = self.rng.choice(DOH_RESOLVERS) % urllib.parse.quote(domain)
+        url = self.rng.choice(DOH_RESOLVERS) % urllib.parse.quote(self.domains.hostname())
         return Target(url=url, kind="doh")
 
 
