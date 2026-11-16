@@ -46,10 +46,40 @@ exiting plaintext. See `docs/DESIGN.md`.
 
 ## Stealth strategies
 
-Per-identity consistent fingerprints (UA / language / pacing persona), a
-diurnal S-curve activity model peaking 19:00–23:00 local, lognormal hit
-cadence with burst suppression, exponential backoff on 403/429/timeouts,
-proxy-health dimming, and hard `daily_max_failures` stops.
+Per-identity consistent fingerprints, refreshed against live traffic in 2026:
+a real frequency-weighted UA pool (several Chrome majors circulate at once in
+real populations — 152/156/157 — plus ESR Firefox stragglers, not just the
+newest version), Accept-Language pinned, low-entropy **client hints
+(`Sec-CH-UA`, `Sec-CH-UA-Platform`) emitted only on Chromium personas** —
+Firefox and Safari never send them, so hinting on their UAs would be an
+instant tell — fetch-metadata navigation headers (`Sec-Fetch-*`), **no DNT**
+(removed from Firefox in v135 and Safari; still sending it marks you),
+`Sec-GPC` opt-in at realistic low rates pinned per identity. On top of that:
+diurnal S-curve activity peaking 19:00–23:00 local, lognormal hit cadence with
+burst suppression, exponential backoff on 403/429/timeouts, proxy-health
+dimming, and hard `daily_max_failures` stops.
+
+## Roadmap — local AI for human-indistinguishable activity (planned, not yet built)
+
+The largest remaining statistical tell in v2 is that queries and clicks are
+random draws from word lists: the distributions mix well, but sequences lack
+human semantic structure — refiners, follow-ups, typos, and the relationship
+between what a page shows and what gets clicked next. The future work is
+**local AI models** used for:
+- **Query generation**: a small quantized LLM (1–8B via llama.cpp/Ollama,
+  run entirely on-device) turns each identity's query taste into coherent,
+  locally-plausible query sequences with natural refiners and misspellings.
+- **Session plausibility**: dwell time, link choice, and crawl depth sampled
+  from learned human browsing patterns — including page-content reactivity —
+  instead of hand-tuned curves.
+- **Persona memory**: durable per-identity local interest profiles so each
+  identity's long-run history looks like a person's topical life, not
+  independent random draws.
+
+Hard constraints for anything in this lane: inference is fully offline and
+local (routing noise queries through a hosted LLM would add a fresh, highly
+reportable signal and defeat the point), no telemetry, and model downloads
+themselves should go over the tor lane.
 
 Tests: `python -m pytest`. Run: `pip install . && cricket --help`.
 Legacy Java prototype preserved in `legacy-src/`.

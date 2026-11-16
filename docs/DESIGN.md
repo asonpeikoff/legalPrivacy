@@ -120,10 +120,15 @@ community-minded counterpart to consuming it.
 
 ## Stealth / traffic strategies
 
-- Identity == consistent fingerprint: UA pool curated per persona,
-  Accept-Language pinned, do-not-track stable, query taste per identity
-  (topics drawn from a persona word set) so the query distribution mixes,
-  not matches, a sampled population.
+- Identity == consistent fingerprint: UA pool mirrors live frequency-weighted
+  traffic (multiple Chrome majors circulating, Chrome reduced UA format,
+  Android frozen at "Android 10; K", ESR Firefox tails), Accept-Language
+  pinned, low-entropy client hints only on Chromium personas (a Sec-CH-UA on
+  a Firefox/Safari UA is an instant tell), fetch-metadata navigation headers,
+  no DNT (dead in browsers — sending it marks you), Sec-GPC opt-in at
+  realistic low rates, query taste per identity (topics drawn from a persona
+  word set) so the query distribution mixes, not matches, a sampled
+  population.
 - Cadence: lognormal pacing from real browsing distributions; fast/slow
   persona multipliers; burst suppression (min gap per identity).
 - Failure discipline: 403/429/timeout → exponential backoff with jitter,

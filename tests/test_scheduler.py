@@ -74,8 +74,8 @@ def test_crawl_walk_follows_links_and_depth_caps():
     captured = []
     runner = make_runner(make_profile(clearnet=True, tor=False, search=False),
                          captured_probe(captured))
-    for _ in range(3):
-        if runner.lanes[0].budgets["crawl"].exhausted:
+    for _ in range(20):
+        if all(l.budgets[e].exhausted for l in runner.lanes for e in l.engines):
             break
         runner.run_once()
     crawl_urls = [u for l, k, u in captured if l == "clearnet" and k == "html"]

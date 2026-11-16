@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "noisycricket"
-version = "2.0.0"
+version = "2.1.0"
 description = "noisyCricket v2 — conversation-driven web-noise generator with Tor/clearnet split and community relay contribution"
 requires-python = ">=3.10"
 dependencies = [

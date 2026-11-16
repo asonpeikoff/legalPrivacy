@@ -19,6 +19,9 @@ SEARCH_ENDPOINTS = [
     "https://www.bing.com/search?q=",
     "https://search.brave.com/search?q=",
     "https://lite.duckduckgo.com/lite/?q=",
+    "https://www.startpage.com/sp/search?query=",
+    "https://www.ecosia.org/search?q=",
+    "https://www.mojeek.com/search?q=",
 ]
 
 COMMON_TOPICS = [
@@ -29,6 +32,7 @@ COMMON_TOPICS = [
 DOH_RESOLVERS = [
     "https://cloudflare-dns.com/dns-query?name=%s&type=A",
     "https://dns.google/resolve?name=%s&type=A",
+    "https://dns.quad9.net/dns-query?name=%s&type=A",
 ]
 
 
