@@ -30,10 +30,29 @@ def _index_html() -> bytes:
     return _INDEX
 
 
+def _load_token() -> str:
+    """Per-install dashboard token, kept between launches so a bookmarked link keeps working."""
+    from .paths import app_dir
+    p = app_dir() / "ui_token"
+    try:
+        tok = p.read_text(encoding="utf-8").strip()
+        if len(tok) >= 20:
+            return tok
+    except OSError:
+        pass
+    tok = secrets.token_urlsafe(18)
+    try:
+        p.write_text(tok, encoding="utf-8")
+        p.chmod(0o600)
+    except OSError:
+        pass
+    return tok
+
+
 class UIServer:
     def __init__(self, ctl: Controller, port: int = 8765):
         self.ctl = ctl
-        self.token = secrets.token_urlsafe(18)
+        self.token = _load_token()
         self.httpd = self._bind(port)
         self.port = self.httpd.server_address[1]
         self.httpd.RequestHandlerClass = self._make_handler()
@@ -162,6 +181,8 @@ class UIServer:
                         ctl.pause(bool(body.get("paused", True)))
                     elif path == "/api/test":
                         ctl.test_once()
+                    elif path == "/api/feeds/refresh":
+                        ctl.refresh_feeds()
                     elif path.startswith("/api/tor/"):
                         return self._json(ctl.tor_action(path.rsplit("/", 1)[1]))
                     elif path == "/api/config":
@@ -198,6 +219,7 @@ def run_ui(profile_path: str | None = None, port: int | None = None, open_browse
     srv = UIServer(ctl, port or int(ctl.app.get("port", 8765)))
     print_fn(f"\n  🦗 noisyCricket dashboard: {srv.url}\n  (keep this window open; use Quit in the page, or Ctrl+C, to stop)\n")
     ctl.log.info("app", f"Dashboard listening on 127.0.0.1:{srv.port}")
+    ctl._start_feed_timer()            # fetch live query/domain sources in the background right away
     if ctl.app.get("autostart") and not ctl.first_run:
         try:
             ctl.start()

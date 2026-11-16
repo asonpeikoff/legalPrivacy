@@ -193,14 +193,11 @@ def test_crawl_handles_complex_html():
     assert not any("external.example.com" in u for u in links)
 
 
-def test_dns_noise_sanitizes_words():
+def test_dns_noise_only_uses_real_domains():
     from noisycricket.engines import DnsNoise
+    from noisycricket.domains import FALLBACK_DOMAINS
     rng = __import__("random").Random(2)
-    bad_words = ["'sblood", "&c", "'em", "'midst", "validword"]
-    noise = DnsNoise(rng, bad_words)
-    assert "sblood" in noise.words or "validword" in noise.words
-    assert "&c" not in noise.words and "'em" not in noise.words
-    _, domain, _ = noise.make_query()
-    # Label before TLD should be purely alphanumeric
-    label = domain.split(".")[0]
-    assert label.isalnum()
+    noise = DnsNoise(rng, ["xqzvbnm", "pentacapsular"])
+    for _ in range(50):
+        _, domain, _ = noise.make_query()
+        assert domain.removeprefix("www.") in FALLBACK_DOMAINS

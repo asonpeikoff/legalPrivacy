@@ -1,4 +1,4 @@
-# noisyCricket v2.3
+# noisyCricket v2.4
 
 Conducts random searches, crawls, and DNS lookups so that mass traffic and
 bulk analysis of any one person's browsing is less useful. Fully automated,
@@ -47,13 +47,13 @@ typo can never be dispatched; add your own seeds on the Tor tab.
 | Tab | Shows / controls |
 |---|---|
 | **Dashboard** | hits, failures, uptime, hits-per-minute chart, per-lane per-engine budgets, one-click test hit |
-| **Activity** | every request: time, lane, engine, URL, status, latency — filter by lane/engine/errors/text |
+| **Activity** | every request: time, lane, engine, URL, where the query came from, what the browser did (scrolls, depth, reading time, click/tap, download), status, latency |
 | **Live Log** | one merged log (app, scheduler, clearnet, onion, **Tor's own output**), level + source filters, search, follow, download |
 | **🧅 Tor** | status + bootstrap progress, version/ports/PID/traffic, **Start / Stop / Restart / New identity / Install**, live circuits table (onion-service circuits marked `HS_CLIENT_*`), Tor-only log, mode switches, onion seeds, bridges |
-| **Settings** | per-engine budgets & presets, speed, failure cap, proxy, autostart |
+| **Settings** | per-engine budgets & presets, speed, failure cap, proxy, autostart, **Realism** (real browser, show window, query sources + their live status) |
 | **Health** | plain-language self-checks (libs, internet, Tor program/status, seeds, ports) |
 
-The dashboard listens only on `127.0.0.1`, requires a per-launch token, and rejects
+The dashboard listens only on `127.0.0.1`, requires a token in its link (kept between launches so bookmarks work), and rejects
 foreign `Host`/`Origin` headers. Config lives in `~/.noisycricket/config.yaml`
 (`%APPDATA%\noisyCricket` on Windows); override with `CRICKET_HOME`.
 
@@ -111,19 +111,60 @@ noisyCricket v2 - one scheduler, two transports, three engines
 
 ## How it works
 
-A **profile** YAML sets per-engine daily budgets and a diurnal curve. The
-scheduler drains budgets by picking one lane (tor / clearnet), building an
-identity with a consistent fingerprint, and firing one hit with
-lognormal-jitter pacing. Engines emit neutral `Target` objects; transports
-own connection semantics.
+The scheduler spends a daily budget per engine, spread over the day on a human
+activity curve. Each "hit" is made by one **identity** (a consistent persona)
+over one **lane** (clearnet or Tor).
 
-- **search** — random topical queries (per-identity taste mixed into a global
-  spread), rotates across search endpoints.
-- **crawl** — seed URLs, extract links, random-walk with same-site
-  containment and depth caps.
-- **dns** — hand-crafted UDP DNS packets to public resolvers on clearnet;
-  DNS-over-HTTPS over Tor on the tor lane (arbitrary UDP cannot traverse
-  Tor circuits, so the tor lane resolves remotely via DoH).
+| Engine | What a hit is |
+|---|---|
+| **search** | A realistic query on a weighted mix of engines. About 60% of the time the persona then **clicks a result** (top results more often), and sometimes follows one more link on that site. |
+| **crawl** | Opens a popular real site (or a configured seed, or a site reached earlier via search) and wanders a few links deep, skipping anchors, images, logins and edit pages. |
+| **dns** | Looks up a **real, popular domain** (Tranco ranking). Raw UDP on clearnet; DNS-over-HTTPS on the Tor lane. Invented domains are never used: a stream of failed lookups would itself stand out. |
+| **onion** | Tor only. See above. |
+
+### Behaving like a person (real-browser mode)
+
+When Chrome, Edge, Brave or Chromium is installed (most computers), noisyCricket
+drives it in the background instead of sending plain HTTP requests. A plain HTTP
+client can't scroll, run JavaScript or load images, and its network fingerprint
+isn't a browser's no matter what it claims. With a real browser each visit:
+
+- waits for the page to settle, then **scrolls in bursts** (eased like a wheel or trackpad; real finger **swipes** for phone personas)
+- **pauses to read** between bursts (log-normal; now and then a long "got distracted" pause), sometimes **scrolls back up**
+- reads to a varied depth: most visits skim the top, some read to the end
+- **moves the mouse** along curved paths, hovers, then **clicks** (or **taps**) the search result
+- **downloads** a linked document now and then (about 3% of visits), through the browser, then discards it; nothing is saved
+- desktop personas use the browser's own, honest User-Agent; about 25% are phone personas with touch input, a phone screen and matching client hints
+
+Settings → Realism has the on/off switch and a "show the browser window" option
+so you can watch it work. Activity shows what happened on each visit, for example
+`click 🖥, 6 scrolls, 41% depth, 18s reading, 1 scroll-back`.
+
+### Where searches come from
+
+No single list dominates, because any fixed list would be hit far more often
+than real users hit it, which is itself detectable.
+
+| Source | Share | What it is |
+|---|---|---|
+| Live trends | ~40% | Google Trends daily searches, Wikipedia's most-read articles, BBC headlines turned into keyword searches. Refreshed every few hours. |
+| Real past searches | ~35% | Random samples of real queries from **MS MARCO** (Bing) and **GooAQ** (Google autocomplete), fetched fresh from Hugging Face. Not bundled. |
+| Built-in topics | ~10% | A small hand-written list, also the offline fallback. If a big source runs dry, its share goes to the other real sources, never to this list. |
+| Dictionary words | ~4% | Occasional `define …` / `… meaning` lookups. |
+
+On top of that: about 1 in 5 searches is a natural **refinement** of the previous one
+(`… reviews`, `… news`), question marks are mostly dropped and text is mostly
+lowercase (as people type), there are rare typos, and recent queries aren't repeated.
+
+**Safety filter.** Queries and sites are screened so the noise never goes anywhere
+embarrassing or risky: adult, gambling, weapons, drugs, violence, self-harm and
+hacking terms are blocked, along with the StevenBlack adult/gambling/fake-news
+host list and government domains.
+
+**Privacy of the sources themselves.** These lists are downloaded in the
+background from Google Trends, Wikimedia, BBC, Hugging Face and Tranco. That
+reveals only that you use noisyCricket, nothing about your own browsing.
+Settings shows each source's status and has a "Refresh sources now" button.
 
 ### The shape of the traffic
 
@@ -269,6 +310,8 @@ resolution that exits perform, without ever exiting plaintext. See `docs/DESIGN.
 
 ## Stealth strategies
 
+The header-level persona below applies to plain-HTTP mode. In real-browser mode the browser's own headers, TLS and JavaScript fingerprint are used unchanged, so they always agree.
+
 Per-identity consistent fingerprints, refreshed against live traffic in 2026:
 a real frequency-weighted UA pool (several Chrome majors circulate at once in
 real populations — 152/156/157 — plus ESR Firefox stragglers, not just the
@@ -334,7 +377,7 @@ local (routing noise queries through a hosted LLM would add a fresh, highly
 reportable signal and defeat the point), no telemetry, and model downloads
 themselves should go over the tor lane.
 
-Tests: `python3 run_tests.py` (zero external dependencies) or `python -m pytest`. Run: `pip install . && cricket --help`.
+Tests: `python3 run_tests.py` (the real-browser test is skipped when no browser is found). CI runs them on every pull request. Run: `pip install . && cricket --help`.
 Legacy Java prototype preserved in `legacy-src/`.
 
 The plots above live in `docs/plots/*.txt` and are generated from the

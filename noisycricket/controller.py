@@ -21,7 +21,10 @@ from . import __version__
 from .config import (ConfigError, Profile, apply_overrides, load_profile,
                      profile_to_dict, save_profile)
 from .engines import load_wordlist
+from .domains import DomainPool
 from .events import EventLog
+from .feeds import FeedStore
+from .queries import QueryConfig, QuerySource
 from .onion import BUILTIN_ONION_SEEDS, clean_seed_list
 from .paths import app_dir, config_path, resolve_resource
 from .scheduler import MaxFailuresExceeded, Runner, build_lanes
@@ -44,6 +47,8 @@ class Controller:
         self.profile: Profile = Profile(name="default")
         self._load()
         self.tor: TorManager | None = None
+        self.feeds = FeedStore(self.log)
+        self._feed_timer_started = False
         self.runner: Runner | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -160,6 +165,47 @@ class Controller:
         d["circuits"] = tm.circuits()
         return d
 
+    # ── realism helpers ─────────────────────────────────────────────────────
+    def browser_info(self) -> dict:
+        from .browser import browser_support
+        cfg = self.profile.transports["clearnet"]
+        ok, detail = browser_support()
+        active = cfg.browser == "on" or (cfg.browser == "auto" and ok)
+        return {"setting": cfg.browser, "available": ok, "detail": detail,
+                "active": bool(active and ok), "visible": cfg.browser_visible}
+
+    def _clearnet_transport(self, stop: threading.Event):
+        info = self.browser_info()
+        cfg = self.profile.transports["clearnet"]
+        if not info["active"]:
+            if cfg.browser == "on":
+                self.log.warn("browser", f"Real-browser mode is on but unavailable: {info['detail']}. "
+                                         "Using plain HTTP instead.")
+            return None
+        from .browser import BrowserTransport
+        return BrowserTransport(proxy=cfg.proxy, headless=not cfg.browser_visible, executable=info["detail"],
+                                stop_event=stop, scale=lambda: self.profile.realtime_scale,
+                                on_event=lambda lvl, msg: self.log.add(lvl, "browser", msg))
+
+    def _query_source(self, words):
+        import random as _r
+        q = self.profile.queries
+        return QuerySource(_r.Random(), self.feeds, QueryConfig(q.live, q.dataset, q.builtin, q.words), words)
+
+    def _start_feed_timer(self) -> None:
+        if self._feed_timer_started:
+            return
+        self._feed_timer_started = True
+
+        def loop():
+            while True:
+                self.feeds.refresh_async()
+                time.sleep(1800)
+        threading.Thread(target=loop, daemon=True, name="feed-timer").start()
+
+    def refresh_feeds(self) -> None:
+        self.feeds.refresh_async(force=True)
+
     # ── run control ─────────────────────────────────────────────────────────
     @property
     def running(self) -> bool:
@@ -187,11 +233,14 @@ class Controller:
                             lane.transport.set_endpoint(tm.socks_addr, tm.control_addr, tm.cookie_path)
                         return True
                     return False
-            lanes = build_lanes(prof, words, tor_gate=gate)
+            self._start_feed_timer()
+            lanes = build_lanes(prof, words, tor_gate=gate, clearnet_transport=self._clearnet_transport(self._stop))
             if not lanes:
                 raise ConfigError("Nothing to run: enable clearnet noise or Tor/onion noise in Settings.")
+            import random as _r
             self.runner = Runner(profile=prof, lanes=lanes, wordlist=words, log=self.log,
-                                 stop_event=self._stop, sleep_fn=lambda s: self._stop.wait(s))
+                                 stop_event=self._stop, sleep_fn=lambda s: self._stop.wait(s),
+                                 queries=self._query_source(words), domains=DomainPool(_r.Random(), self.feeds))
             self._thread = threading.Thread(target=self._run_loop, daemon=True, name="cricket-runner")
             self._thread.start()
             self.log.info("app", "Started: lanes = " + ", ".join(
@@ -227,12 +276,16 @@ class Controller:
             prof = self.profile
             words = load_wordlist(next((e.wordlist for e in prof.engines.values() if e.enabled and e.wordlist), None))
             lanes = [l for l in build_lanes(prof, words) if l.name == "clearnet"] or build_lanes(prof, words)
+            import random as _r
             r = Runner(profile=prof, lanes=lanes, wordlist=words, log=self.log, sleep_fn=lambda s: None,
-                       local_hour_fn=lambda: 12.0)
+                       local_hour_fn=lambda: 12.0, queries=self._query_source(words),
+                       domains=DomainPool(_r.Random(), self.feeds))
             try:
                 r.run_once(wait=False)
             except MaxFailuresExceeded as exc:
                 self.log.error("scheduler", str(exc))
+            finally:
+                r.close()
         threading.Thread(target=_go, daemon=True, name="cricket-once").start()
 
     # ── state / diagnostics ─────────────────────────────────────────────────
@@ -249,7 +302,8 @@ class Controller:
             "tor": self.tor_state(), "log_last_id": self.log.last_id(),
             "builtin_onion_seeds": [{"name": n, "url": u} for n, u in BUILTIN_ONION_SEEDS],
             "config_path": self.profile_path, "log_path": str(app_dir() / "cricket.log"),
-            "presets": PRESETS,
+            "presets": PRESETS, "browser": self.browser_info(), "feeds": self.feeds.status(),
+            "feeds_refreshing": self.feeds.refreshing,
         }
 
     def hits(self, after: int = 0) -> list[dict]:
@@ -302,6 +356,15 @@ class Controller:
             if port_open("127.0.0.1", 9150) or port_open("127.0.0.1", 9050):
                 add("Other Tor on this PC", "info",
                     "A system Tor/Tor Browser is running. noisyCricket's own Tor uses different ports and won't touch it.")
+        bi = self.browser_info()
+        add("Real browser", "ok" if bi["active"] else ("warn" if bi["setting"] != "off" else "info"),
+            (f"in use: {bi['detail']}" if bi["active"] else
+             "turned off in Settings" if bi["setting"] == "off" else
+             f"not available — {bi['detail']}. Plain HTTP is used, which looks far less human."))
+        for f in self.feeds.status():
+            st = "ok" if f["count"] and not f["stale"] else ("warn" if f["error"] or not f["count"] else "info")
+            add(f"Source: {f['name']}", st, f"{f['count']:,} items" + (" (stale)" if f["stale"] and f["count"] else "")
+                + (f" — {f['error']}" if f["error"] else ""))
         if self.profile.relay.enabled:
             add("Relay contribution", "info", f"{self.profile.relay.mode} relay '{self.profile.relay.nickname}' (never an exit)")
         add("Data folder", "ok", str(app_dir()))

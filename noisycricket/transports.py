@@ -26,8 +26,11 @@ from .identity import Identity
 @dataclass
 class Target:
     url: str
-    kind: str = "html"            # html | doh
+    kind: str = "html"            # html | doh | dns
     timeout: float = 25.0
+    referer: str | None = None    # set on click-through / link-follow hits
+    note: str | None = None       # e.g. query origin ("trends", "dataset"…), shown in the log
+    role: str = "page"            # search | result | page
 
     @property
     def host(self) -> str:
@@ -40,6 +43,7 @@ class HitResult:
         self.html = html
         self.error = error
         self.latency_ms: float | None = None
+        self.detail: str | None = None       # e.g. "click, 4 scrolls, 38% depth" from the browser
 
     @property
     def ok(self) -> bool:
@@ -100,6 +104,8 @@ class ClearnetTransport(Transport):
         headers = _identity_headers(identity)
         if target.kind == "doh":
             headers["Accept"] = "application/dns-json"
+        if target.referer:
+            headers["Referer"] = target.referer
         try:
             resp = requests.get(
                 target.url,

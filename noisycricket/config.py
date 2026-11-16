@@ -51,6 +51,8 @@ class TransportConfig:
     """
     enabled: bool = True
     proxy: str | None = None          # clearnet: http:// or socks5:// URL
+    browser: str = "auto"             # clearnet: auto | on | off — drive a real browser like a person
+    browser_visible: bool = False     # clearnet: show the browser window instead of running headless
     # --- tor lane only ---
     socks: str = DEFAULT_TOR_SOCKS
     control: str | None = None
@@ -65,6 +67,8 @@ class TransportConfig:
     bridges: list[str] = field(default_factory=list)       # bridge lines for censored networks
 
     def validate(self, name: str) -> None:
+        if self.browser not in ("auto", "on", "off"):
+            raise ConfigError(f"transport '{name}': browser must be auto, on or off")
         if self.identities_per_circuit < 1:
             raise ConfigError(f"transport '{name}': identities_per_circuit >= 1")
 
@@ -88,6 +92,15 @@ class RelayConfig:
 
 
 @dataclass
+class QuerySources:
+    """Where search queries come from (mixed; none dominates). See queries.py."""
+    live: bool = True        # Google Trends, Wikipedia most-read, BBC headlines (refreshed daily)
+    dataset: bool = True     # real past searches: MS MARCO (Bing) + GooAQ (Google autocomplete)
+    builtin: bool = True     # small hand-written topic list (kept a minority on purpose)
+    words: bool = True       # occasional dictionary word ("define …", "… meaning")
+
+
+@dataclass
 class Profile:
     name: str
     realtime_scale: float = 1.0
@@ -103,6 +116,7 @@ class Profile:
     })
     relay: RelayConfig = field(default_factory=RelayConfig)
     daily_max_failures: int = 30
+    queries: "QuerySources" = field(default_factory=lambda: QuerySources())
 
     def active_engines(self, transport: str) -> list[str]:
         """Engines a lane runs. Onion is Tor-only; clearnet engines run on Tor
@@ -145,6 +159,7 @@ def profile_to_dict(profile: Profile) -> dict[str, Any]:
         "transports": {n: asdict(t) for n, t in profile.transports.items()},
         "daily_max_failures": profile.daily_max_failures,
         "contribute": {"relay": asdict(profile.relay)},
+        "queries": asdict(profile.queries),
     }}
 
 
@@ -176,6 +191,10 @@ def apply_overrides(profile: Profile, raw: dict[str, Any]) -> Profile:
     if "relay" in contribute:
         merged = profile.relay.__dict__ | contribute["relay"]
         profile.relay = RelayConfig(**{k: v for k, v in merged.items() if k in RelayConfig.__dataclass_fields__})
+    if p.get("queries"):
+        merged = profile.queries.__dict__ | p["queries"]
+        profile.queries = QuerySources(**{k: bool(v) for k, v in merged.items()
+                                          if k in QuerySources.__dataclass_fields__})
     if "daily_max_failures" in p:
         profile.daily_max_failures = int(p["daily_max_failures"])
     for name, eng in profile.engines.items():

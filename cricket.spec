@@ -9,21 +9,31 @@
 
 import sys
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_all
+
+pw_datas, pw_binaries, pw_hidden = collect_all('playwright')
 
 block_cipher = None
 
 a = Analysis(
     ['cricket_entry.py'],
     pathex=['.'],
-    binaries=[],
+    binaries=pw_binaries,
     datas=[
         ('data', 'data'),               # bridges, example configs
         ('profiles', 'profiles'),       # optional — omit if dir absent
         ('noisycricket/web', 'noisycricket/web'),   # dashboard UI
+    ] + pw_datas + [
     ],
     hiddenimports=[
         'noisycricket.cli',
         'noisycricket.controller',
+        'noisycricket.browser',
+        'noisycricket.domains',
+        'noisycricket.feeds',
+        'noisycricket.humanize',
+        'noisycricket.queries',
+        'noisycricket.safety',
         'noisycricket.events',
         'noisycricket.onion',
         'noisycricket.paths',
@@ -44,7 +54,7 @@ a = Analysis(
         'idna',
         'certifi',
         'socks',
-    ],
+    ] + pw_hidden,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
