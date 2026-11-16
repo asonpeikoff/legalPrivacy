@@ -1,0 +1,106 @@
+name: Build & Release Executables
+
+on:
+  push:
+    tags:
+      - 'v*'          # trigger on any version tag, e.g. v2.2.0
+
+permissions:
+  contents: write   # needed to create releases and upload assets
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: cricket-launch-linux
+            rename: cricket-launch-linux
+          - os: windows-latest
+            artifact: cricket-launch.exe
+            rename: cricket-launch-windows.exe
+          - os: macos-latest
+            artifact: cricket-launch
+            rename: cricket-launch-macos
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install -e .
+          pip install pyinstaller
+
+      - name: Build executable
+        run: pyinstaller cricket.spec --clean --noconfirm
+
+      - name: Rename artifact (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: mv dist/cricket-launch dist/${{ matrix.rename }}
+
+      - name: Rename artifact (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Move-Item dist\cricket-launch.exe dist\${{ matrix.rename }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.rename }}
+          path: dist/${{ matrix.rename }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+
+      - name: Make Linux/macOS binaries executable
+        run: |
+          chmod +x dist/cricket-launch-linux/cricket-launch-linux || true
+          chmod +x dist/cricket-launch-macos/cricket-launch-macos || true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "noisyCricket ${{ github.ref_name }}"
+          body: |
+            ## 🦗 noisyCricket ${{ github.ref_name }}
+
+            ### Download & run — no installation needed
+
+            | Platform | File | How to run |
+            |----------|------|-----------|
+            | Linux    | `cricket-launch-linux`     | `chmod +x cricket-launch-linux && ./cricket-launch-linux` |
+            | Windows  | `cricket-launch-windows.exe` | Double-click or run from Terminal |
+            | macOS    | `cricket-launch-macos`     | `chmod +x cricket-launch-macos && ./cricket-launch-macos` |
+
+            Just download, run, and press **Enter** to start generating noise traffic immediately.
+
+            ### Or install via pip
+            ```bash
+            pip install noisycricket
+            cricket-launch
+            ```
+
+            ### What's new
+            See [CHANGELOG](https://github.com/asonpeikoff/noisyCricket/blob/master/CHANGELOG.md) or commit history.
+          files: |
+            dist/cricket-launch-linux/cricket-launch-linux
+            dist/cricket-launch-windows.exe/cricket-launch-windows.exe
+            dist/cricket-launch-macos/cricket-launch-macos
+          draft: false
+          prerelease: false
