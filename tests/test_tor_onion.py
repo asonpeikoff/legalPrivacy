@@ -25,6 +25,13 @@ def test_builtin_seeds_all_valid_v3():
     assert all(is_onion_url(u) for _, u in BUILTIN_ONION_SEEDS)
 
 
+def test_builtin_seeds_unique_and_lawful_only():
+    urls = [u for _, u in BUILTIN_ONION_SEEDS]
+    assert len(urls) == len(set(urls)) >= 15
+    banned = ("market", "drug", "dread", "exploit", "porn", "pirate", "chan", "recon", "leak")
+    assert not any(b in n.lower() for n, _ in BUILTIN_ONION_SEEDS for b in banned)
+
+
 def test_onion_checksum_rejects_typos_and_old_v2():
     host = GOOD.split("//")[1].rstrip("/")
     assert is_valid_v3_onion(host)
