@@ -4,6 +4,8 @@
     cricket doctor [--profile P]
     cricket relay gen --bandwidth 5Mbit --nickname mycricket [--bridge]
     cricket relay doctor
+    cricket ui [--no-browser] [--port N]        dashboard (same as double-clicking)
+    cricket tor status|start|stop|install|newnym
 """
 
 from __future__ import annotations
@@ -31,7 +33,18 @@ def cmd_run(args: argparse.Namespace) -> int:
     rng = _init_random()
     active_wordlist = next((e.wordlist for e in profile.engines.values() if e.enabled and e.wordlist), None)
     wordlist = load_wordlist(active_wordlist)
-    lanes = build_lanes(profile, wordlist, rng)
+    tor_mgr = None
+    gate = endpoint = None
+    tor_cfg = profile.transports.get("tor")
+    if tor_cfg and tor_cfg.enabled and not args.dry_run:
+        tor_mgr = _bring_up_tor(profile, verbose=args.verbose)
+        if tor_mgr is not None:
+            gate = lambda: tor_mgr.ready                                     # noqa: E731
+            endpoint = lambda: (tor_mgr.socks_addr, tor_mgr.control_addr)     # noqa: E731
+    lanes = build_lanes(profile, wordlist, rng, tor_gate=gate, tor_endpoint=endpoint)
+    for lane in lanes:
+        if lane.name == "tor" and tor_mgr is not None:
+            lane.transport.cookie_path = tor_mgr.cookie_path
     if not lanes:
         print("no active lanes: enable a transport in the profile", file=sys.stderr)
         return 2
@@ -65,6 +78,74 @@ def cmd_run(args: argparse.Namespace) -> int:
         for eng, spent in engines.items():
             print(f"{lane_name}/{eng}: {spent} hits")
     return 0
+
+
+def _bring_up_tor(profile, verbose: bool = False):
+    """Start (and if needed install) Tor for CLI runs; wait for bootstrap. None on failure."""
+    from .events import EventLog
+    from .tormanager import TorManager
+    cfg = profile.transports["tor"]
+    log = EventLog()
+    if verbose:
+        log.subscribe(lambda e: print(f"  [{e.source}] {e.message}") if e.source == "tor" else None)
+    tm = TorManager(log, mode="managed" if cfg.manage else "external", socks=cfg.socks,
+                    control=cfg.control, control_password=cfg.control_password,
+                    bridges=cfg.bridges, auto_install=cfg.auto_install)
+    tm.start()
+    deadline = time.time() + 300
+    last = -1
+    while time.time() < deadline and tm.state not in ("ready", "error"):
+        if tm.bootstrap_pct != last:
+            last = tm.bootstrap_pct
+            print(f"  Tor: {tm.state} {last}%", flush=True)
+        time.sleep(1)
+    if tm.state != "ready":
+        print(f"  Tor unavailable ({tm.error or 'timed out'}); continuing without the Tor lane.", file=sys.stderr)
+        return None
+    print(f"  Tor ready on {tm.socks_addr}")
+    return tm
+
+
+def cmd_ui(args: argparse.Namespace) -> int:
+    from .webui import run_ui
+    return run_ui(args.profile, args.port, False if args.no_browser else None)
+
+
+def cmd_tor(args: argparse.Namespace) -> int:
+    from .events import EventLog
+    from .tormanager import TorManager, find_tor_binary
+    profile = load_profile(args.profile)
+    cfg = profile.transports["tor"]
+    log = EventLog()
+    log.subscribe(lambda e: print(f"  [{e.level}] {e.message}"))
+    tm = TorManager(log, mode="managed" if cfg.manage else "external", socks=cfg.socks,
+                    control=cfg.control, control_password=cfg.control_password,
+                    bridges=cfg.bridges, auto_install=cfg.auto_install)
+    if args.tor_command == "status":
+        print(f"tor program : {find_tor_binary() or 'not installed'}")
+        print(f"enabled     : {cfg.enabled}  (managed={cfg.manage}, onion={cfg.onion}, clearnet_via_tor={cfg.clearnet_via_tor})")
+        return 0
+    if args.tor_command == "install":
+        tm._install()
+        return 0
+    if args.tor_command == "start":
+        tm.start()
+        try:
+            while tm.state not in ("ready", "error"):
+                time.sleep(1)
+            if tm.state == "ready":
+                print(f"Tor ready: SOCKS {tm.socks_addr}  control {tm.control_addr}. Ctrl+C to stop.")
+                while True:
+                    time.sleep(3600)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            tm.stop()
+        return 0 if tm.error is None else 1
+    if args.tor_command == "newnym":
+        return 0 if TorManager(log, mode="external", socks=cfg.socks, control=cfg.control,
+                               control_password=cfg.control_password).new_identity() else 1
+    return 2
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
@@ -106,10 +187,15 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         if tor_status["socks_ok"]:
             print(f"  [+] Tor SOCKS daemon ({tor_status['socks_host']}:{tor_status['socks_port']}): CONNECTED")
         else:
-            warnings.append(f"Tor SOCKS daemon offline at {tor_status['socks_host']}:{tor_status['socks_port']}")
-            print(f"  [-] Tor SOCKS daemon ({tor_status['socks_host']}:{tor_status['socks_port']}): OFFLINE")
-            print("      Action: Start Tor ('sudo systemctl start tor') or run Tor with bridges ('cricket relay bridges')")
+            if tor_cfg.manage:
+                print("  [i] Tor: not running yet — noisyCricket starts (and installs, if needed) its own private Tor automatically.")
+            else:
+                warnings.append(f"Tor SOCKS daemon offline at {tor_status['socks_host']}:{tor_status['socks_port']}")
+                print(f"  [-] Tor SOCKS daemon ({tor_status['socks_host']}:{tor_status['socks_port']}): OFFLINE")
+                print("      Action: start your Tor, or set transports.tor.manage: true to let noisyCricket run its own")
 
+        print(f"  [+] Tor modes: onion={'on' if tor_cfg.onion else 'off'}, "
+              f"clearnet-via-tor={'ON (not recommended)' if tor_cfg.clearnet_via_tor else 'off'}")
         if tor_cfg.control:
             if tor_status["control_ok"]:
                 ver = f" (Tor {tor_status['version']})" if tor_status.get("version") else ""
@@ -199,6 +285,17 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("--reconnect-tor", action="store_true",
                        help="signal NEWNYM to rotate Tor circuits before running")
     p_run.set_defaults(func=cmd_run)
+
+    p_ui = sub.add_parser("ui", help="open the dashboard (same as double-clicking cricket-launch)")
+    p_ui.add_argument("--profile", help="profile YAML path")
+    p_ui.add_argument("--port", type=int)
+    p_ui.add_argument("--no-browser", action="store_true")
+    p_ui.set_defaults(func=cmd_ui)
+
+    p_tor = sub.add_parser("tor", help="manage the app's private Tor")
+    p_tor.add_argument("tor_command", choices=["status", "start", "install", "newnym"])
+    p_tor.add_argument("--profile", help="profile YAML path")
+    p_tor.set_defaults(func=cmd_tor)
 
     p_doc = sub.add_parser("doctor", help="validate a profile and probe transport health")
     p_doc.add_argument("--profile", help="profile YAML path")

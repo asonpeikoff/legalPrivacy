@@ -37,6 +37,7 @@ jobs:
         run: |
           pip install -e .
           pip install pyinstaller
+          python run_tests.py
 
       - name: Build executable
         run: pyinstaller cricket.spec --clean --noconfirm
@@ -88,7 +89,7 @@ jobs:
             | Windows  | `cricket-launch-windows.exe` | Double-click or run from Terminal |
             | macOS    | `cricket-launch-macos`     | `chmod +x cricket-launch-macos && ./cricket-launch-macos` |
 
-            Just download, run, and press **Enter** to start generating noise traffic immediately.
+            Double-click it: your browser opens the dashboard, you answer 3 quick questions, and it starts. Tor (optional) is installed and run for you automatically if you choose onion mode.
 
             ### Or install via pip
             ```bash

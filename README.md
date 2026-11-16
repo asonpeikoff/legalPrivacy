@@ -1,10 +1,61 @@
-# noisyCricket v2
+# noisyCricket v2.3
 
 Conducts random searches, crawls, and DNS lookups so that mass traffic and
 bulk analysis of any one person's browsing is less useful. Fully automated,
-with **separate, appropriate logic for Tor and clearnet traffic** and an
-optional **community contribution** mode that runs a Tor *middle/bridge*
-relay — never an exit.
+with **separate, appropriate logic for Tor and clearnet traffic**, an
+**optional Tor/onion mode**, and an optional **community contribution** mode
+that runs a Tor *middle/bridge* relay — never an exit.
+
+## Quick start — double-click
+
+| You have | Do this |
+|---|---|
+| A release download | Double-click `cricket-launch-windows.exe` / `cricket-launch-macos` / `cricket-launch-linux` |
+| The source (Python 3.10+) | Double-click `Start-noisyCricket.bat` (Windows) or `start-noisycricket.command` (macOS/Linux) — first run makes a private venv |
+| pip | `pip install .` then `cricket-launch` (or `python -m noisycricket`) |
+
+Your browser opens the **dashboard**. First run asks 3 questions, then starts:
+
+1. How much noise? (Light / Normal / Heavy)
+2. Add Tor darknet (.onion) noise? (default: No)
+3. Start automatically whenever you open it? (Yes / No)
+
+Nothing else to configure. Everything it does is visible in the dashboard.
+
+## Tor is optional — two independent switches
+
+| Mode | Default | What it does |
+|---|---|---|
+| **Tor off** | ✅ | Clearnet noise only. No Tor installed or started. |
+| **🧅 Onion sites** | on when Tor is enabled | The `onion` engine visits real v3 `.onion` addresses (official mirrors of public sites, plus links discovered on them) through Tor. Never touches the clearnet. Uses Tor Browser's uniform fingerprint, not a per-identity UA, so it blends in. |
+| **Clearnet through Tor** | **off — not recommended** | Also routes search/crawl/DoH noise via Tor exits. Burdens exit relays and is a distinctive pattern, so it's a separate, explicit opt-in (Tor tab, with a confirmation). |
+
+**Tor is fully automatic** when enabled in managed mode (default): the app finds a
+`tor` already on the machine or downloads the official *Tor Expert Bundle* from
+`dist.torproject.org`, verifies its SHA-256 against the sums file published in the
+same release directory, and runs a **private** Tor on its own ports and data
+folder (`SOCKS 19050`, control `19051` by default) — your system Tor / Tor Browser is never touched.
+Prefer your own Tor? Untick "Let noisyCricket manage Tor" and give its address.
+
+Every `.onion` seed is validated offline with the v3 checksum (sha3-256) before use, so a
+typo can never be dispatched; add your own seeds on the Tor tab.
+
+## Dashboard tabs
+
+| Tab | Shows / controls |
+|---|---|
+| **Dashboard** | hits, failures, uptime, hits-per-minute chart, per-lane per-engine budgets, one-click test hit |
+| **Activity** | every request: time, lane, engine, URL, status, latency — filter by lane/engine/errors/text |
+| **Live Log** | one merged log (app, scheduler, clearnet, onion, **Tor's own output**), level + source filters, search, follow, download |
+| **🧅 Tor** | status + bootstrap progress, version/ports/PID/traffic, **Start / Stop / Restart / New identity / Install**, live circuits table (onion-service circuits marked `HS_CLIENT_*`), Tor-only log, mode switches, onion seeds, bridges |
+| **Settings** | per-engine budgets & presets, speed, failure cap, proxy, autostart |
+| **Health** | plain-language self-checks (libs, internet, Tor program/status, seeds, ports) |
+
+The dashboard listens only on `127.0.0.1`, requires a per-launch token, and rejects
+foreign `Host`/`Origin` headers. Config lives in `~/.noisycricket/config.yaml`
+(`%APPDATA%\noisyCricket` on Windows); override with `CRICKET_HOME`.
+
+## Command line (optional)
 
 ```
 cricket run --profile profiles/example.yaml [--verbose] [--reconnect-tor] [--once] [--dry-run]
@@ -12,6 +63,8 @@ cricket doctor --profile profiles/example.yaml
 cricket relay bridges
 cricket relay gen-client --type snowflake [--out torrc.client]
 cricket relay gen --bandwidth 5Mbit --nickname mycricket [--bridge]
+cricket ui [--no-browser] [--port N]      # the dashboard
+cricket tor status|start|install|newnym   # manage the app's private Tor
 ```
 
 ## Architecture at a glance
@@ -145,7 +198,8 @@ seconds between hits; lognormal body, burst-suppressed at min_gap
 
 ## Tor vs clearnet — separate logic on purpose
 
-- **tor lane**: one local SOCKS daemon; per-identity circuit isolation
+- **tor lane** (only exists when Tor is enabled; carries `onion`, and clearnet
+  engines only if you opted in): one local SOCKS daemon; per-identity circuit isolation
   (SOCKS5 user:pass or `NEWNYM` via control port); remote DNS resolution
   only, your local resolver never sees a hostname.
 - **clearnet lane**: direct or a proxy pool; identity pinned to a proxy +
@@ -153,7 +207,8 @@ seconds between hits; lognormal body, burst-suppressed at min_gap
 
 ## Tor visibility, diagnostics & resilience
 
-noisyCricket v2 provides full visibility into local Tor daemon health:
+noisyCricket provides full visibility into Tor health — in the dashboard's Tor tab
+(live) and on the CLI:
 
 * **Live Health Check (`cricket doctor`)**: Probes the local Tor SOCKS daemon
   (`127.0.0.1:9050`) and Control port (`127.0.0.1:9051`), reporting bootstrap

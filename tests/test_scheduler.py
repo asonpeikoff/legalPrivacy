@@ -33,7 +33,7 @@ def make_profile(tor=True, clearnet=True, seeds=None, search=True) -> Profile:
     }
     p.transports = {
         "clearnet": TransportConfig(enabled=clearnet),
-        "tor": TransportConfig(enabled=tor, control=None),
+        "tor": TransportConfig(enabled=tor, control=None, clearnet_via_tor=True, onion=False),
     }
     return p
 
