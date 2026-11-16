@@ -2,7 +2,11 @@
 
 import pytest
 
+from pathlib import Path
+
 from noisycricket.config import ConfigError, load_profile
+
+PROFILE = str(Path(__file__).resolve().parents[1] / "profiles" / "example.yaml")
 from noisycricket.identity import headers_for, make_identity, UA_POOL
 from random import Random
 
@@ -27,7 +31,7 @@ def test_identities_diverge():
 
 
 def test_search_profile_parses():
-    profile = load_profile("profiles/example.yaml")
+    profile = load_profile(PROFILE)
     assert profile.name == "example"
     assert profile.transports["tor"].socks == "127.0.0.1:9050"
     assert profile.engines["search"].budget_per_day == 120
@@ -42,7 +46,7 @@ def test_missing_profile_is_error():
 
 
 def test_relay_defaults_never_exit():
-    p = load_profile("profiles/example.yaml")
+    p = load_profile(PROFILE)
     assert p.relay.enabled is False
     assert p.relay.mode == "middle"
 
