@@ -76,7 +76,7 @@ class Profile:
     realtime_scale: float = 1.0
     engines: dict[str, EngineConfig] = field(default_factory=lambda: {
         "search": EngineConfig(budget_per_day=120),
-        "crawl": EngineConfig(budget_per_day=40, seeds=[]),
+        "crawl": EngineConfig(budget_per_day=40),
         "dns": EngineConfig(budget_per_day=200),
     })
     transports: dict[str, TransportConfig] = field(default_factory=lambda: {

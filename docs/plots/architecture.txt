@@ -1,0 +1,35 @@
+noisyCricket v2 - one scheduler, two transports, three engines
+
+              ----------------------------
+              |        cricket CLI       |
+              |   run / doctor / relay   |
+              ----------------------------
+                        |
+                ------------------
+                |    Scheduler   |   budgets (360/day)
+                |    (Runner)    |-------------.
+                ------------------             |
+                 |            |            diurnal curve
+        identity lifetime  identity lifetime  (peaks 20-21h)
+        (pinned per proxy) (pinned per circuit)
+                 |            |
+        ----------------   ----------------
+        |   Identity   |   |   Identity   |    pinned: UA + low-entropy
+        | (fingerprint)|   | (fingerprint)|    client hints + language
+        ----------------   ----------------    + pace + query taste
+                 |            |
+     lane: CLEARNET      lane: TOR
+     ----------------    ------------------
+     |  Clearnet     |    |  TorTransport |   SOCKS5h user:pass per
+     |  Transport    |    |               |--- identity => 1 circuit
+     |  direct /     |    |  127.0.0.1:9050   remote DNS only
+     |  proxy pool   |    |  control:9051 |   (NEWNYM on rotation)
+     ----------------    ------------------
+         |         |          |
+         v         v          v
+    _______________________________________
+   |               ENGINES                 |    <- emit neutral Targets
+   |   search         crawl        dns     |       only; no transport
+   |   queries        same-site     udp    |       knowledge here
+   |   (7 endpoints)  link walk     / DoH  |
+   |_______________________________________|

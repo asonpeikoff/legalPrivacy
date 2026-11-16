@@ -1,6 +1,17 @@
 """Identity and config tests (offline, seeded)."""
 
-import pytest
+try:
+    import pytest
+except ImportError:
+    class _RaisesContext:
+        def __init__(self, exc): self.exc = exc
+        def __enter__(self): return self
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            if exc_type is None: raise AssertionError(f"DID NOT RAISE {self.exc}")
+            return issubclass(exc_type, self.exc)
+    import types
+    pytest = types.ModuleType("pytest")
+    pytest.raises = _RaisesContext
 
 from pathlib import Path
 
@@ -110,3 +121,27 @@ def test_fetch_metadata_headers_present():
 def test_gpc_is_pinned_per_identity():
     ident = make_identity(Random(21), 9, WORDS)
     assert headers_for(ident).get("Sec-GPC") == headers_for(ident).get("Sec-GPC")
+
+
+def test_profile_merges_extra_yaml_keys_gracefully(tmp_path=None):
+    import tempfile, os
+    yaml_content = """
+profile:
+  name: extra-keys
+  engines:
+    search:
+      budget_per_day: 80
+      custom_unsupported_key: "hello"
+  transports:
+    clearnet:
+      extra_junk: 123
+"""
+    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as fh:
+        fh.write(yaml_content)
+        path = fh.name
+    try:
+        p = load_profile(path)
+        assert p.name == "extra-keys"
+        assert p.engines["search"].budget_per_day == 80
+    finally:
+        os.remove(path)

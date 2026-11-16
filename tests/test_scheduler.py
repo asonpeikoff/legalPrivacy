@@ -1,6 +1,17 @@
 """Scheduler + transport tests: offline, seeded, probe_fn injected (no network)."""
 
-import pytest
+try:
+    import pytest
+except ImportError:
+    class _RaisesContext:
+        def __init__(self, exc): self.exc = exc
+        def __enter__(self): return self
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            if exc_type is None: raise AssertionError(f"DID NOT RAISE {self.exc}")
+            return issubclass(exc_type, self.exc)
+    import types
+    pytest = types.ModuleType("pytest")
+    pytest.raises = _RaisesContext
 
 from noisycricket.config import (EngineConfig, Profile, TransportConfig,
                                  load_profile)
@@ -117,3 +128,79 @@ def test_failure_backs_off_and_dims_transport():
 def test_build_lanes_respects_disabled_transports():
     lanes = build_lanes(make_profile(clearnet=False, tor=False), WORDS)
     assert lanes == []
+
+
+def test_runner_clock_defaults_to_callable():
+    p = make_profile(clearnet=True, tor=False)
+    runner = Runner(profile=p, lanes=build_lanes(p, WORDS), wordlist=WORDS,
+                    clock=None, sleep_fn=lambda s: None,
+                    probe_fn=lambda l, i, t: HitResult(200, ""))
+    assert callable(runner.clock)
+    # Must not throw TypeError: 'NoneType' object is not callable
+    runner.run_once(wait=False)
+    assert runner.lanes[0].budgets["search"].spent == 1 or \
+           runner.lanes[0].budgets["crawl"].spent == 1 or \
+           runner.lanes[0].budgets["dns"].spent == 1
+
+
+def test_single_transport_gets_full_budget():
+    p = make_profile(clearnet=True, tor=False)
+    lanes = build_lanes(p, WORDS)
+    assert len(lanes) == 1
+    # search budget was 10; with 1 transport enabled it should receive 10, not 5
+    assert lanes[0].budgets["search"].per_day == 10
+
+
+def test_consecutive_failures_rotate_identity():
+    p = make_profile(clearnet=True, tor=False)
+    runner = Runner(profile=p, lanes=build_lanes(p, WORDS), wordlist=WORDS,
+                    clock=lambda: 0.0, sleep_fn=lambda s: None,
+                    probe_fn=lambda l, i, t: HitResult(403, ""))
+    lane = runner.lanes[0]
+    runner.run_once(wait=False)
+    id1 = lane.identity.id
+    runner.run_once(wait=False)
+    assert lane.identity.id == id1
+    runner.run_once(wait=False)  # 3rd failure triggers reset: lane.identity is set to None
+    assert lane.identity is None
+    assert lane.consecutive_failures == 0
+    runner.run_once(wait=False)  # 4th run creates new identity
+    assert lane.identity is not None and lane.identity.id != id1
+
+
+def test_crawl_handles_complex_html():
+    from noisycricket.engines import CrawlTargetFactory
+    rng = __import__("random").Random(1)
+    fac = CrawlTargetFactory(rng=rng, seeds=["https://example.com/start"])
+    html = """
+    <html>
+      <body>
+        <A HREF='/page1'>Upper case tag</A>
+        <a class="nav-link" href="/page2">Attributes before href</a>
+        <a href='https://example.com/page3'>Single quotes</a>
+        <a href="https://external.example.com/leak">External</a>
+      </body>
+    </html>
+    """
+    links = set()
+    for _ in range(30):
+        t = fac.next_from(html, "https://example.com/start")
+        if t:
+            links.add(t.url)
+    assert "https://example.com/page1" in links
+    assert "https://example.com/page2" in links
+    assert "https://example.com/page3" in links
+    assert not any("external.example.com" in u for u in links)
+
+
+def test_dns_noise_sanitizes_words():
+    from noisycricket.engines import DnsNoise
+    rng = __import__("random").Random(2)
+    bad_words = ["'sblood", "&c", "'em", "'midst", "validword"]
+    noise = DnsNoise(rng, bad_words)
+    assert "sblood" in noise.words or "validword" in noise.words
+    assert "&c" not in noise.words and "'em" not in noise.words
+    _, domain, _ = noise.make_query()
+    # Label before TLD should be purely alphanumeric
+    label = domain.split(".")[0]
+    assert label.isalnum()

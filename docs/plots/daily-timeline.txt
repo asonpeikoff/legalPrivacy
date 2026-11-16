@@ -1,0 +1,27 @@
+simulated day: one profile, both lanes, 360 hits/day total budget
+each bar = expected hits that local hour ('#'+clearnet, 'c'+tor lane)
+
+00:00 |#################ccccccccccccccccc                        |  15.4
+01:00 |#############ccccccccccccc                                |  11.5
+02:00 |#########ccccccccc                                        |   8.6
+03:00 |#######ccccccc                                            |   6.8
+04:00 |#######ccccccc                                            |   6.0
+05:00 |######cccccc                                              |   5.8
+06:00 |#######ccccccc                                            |   6.1
+07:00 |########cccccccc                                          |   6.9
+08:00 |#########ccccccccc                                        |   8.1
+09:00 |##########cccccccccc                                      |   9.5
+10:00 |############cccccccccccc                                  |  11.0
+11:00 |##############cccccccccccccc                              |  12.6
+12:00 |################cccccccccccccccc                          |  14.2
+13:00 |#################ccccccccccccccccc                        |  15.6
+14:00 |###################ccccccccccccccccccc                    |  16.9
+15:00 |####################cccccccccccccccccccc                  |  18.2
+16:00 |#####################ccccccccccccccccccccc                |  19.6
+17:00 |#######################ccccccccccccccccccccccc            |  21.3
+18:00 |##########################cccccccccccccccccccccccccc      |  23.5
+19:00 |############################cccccccccccccccccccccccccccc  |  25.6
+20:00 |#############################ccccccccccccccccccccccccccccc|  26.4
+21:00 |#############################ccccccccccccccccccccccccccccc|  26.4
+22:00 |##########################cccccccccccccccccccccccccc      |  24.0
+23:00 |######################cccccccccccccccccccccc              |  19.9

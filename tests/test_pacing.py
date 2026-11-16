@@ -15,6 +15,16 @@ def test_diurnal_peaks_late_evening():
     assert diurnal_factor(21.0) > diurnal_factor(4.5)
 
 
+def test_diurnal_curve_realistic_daytime_activity():
+    # Daytime (e.g. 12:00-16:00) must have active browsing well above deep night trough (04:00-05:00)
+    trough = diurnal_factor(4.5)
+    noon = diurnal_factor(12.0)
+    afternoon = diurnal_factor(16.0)
+    assert noon > trough + 0.3
+    assert afternoon > noon
+    assert afternoon >= 1.1
+
+
 def test_min_gap_suppresses_bursts():
     p = Pacer(Random(7), mu=1.0, sigma=1.5, min_gap=2.0)
     for _ in range(50):

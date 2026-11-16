@@ -159,6 +159,7 @@ class Runner:
             if lane.consecutive_failures >= 3:
                 lane.identity = None
                 lane.hits_by_identity = 0
+                lane.consecutive_failures = 0
         total_failures = sum(b.failures for l in self.lanes for b in l.budgets.values())
         if total_failures > self.profile.daily_max_failures:
             raise MaxFailuresExceeded("daily_max_failures exceeded — stopping run")
