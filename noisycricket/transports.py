@@ -43,6 +43,7 @@ class HitResult:
         self.html = html
         self.error = error
         self.latency_ms: float | None = None
+        self.detail: str | None = None       # e.g. "click, 4 scrolls, 38% depth" from the browser
 
     @property
     def ok(self) -> bool:
