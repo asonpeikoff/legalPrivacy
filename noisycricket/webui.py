@@ -219,6 +219,7 @@ def run_ui(profile_path: str | None = None, port: int | None = None, open_browse
     srv = UIServer(ctl, port or int(ctl.app.get("port", 8765)))
     print_fn(f"\n  🦗 noisyCricket dashboard: {srv.url}\n  (keep this window open; use Quit in the page, or Ctrl+C, to stop)\n")
     ctl.log.info("app", f"Dashboard listening on 127.0.0.1:{srv.port}")
+    ctl._start_feed_timer()            # fetch live query/domain sources in the background right away
     if ctl.app.get("autostart") and not ctl.first_run:
         try:
             ctl.start()
