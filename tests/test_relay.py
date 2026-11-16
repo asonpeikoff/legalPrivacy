@@ -1,6 +1,17 @@
 """Unit tests for the community relay torrc generator (offline, no network)."""
 
-import pytest
+try:
+    import pytest
+except ImportError:
+    class _RaisesContext:
+        def __init__(self, exc): self.exc = exc
+        def __enter__(self): return self
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            if exc_type is None: raise AssertionError(f"DID NOT RAISE {self.exc}")
+            return issubclass(exc_type, self.exc)
+    import types
+    pytest = types.ModuleType("pytest")
+    pytest.raises = _RaisesContext
 
 from noisycricket.relay import (RelayConfigError, RelaySpec, generate_torrc,
                                 warn_if_exit_requested)
@@ -12,6 +23,8 @@ def test_middle_torrc_rejects_all_exits():
     assert "ExitPolicy reject *:*" in torrc
     assert "BridgeRelay 0" in torrc
     assert "ORPort 9001" in torrc
+    assert "DirPort 9030" in torrc
+    assert "SocksPort 0" in torrc
     assert "RelayBandwidthRate 5Mbit" in torrc
 
 
@@ -20,6 +33,8 @@ def test_bridge_torrc():
     torrc = generate_torrc(spec)
     assert "BridgeRelay 1" in torrc
     assert "PublishServerDescriptor bridge" in torrc
+    assert "DirPort 0" in torrc
+    assert "SocksPort 0" in torrc
     assert torrc.endswith("ExitPolicy reject6 *:*\n")
 
 
@@ -36,6 +51,11 @@ def test_or_port_9050_is_refused():
 def test_nonalphanumeric_nickname_refused():
     with pytest.raises(RelayConfigError):
         generate_torrc(RelaySpec(nickname="bad-nick"))
+
+
+def test_or_port_and_dir_port_collision_refused():
+    with pytest.raises(RelayConfigError):
+        generate_torrc(RelaySpec(or_port=9001, dir_port=9001))
 
 
 def test_exit_scanner_defense():

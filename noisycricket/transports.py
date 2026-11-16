@@ -66,6 +66,9 @@ class ClearnetTransport(Transport):
 
     def hit(self, identity: Identity, target: Target) -> HitResult:
         proxies = {"http": self.proxy, "https": self.proxy} if self.proxy else None
+        headers = _identity_headers(identity)
+        if target.kind == "doh":
+            headers["Accept"] = "application/dns-json"
         try:
             resp = requests.get(
                 target.url,
@@ -73,7 +76,7 @@ class ClearnetTransport(Transport):
                 allow_redirects=True,
                 proxies=proxies,
                 # Identity headers injected here; requests also sets Host/Content-Length.
-                headers=_identity_headers(identity),
+                headers=headers,
             )
             return HitResult(resp.status_code, resp.text[:2_000_000])
         except requests.RequestException as exc:
@@ -105,13 +108,16 @@ class TorTransport(Transport):
         return {"http": uri, "https": uri}
 
     def hit(self, identity: Identity, target: Target) -> HitResult:
+        headers = _identity_headers(identity)
+        if target.kind == "doh":
+            headers["Accept"] = "application/dns-json"
         try:
             resp = requests.get(
                 target.url,
                 timeout=target.timeout,
                 allow_redirects=True,
                 proxies=self._socks_proxies(identity),
-                headers=_identity_headers(identity),
+                headers=headers,
             )
             return HitResult(resp.status_code, resp.text[:2_000_000])
         except requests.RequestException as exc:
@@ -126,10 +132,31 @@ class TorTransport(Transport):
             with socket.create_connection((host, int(port)), timeout=5) as sock:
                 sf = sock.makefile("rw", newline="\r\n")
                 sf.write("AUTHENTICATE\r\n"); sf.flush()
-                if "250" not in sf.readline():
-                    sf.write(f'AUTHENTICATE "{self.control_password}"\r\n'); sf.flush()
-                    if "250" not in sf.readline():
-                        return False
+                resp = sf.readline()
+                if "250" not in resp:
+                    if self.control_password:
+                        sf.write(f'AUTHENTICATE "{self.control_password}"\r\n'); sf.flush()
+                        if "250" not in sf.readline():
+                            return False
+                    else:
+                        cookie_path = os.environ.get("CRICKET_TOR_CONTROL_COOKIE")
+                        if not cookie_path:
+                            for default_cookie in ("/var/run/tor/control.authcookie",
+                                                   os.path.expanduser("~/.tor/control_authcookie")):
+                                if os.path.exists(default_cookie):
+                                    cookie_path = default_cookie
+                                    break
+                        if cookie_path:
+                            try:
+                                with open(cookie_path, "rb") as cf:
+                                    cookie_hex = binascii.hexlify(cf.read()).decode()
+                                sf.write(f"AUTHENTICATE {cookie_hex}\r\n"); sf.flush()
+                                if "250" not in sf.readline():
+                                    return False
+                            except OSError:
+                                return False
+                        else:
+                            return False
                 sf.write("signal NEWNYM\r\n"); sf.flush()
                 ok = "250" in sf.readline()
                 sf.write("QUIT\r\n"); sf.flush()

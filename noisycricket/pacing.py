@@ -41,17 +41,22 @@ class Pacer:
     def on_failure(self, attempt: int) -> float:
         """Exponential backoff with jitter after a 403/429/timeout."""
         self._backoff = min(2 ** attempt, 600) * (0.8 + 0.4 * self.rng.random())
-        return self._backoff * self.realtime_scale
+        return self._backoff
 
 
 def diurnal_factor(hour: float) -> float:
-    """Local-hour activity multiplier: S-curve peaking 19:00–23:00, trough 03:00–06:00.
+    """Local-hour activity multiplier: smooth diurnal curve peaking 19:00–22:00, trough 04:00–05:00.
 
     Returns a factor in [0.35, 1.6]; divide drawn delays by it.
     """
-    # cosine bump centred at 21:00, width ~6h, plus a floor
-    phase = 2 * math.pi * ((hour - 21.0) % 24) / 24.0
-    return 0.35 + 1.25 * max(0.0, math.cos(phase)) ** 2
+    h = hour % 24.0
+    phase = 2 * math.pi * ((h - 4.5) % 24.0) / 24.0
+    wave = 0.5 - 0.5 * math.cos(phase)
+    d_eve = min((h - 21.0) % 24.0, (21.0 - h) % 24.0)
+    eve_boost = math.exp(-0.5 * (d_eve / 2.5) ** 2)
+    combined = 0.5 * wave + 0.5 * eve_boost
+    norm = max(0.0, min(1.0, (combined - 0.005) / 0.84))
+    return 0.35 + 1.25 * norm
 
 
 @dataclass

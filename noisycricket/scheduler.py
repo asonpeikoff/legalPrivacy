@@ -12,6 +12,10 @@ from .pacing import Budget, Pacer
 from .transports import ClearnetTransport, HitResult, Target, TorTransport, Transport
 
 
+class MaxFailuresExceeded(RuntimeError):
+    """Raised when total failures exceed daily_max_failures."""
+
+
 @dataclass
 class Lane:
     """One transport + its budget state and currently pinned identity."""
@@ -22,6 +26,7 @@ class Lane:
     identity: Identity | None = None
     pacer: Pacer | None = None
     hits_by_identity: int = 0
+    consecutive_failures: int = 0
     crawl_factory: object | None = None
     crawl_next: Target | None = None
     crawl_depth: int = 0
@@ -32,24 +37,25 @@ def build_lanes(profile: Profile, wordlist: list[str],
     rng = rng or random.Random()
     lanes = []
     tr = profile.transports
+    active_count = sum(1 for t in (tr.get("clearnet"), tr.get("tor")) if t and t.enabled) or 1
 
-    if tr["clearnet"].enabled:
+    if tr.get("clearnet") and tr["clearnet"].enabled:
         lanes.append(Lane(
             name="clearnet",
             transport=ClearnetTransport(proxy=tr["clearnet"].proxy),
             engines=profile.active_engines("clearnet"),
-            budgets={name: Budget(per_day=profile.engines[name].budget_per_day // 2)
+            budgets={name: Budget(per_day=max(1, profile.engines[name].budget_per_day // active_count))
                      for name in profile.active_engines("clearnet")},
         ))
 
-    if tr["tor"].enabled:
+    if tr.get("tor") and tr["tor"].enabled:
         lanes.append(Lane(
             name="tor",
             transport=TorTransport(socks=tr["tor"].socks, control=tr["tor"].control,
                                    identities_per_circuit=tr["tor"].identities_per_circuit,
                                    control_password=tr["tor"].control_password),
             engines=profile.active_engines("tor"),
-            budgets={name: Budget(per_day=profile.engines[name].budget_per_day // 2)
+            budgets={name: Budget(per_day=max(1, profile.engines[name].budget_per_day // active_count))
                      for name in profile.active_engines("tor")},
         ))
     return [lane for lane in lanes if lane.engines]
@@ -69,6 +75,8 @@ class Runner:
     def __post_init__(self) -> None:
         self.rng = random.Random()
         self._ident_counter = 0
+        if self.clock is None:
+            self.clock = time.time
 
     def _probe(self, lane: Lane, identity: Identity, target: Target) -> HitResult:
         if self.probe_fn:
@@ -115,7 +123,7 @@ class Runner:
                 renew()
         return lane.identity, lane.pacer
 
-    def run_once(self) -> bool:
+    def run_once(self, wait: bool = True) -> bool:
         """Run one scheduled job if any lane wants it. Returns True if a hit was made."""
         hour = self._local_hour()
         options: list[tuple[Lane, str]] = [
@@ -125,7 +133,12 @@ class Runner:
         ]
         if not options:
             return False
-        weights = [lane.budgets[eng_name].remaining for lane, eng_name in options]
+        weights = []
+        for lane, eng_name in options:
+            w = float(lane.budgets[eng_name].remaining)
+            if getattr(lane.transport, "dimmed", False):
+                w *= 0.1  # down-weight dimmed transport so traffic prefers healthy lanes
+            weights.append(max(w, 0.01))
         lane, eng_name = self.rng.choices(options, weights=weights)[0]
         identity, pacer = self._identity_pacer_for(lane)
         target = self._make_target(lane, eng_name, identity)
@@ -134,16 +147,25 @@ class Runner:
         if result.ok:
             budget.record_hit(self.clock())
             lane.hits_by_identity += 1
+            lane.consecutive_failures = 0
+            if getattr(lane.transport, "dimmed", False):
+                lane.transport.dimmed = False
             self._settle(lane, eng_name, target, result)
         else:
             budget.record_failure(self.clock())
+            lane.consecutive_failures += 1
             pacer.on_failure(max(1, budget.failures))
+            # Rotate identity & request new circuit if failing repeatedly
+            if lane.consecutive_failures >= 3:
+                lane.identity = None
+                lane.hits_by_identity = 0
         total_failures = sum(b.failures for l in self.lanes for b in l.budgets.values())
         if total_failures > self.profile.daily_max_failures:
-            raise RuntimeError("daily_max_failures exceeded — stopping run")
+            raise MaxFailuresExceeded("daily_max_failures exceeded — stopping run")
         if result.dim_transport and hasattr(lane.transport, "dimmed"):
             lane.transport.dimmed = True
-        pacer.wait(hour)
+        if wait:
+            pacer.wait(hour)
         return True
 
     def _settle(self, lane: Lane, eng_name: str, target: Target, result: HitResult) -> None:

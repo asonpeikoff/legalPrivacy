@@ -11,6 +11,10 @@ import yaml
 DEFAULT_TOR_SOCKS = "127.0.0.1:9050"
 DEFAULT_TOR_CONTROL = "127.0.0.1:9051"
 DEFAULT_WORDLIST = "data/wordlists/words.txt"
+DEFAULT_SEEDS = [
+    "https://en.wikipedia.org/wiki/Special:Random",
+    "https://en.wikipedia.org/wiki/Randomness",
+]
 
 
 class ConfigError(ValueError):
@@ -23,13 +27,15 @@ class EngineConfig:
     budget_per_day: int = 50
     queries_per_identity: int = 6
     wordlist: str = DEFAULT_WORDLIST
-    seeds: list[str] = field(default_factory=list)
+    seeds: list[str] = field(default_factory=lambda: list(DEFAULT_SEEDS))
     max_depth: int = 4
     same_site_only: bool = True
 
     def validate(self, name: str) -> None:
         if self.budget_per_day < 0 or self.queries_per_identity < 1:
             raise ConfigError(f"engine '{name}': budget/queries must be positive")
+        if name == "crawl" and self.enabled and not self.seeds:
+            raise ConfigError("engine 'crawl' enabled but seeds list is empty")
 
 
 @dataclass
@@ -110,11 +116,13 @@ def load_profile(path: str | None) -> Profile:
     for name, raw_eng in (p.get("engines") or {}).items():
         if name in profile.engines:
             merged = profile.engines[name].__dict__ | (raw_eng or {})
-            profile.engines[name] = EngineConfig(**merged)
+            valid = {k: v for k, v in merged.items() if k in EngineConfig.__dataclass_fields__}
+            profile.engines[name] = EngineConfig(**valid)
     for name, raw_tr in (p.get("transports") or {}).items():
         if name in profile.transports:
             merged = profile.transports[name].__dict__ | (raw_tr or {})
-            profile.transports[name] = TransportConfig(**merged)
+            valid = {k: v for k, v in merged.items() if k in TransportConfig.__dataclass_fields__}
+            profile.transports[name] = TransportConfig(**valid)
     contribute = p.get("contribute") or {}
     if "relay" in contribute:
         profile.relay = RelayConfig(**{k: v for k, v in contribute["relay"].items()

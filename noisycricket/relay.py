@@ -41,6 +41,10 @@ class RelaySpec:
                 "noisyCricket only runs middle relays or bridges, never exits")
         if not (1024 <= self.or_port <= 65535 and self.or_port != 9050):
             raise RelayConfigError("or_port must be a non-9050 port in 1024-65535")
+        if not (0 <= self.dir_port <= 65535 and self.dir_port != 9050):
+            raise RelayConfigError("dir_port must be 0 or a non-9050 port in 1-65535")
+        if self.dir_port != 0 and self.dir_port == self.or_port:
+            raise RelayConfigError("or_port and dir_port must not be identical")
         if not (1 <= len(self.nickname) <= 19):
             raise RelayConfigError("nickname must be 1-19 chars, letters/digits")
         if not all(c.isalnum() for c in self.nickname):
@@ -57,11 +61,13 @@ def generate_torrc(spec: RelaySpec) -> str:
     ]
     if spec.contact:
         lines.append(f"ContactInfo {spec.contact}")
+    dir_port_line = "DirPort 0" if spec.mode == "bridge" else f"DirPort {spec.dir_port}"
     lines += [
         f"RelayBandwidthRate {spec.bandwidth_rate}",
         f"RelayBandwidthBurst {spec.bandwidth_rate}",
         f"ORPort {spec.or_port}",
-        f"DirPort {spec.dir_port}",
+        dir_port_line,
+        "SocksPort 0",
         "ExitPolicy reject *:*",
         f"SocksPolicy {spec.socks_policy}",
         "",

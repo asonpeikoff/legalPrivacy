@@ -7,10 +7,12 @@ not know which transport will carry them.
 from __future__ import annotations
 
 import random
+import re
 import socket
 import struct
 import urllib.parse
 from dataclasses import dataclass
+from html.parser import HTMLParser
 
 from .transports import Target
 
@@ -61,6 +63,18 @@ class SearchTargetFactory:
         return Target(url=url)
 
 
+class _LinkExtractor(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.links: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() == "a":
+            for k, v in attrs:
+                if k.lower() == "href" and v:
+                    self.links.append(v)
+
+
 @dataclass
 class CrawlTargetFactory:
     """Random-walk link crawler with same-site containment."""
@@ -70,21 +84,23 @@ class CrawlTargetFactory:
     same_site_only: bool = True
 
     def make(self, identity) -> Target:
-        return Target(url=self.rng.choice(self.seeds))
+        seeds = self.seeds or ["https://en.wikipedia.org/wiki/Special:Random"]
+        return Target(url=self.rng.choice(seeds))
 
     def next_from(self, html: str, current_url: str) -> Target | None:
+        parser = _LinkExtractor()
+        try:
+            parser.feed(html)
+        except Exception:
+            pass
         base = urllib.parse.urlparse(current_url)
         links: list[str] = []
-        for raw in html.split("<a "):
-            if 'href="' not in raw:
-                continue
-            href = raw.split('href="', 1)[1].split('"', 1)[0]
+        for href in parser.links:
             absu = urllib.parse.urljoin(current_url, href)
             p = urllib.parse.urlparse(absu)
             if p.scheme not in ("http", "https"):
                 continue
-            if self.same_site_only and (p.netloc, p.scheme) != (base.netloc, "https") \
-                    and p.netloc != base.netloc:
+            if self.same_site_only and p.netloc.lower() != base.netloc.lower():
                 continue
             links.append(absu)
         if not links:
@@ -141,7 +157,8 @@ class DnsNoise:
 
     def __init__(self, rng: random.Random, words: list[str]):
         self.rng = rng
-        self.words = words or COMMON_TOPICS
+        clean = [re.sub(r"[^a-zA-Z0-9]", "", w).lower() for w in (words or COMMON_TOPICS)]
+        self.words = [w for w in clean if 3 <= len(w) <= 20] or COMMON_TOPICS
 
     def make_query(self) -> tuple[bytes, str, str]:
         """(packet, domain, resolver_ip) — firing is the scheduler's probe step."""
@@ -169,7 +186,8 @@ class DohNoise:
 
     def __init__(self, rng: random.Random, words: list[str]):
         self.rng = rng
-        self.words = words or COMMON_TOPICS
+        clean = [re.sub(r"[^a-zA-Z0-9]", "", w).lower() for w in (words or COMMON_TOPICS)]
+        self.words = [w for w in clean if 3 <= len(w) <= 20] or COMMON_TOPICS
 
     def make(self, identity=None) -> Target:
         tld = self.rng.choice([".com", ".net", ".org"])

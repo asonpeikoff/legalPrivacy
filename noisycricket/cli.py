@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 
 from .config import ConfigError, load_profile
 from .relay import RelayConfigError, RelaySpec, generate_torrc, warn_if_exit_requested
-from .scheduler import Runner, build_lanes
+from .scheduler import MaxFailuresExceeded, Runner, build_lanes
 
 
 def _init_random(seed_env: str = "CRICKET_SEED") -> int:
@@ -28,8 +29,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     from .engines import load_wordlist
     profile = load_profile(args.profile)
     rng = _init_random()
-    wordlist = load_wordlist(
-        next((e.wordlist for e in profile.engines.values()), None))
+    active_wordlist = next((e.wordlist for e in profile.engines.values() if e.enabled and e.wordlist), None)
+    wordlist = load_wordlist(active_wordlist)
     lanes = build_lanes(profile, wordlist, rng)
     if not lanes:
         print("no active lanes: enable a transport in the profile", file=sys.stderr)
@@ -42,10 +43,15 @@ def cmd_run(args: argparse.Namespace) -> int:
                   f"engines: {engines}")
         return 0
     # one-shot runs get a fixed clock hour so tests are deterministic
-    runner = Runner(profile=profile, lanes=lanes, wordlist=wordlist,
-                    clock=(lambda: 12.0) if args.once else None)
+    runner = Runner(
+        profile=profile,
+        lanes=lanes,
+        wordlist=wordlist,
+        clock=time.time,
+        local_hour_fn=(lambda: 12.0) if args.once else None,
+    )
     if args.once:
-        runner.run_once()
+        runner.run_once(wait=False)
         return 0
     report = runner.run()
     for lane_name, engines in report.items():
@@ -132,6 +138,9 @@ def main(argv: list[str] | None = None) -> int:
     except (ConfigError, RelayConfigError) as exc:
         print(f"configuration error: {exc}", file=sys.stderr)
         return 2
+    except MaxFailuresExceeded as exc:
+        print(f"execution halted: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
