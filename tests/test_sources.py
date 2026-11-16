@@ -27,7 +27,7 @@ CANNED = {
 
 
 def _store():
-    return FeedStore(None, path=Path(tempfile.mkdtemp()) / "f.json", fetchers=dict(CANNED))
+    return FeedStore(None, path=Path(tempfile.mkdtemp()) / "f.json", fetchers=dict(CANNED), bundled=False)
 
 
 def test_feed_store_refresh_caches_and_reports_status():
@@ -35,7 +35,7 @@ def test_feed_store_refresh_caches_and_reports_status():
     st.refresh()
     assert st.items("trends") == ["supreme court", "estonia vs bulgaria"]
     assert all(s["count"] and not s["stale"] and not s["error"] for s in st.status())
-    st2 = FeedStore(None, path=st.path, fetchers=dict(CANNED))     # loads from disk
+    st2 = FeedStore(None, path=st.path, fetchers=dict(CANNED), bundled=False)   # loads from disk
     assert st2.items("dataset")
 
 
@@ -109,3 +109,13 @@ def test_crawler_skips_anchors_assets_and_account_pages():
             '<a href="/wiki/Real_Page">d</a>')
     for _ in range(10):
         assert f.next_from(html, "https://x.example/wiki/Start").url == "https://x.example/wiki/Real_Page"
+
+
+def test_shipped_snapshot_works_offline_without_fetching():
+    calls = []
+    st = FeedStore(None, path=Path(tempfile.mkdtemp()) / "f.json",
+                   fetchers={k: (lambda k=k: calls.append(k) or []) for k in CANNED})
+    assert st.items("dataset") and st.items("tranco") and len(st.denylist()) > 1000
+    st.refresh()                                  # not forced: snapshot is fresh, nothing fetched
+    assert calls == [] and not st.path.exists()
+    assert all(s["origin"] == "shipped snapshot" for s in st.status())

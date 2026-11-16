@@ -186,7 +186,9 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
     <label class="chk"><input type="checkbox" id="qData"><span><b>Real past searches</b> — MS MARCO (Bing) and GooAQ (Google autocomplete), fresh random sample</span></label>
     <label class="chk"><input type="checkbox" id="qBuiltin"><span>Built-in topics <span class="mute">(kept a small minority)</span></span></label>
     <label class="chk"><input type="checkbox" id="qWords"><span>Occasional dictionary word <span class="mute">(“define …”)</span></span></label>
-    <table style="margin-top:8px"><thead><tr><th>Source</th><th>Items</th><th>Updated</th><th>Status</th></tr></thead><tbody id="fBody"></tbody></table>
+    <table style="margin-top:8px"><thead><tr><th>Source</th><th>Items</th><th>From</th><th>Updated</th><th>Status</th></tr></thead><tbody id="fBody"></tbody></table>
+    <div class="small mute" style="margin-top:6px">These lists ship with noisyCricket, so it never has to contact Google Trends, Wikipedia, BBC, Hugging Face or Tranco on your behalf. Refreshing is optional; once every few months is plenty.</div>
+    <label class="chk"><input type="checkbox" id="fAuto"><span>Refresh automatically when the lists are ~3 months old <span class="mute">(contacts those sites from your connection)</span></span></label>
     <div class="row" style="margin-top:8px"><button id="fRefresh">↻ Refresh sources now</button><span class="small mute" id="fNote"></span></div>
   </div>
   <div class="row"><button id="sSave" class="pri">Save settings</button><button id="sWiz">Run setup questions again</button><span class="small mute" id="sSaved"></span></div>
@@ -406,14 +408,16 @@ $('#sSave').onclick=async()=>{
     await api('/api/app',{autostart:$('#sAuto').checked});dirty.set=false;$('#sSaved').textContent='saved ✓ '+(S&&S.running?'(Stop → Start to apply)':'');toast('Settings saved');poll()}catch(e){toast(e.message,1)}
 };
 $('#sWiz').onclick=()=>showWiz();
-$('#fRefresh').onclick=()=>{act('/api/feeds/refresh');toast('Refreshing sources in the background…')};
+$('#fRefresh').onclick=()=>{if(confirm('Download fresh lists now from Google Trends, Wikipedia, BBC, Hugging Face and Tranco? This contacts those sites from your connection.')){act('/api/feeds/refresh');toast('Refreshing sources in the background…')}};
+$('#fAuto').onchange=()=>act('/api/app',{auto_refresh_sources:$('#fAuto').checked});
 $('#sBrowser').oninput=$('#sVisible').oninput=()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'};
 function renderRealism(){
   const b=S.browser;
   $('#sBrowserInfo').innerHTML=b.active?`<span class="ok">✓ using ${esc(b.detail.split(/[\\/]/).pop())}</span>`:b.setting==='off'?'<span class="mute">off</span>':`<span class="warnc">⚠ ${esc(b.detail)}</span>`;
   const label={deny:'Safety blocklist',trends:'Google Trends',wiki:'Wikipedia most-read',news:'BBC headlines',dataset:'Real past searches',tranco:'Popular sites (Tranco)'};
-  $('#fBody').innerHTML=S.feeds.map(f=>`<tr><td>${esc(label[f.name]||f.name)}</td><td>${f.count.toLocaleString()}</td><td>${f.updated?fmtDur(Date.now()/1000-f.updated)+' ago':'—'}</td><td class="${f.error?'warnc':f.count&&!f.stale?'ok':'mute'}">${esc(f.error?'unavailable — '+f.error.slice(0,60):f.count?(f.stale?'stale':'fresh'):'not fetched yet')}</td></tr>`).join('');
+  $('#fBody').innerHTML=S.feeds.map(f=>`<tr><td>${esc(label[f.name]||f.name)}</td><td>${f.count.toLocaleString()}</td><td class="small">${esc(f.origin||'')}</td><td>${f.updated?fmtDur(Date.now()/1000-f.updated)+' ago':'—'}</td><td class="${f.error?'warnc':f.count&&!f.stale?'ok':'mute'}">${esc(f.error?'unavailable — '+f.error.slice(0,60):f.count?(f.stale?'old — consider refreshing':'ok'):'missing')}</td></tr>`).join('');
   $('#fNote').textContent=S.feeds_refreshing?'refreshing…':'';
+  if(document.activeElement!==$('#fAuto'))$('#fAuto').checked=!!S.app.auto_refresh_sources;
 }
 // health
 $('#hRun').onclick=async()=>{$('#hBody').innerHTML='<tr><td class="mute">Checking…</td></tr>';

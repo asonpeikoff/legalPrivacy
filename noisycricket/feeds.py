@@ -45,9 +45,23 @@ DATASETS = [  # (dataset, config, split, field, conservative max row index)
     ("microsoft/ms_marco", "v2.1", "train", "query", 800_000),
     ("sentence-transformers/gooaq", "pair", "train", "question", 3_000_000),
 ]
-TTL = {"trends": 6 * 3600, "wiki": 12 * 3600, "news": 6 * 3600,
-       "dataset": 5 * 86400, "tranco": 7 * 86400, "deny": 14 * 86400}
+# A shipped snapshot (data/feeds/snapshot.json.gz) means users never need to fetch these.
+# If they opt in to auto-refresh, sources are re-fetched only this rarely.
+TTL = {k: 90 * 86400 for k in ("trends", "wiki", "news", "dataset", "tranco", "deny")}
 _SKIP_WIKI = re.compile(r"^(Main_Page|Special:|Wikipedia:|Portal:|File:|Help:|Category:|Template:|Talk:|User:|-$)")
+
+
+def _load_bundled() -> dict:
+    import gzip
+    from .paths import resource_root
+    p = resource_root() / "data" / "feeds" / "snapshot.json.gz"
+    try:
+        with gzip.open(p, "rt", encoding="utf-8") as fh:
+            d = json.load(fh)
+        d.pop("built", None)
+        return d
+    except (OSError, ValueError):
+        return {}
 
 
 def _get(url: str, **kw) -> requests.Response:
@@ -59,9 +73,11 @@ def _get(url: str, **kw) -> requests.Response:
 class FeedStore:
     """Disk-cached feed data + background refresh. Thread-safe reads."""
 
-    def __init__(self, log: EventLog | None = None, path=None, fetchers: dict | None = None):
+    def __init__(self, log: EventLog | None = None, path=None, fetchers: dict | None = None,
+                 bundled: bool = True):
         self.log = log
         self.path = path or (app_dir() / "feeds.json")
+        self.bundled = _load_bundled() if bundled else {}
         self._lock = threading.Lock()
         self.data: dict[str, dict] = {}
         self.errors: dict[str, str] = {}
@@ -86,19 +102,28 @@ class FeedStore:
         except OSError:
             pass
 
+    def _entry(self, name: str) -> dict:
+        """User's own refreshed copy if any, else the snapshot shipped with the app."""
+        return self.data.get(name) or self.bundled.get(name) or {}
+
     def items(self, name: str) -> list:
         with self._lock:
-            return list(self.data.get(name, {}).get("items", []))
+            return list(self._entry(name).get("items", []))
 
     def denylist(self) -> set[str]:
-        return set(self.items("deny"))
+        ent = self._entry("deny")
+        key = (id(ent), ent.get("ts"))
+        if getattr(self, "_deny_key", None) != key:          # building a 160k-entry set is not free
+            self._deny_set, self._deny_key = set(ent.get("items", [])), key
+        return self._deny_set
 
     def status(self) -> list[dict]:
         out = []
         for name in self.fetchers:
-            ent = self.data.get(name, {})
+            ent = self._entry(name)
             out.append({"name": name, "count": len(ent.get("items", [])), "updated": ent.get("ts"),
                         "stale": (time.time() - ent.get("ts", 0)) > TTL[name] if ent else True,
+                        "origin": "your refresh" if name in self.data else ("shipped snapshot" if ent else "none"),
                         "error": self.errors.get(name)})
         return out
 
@@ -106,11 +131,12 @@ class FeedStore:
     def refresh(self, force: bool = False, only: list[str] | None = None) -> None:
         """Blocking refresh of stale sources (call from a background thread)."""
         self.refreshing = True
+        changed = False
         try:
             for name, fn in self.fetchers.items():
                 if only and name not in only:
                     continue
-                ent = self.data.get(name)
+                ent = self._entry(name)
                 if not force and ent and time.time() - ent.get("ts", 0) < TTL[name]:
                     continue
                 try:
@@ -120,12 +146,14 @@ class FeedStore:
                     with self._lock:
                         self.data[name] = {"ts": time.time(), "items": items}
                     self.errors.pop(name, None)
+                    changed = True
                     self._log("info", f"Feed '{name}' refreshed: {len(items):,} items")
                 except Exception as exc:
                     self.errors[name] = str(exc)[:200]
                     self._log("warn", f"Feed '{name}' unavailable ({str(exc)[:120]}); using "
                                       f"{'cached data' if ent else 'built-in fallback'}")
-            self._save()
+            if changed:
+                self._save()
         finally:
             self.refreshing = False
 

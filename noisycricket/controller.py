@@ -35,7 +35,8 @@ PRESETS = {   # budgets per day: search / crawl / dns / onion
     "normal": {"search": 120, "crawl": 40,  "dns": 200, "onion": 40},
     "heavy":  {"search": 300, "crawl": 100, "dns": 500, "onion": 100},
 }
-APP_DEFAULTS = {"autostart": False, "open_browser": True, "port": 8765, "intensity": "normal"}
+APP_DEFAULTS = {"autostart": False, "open_browser": True, "port": 8765, "intensity": "normal",
+                "auto_refresh_sources": False}   # off: use the snapshot shipped with the app (no lookups)
 
 
 class Controller:
@@ -121,10 +122,11 @@ class Controller:
         return self.state()
 
     def update_app(self, raw: dict[str, Any]) -> None:
-        for k in ("autostart", "open_browser"):
+        for k in ("autostart", "open_browser", "auto_refresh_sources"):
             if k in raw:
                 self.app[k] = bool(raw[k])
         self._save()
+        self._start_feed_timer()
 
     # ── Tor ─────────────────────────────────────────────────────────────────
     def _tor_cfg(self):
@@ -193,7 +195,8 @@ class Controller:
         return QuerySource(_r.Random(), self.feeds, QueryConfig(q.live, q.dataset, q.builtin, q.words), words)
 
     def _start_feed_timer(self) -> None:
-        if self._feed_timer_started:
+        """Only if the user opted in: re-fetch sources when they are ~3 months old."""
+        if self._feed_timer_started or not self.app.get("auto_refresh_sources"):
             return
         self._feed_timer_started = True
 

@@ -147,8 +147,8 @@ than real users hit it, which is itself detectable.
 
 | Source | Share | What it is |
 |---|---|---|
-| Live trends | ~40% | Google Trends daily searches, Wikipedia's most-read articles, BBC headlines turned into keyword searches. Refreshed every few hours. |
-| Real past searches | ~35% | Random samples of real queries from **MS MARCO** (Bing) and **GooAQ** (Google autocomplete), fetched fresh from Hugging Face. Not bundled. |
+| Live trends | ~40% | Google Trends daily searches, Wikipedia's most-read articles, BBC headlines turned into keyword searches. |
+| Real past searches | ~35% | A random sample of real queries from **MS MARCO** (Bing) and **GooAQ** (Google autocomplete). |
 | Built-in topics | ~10% | A small hand-written list, also the offline fallback. If a big source runs dry, its share goes to the other real sources, never to this list. |
 | Dictionary words | ~4% | Occasional `define …` / `… meaning` lookups. |
 
@@ -161,10 +161,13 @@ embarrassing or risky: adult, gambling, weapons, drugs, violence, self-harm and
 hacking terms are blocked, along with the StevenBlack adult/gambling/fake-news
 host list and government domains.
 
-**Privacy of the sources themselves.** These lists are downloaded in the
-background from Google Trends, Wikimedia, BBC, Hugging Face and Tranco. That
-reveals only that you use noisyCricket, nothing about your own browsing.
-Settings shows each source's status and has a "Refresh sources now" button.
+**No lookups on your behalf.** These lists ship with noisyCricket as a snapshot
+(`data/feeds/snapshot.json.gz`, about 1 MB: 7,600 real queries, 4,000 sites, current trends and
+headlines, and the safety blocklist). The maintainer fetches it once with
+`tools/build_feed_snapshot.py`, so your copy never contacts Google Trends, Wikimedia, BBC,
+Hugging Face or Tranco unless you choose to. Settings → Realism shows each list's age and
+lets you refresh by hand, or opt in to an automatic refresh when lists are about 3 months old.
+Sources and their terms: `data/feeds/README.md`.
 
 ### The shape of the traffic
 
