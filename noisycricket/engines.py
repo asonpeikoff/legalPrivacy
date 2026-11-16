@@ -223,11 +223,12 @@ class CrawlTargetFactory:
         except Exception:
             pass
         base = urllib.parse.urlparse(current_url)
+        here = urllib.parse.urldefrag(current_url)[0]
         links: list[str] = []
         for href in parser.links:
-            absu = urllib.parse.urljoin(current_url, href)
+            absu = urllib.parse.urldefrag(urllib.parse.urljoin(current_url, href))[0]
             p = urllib.parse.urlparse(absu)
-            if p.scheme not in ("http", "https"):
+            if p.scheme not in ("http", "https") or absu == here or not _looks_like_page(p):
                 continue
             if self.same_site_only and p.netloc.lower() != base.netloc.lower():
                 continue
@@ -235,6 +236,19 @@ class CrawlTargetFactory:
         if not links:
             return None
         return Target(url=self.rng.choice(links), referer=current_url)
+
+
+_SKIP_EXT = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico", ".css", ".js", ".json", ".xml",
+             ".pdf", ".zip", ".mp4", ".mp3", ".woff", ".woff2", ".rss", ".atom")
+_SKIP_PATH = ("login", "signin", "sign-in", "signup", "register", "logout", "account", "cart", "checkout",
+              "action=edit", "action=history", "special:", "/edit", "oldid=", "printable=", "share", "mailto")
+
+
+def _looks_like_page(p) -> bool:
+    """A link a reader would plausibly click: an HTML page, not an asset, form or account action."""
+    path = (p.path or "/").lower()
+    tail = (path + "?" + p.query).lower()
+    return not path.endswith(_SKIP_EXT) and not any(x in tail for x in _SKIP_PATH)
 
 
 # --- raw crafted DNS packets (clearnet DNS engine, stdlib only) ---

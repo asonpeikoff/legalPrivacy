@@ -264,8 +264,12 @@ class BrowserTransport(Transport):
                 resp = page.goto(target.url, referer=target.referer, wait_until="domcontentloaded",
                                  timeout=int(target.timeout * 1000))
             status = resp.status if resp is not None else 200
-            if "/sorry/" in page.url or "captcha" in page.url.lower():
-                status = 429
+            title = (page.title() or "").lower()
+            if ("/sorry/" in page.url or "captcha" in page.url.lower()
+                    or any(t in title for t in ("captcha", "unusual traffic", "are you a robot", "just a moment",
+                                                "access denied", "attention required"))
+                    or (status == 202 and "duckduckgo" in page.url)):
+                status = 429          # a bot check: back off instead of counting it as a visit
             stats = driver.browse(max_seconds=60)
             downloaded = self._maybe_download(page)
             s["last_url"] = page.url
