@@ -1,0 +1,132 @@
+# noisyCricket v2 — Design
+
+Conversation-driven web-noise generator: one scheduler, identity-realistic
+behavior, and fully separate logic for Tor and clearnet traffic. Built fresh;
+the 2016 Java prototype lives on in `legacy-src/`.
+
+## What it does
+
+noisyCricket v2 generates realistic, privacy-preserving web noise so that
+mass bulk analysis of any one person's browsing is less useful. It mixes
+three engine families over two transports, with per-identity consistent
+fingerprints and human-cadence pacing.
+
+## Concept — what a "job" is
+
+A **job** is one round of noise-by-an-identity:
+
+```
+identity = (fingerprint, tor-or-clearnet circuit, timing persona)
+job      = pick engine → pick target(s) → hit with pacing & retries → settle
+```
+
+A schedule is a YAML profile that sets per-engine budgets, the day/night
+activity curve, transports, and contribution policy. The scheduler drains
+budgets over the day, cross-fading engine targets so hit distribution has
+no periodic signature.
+
+## Interface
+
+```
+cricket run [--profile PROFILE] [--once] [--dry-run] [--verbose]
+cricket doctor [--profile PROFILE]
+cricket relay gen --bandwidth 5Mbit --nickname mycricket [--bridge]
+cricket relay install --config OUT --restart-tor
+```
+
+Profile YAML reference:
+
+```yaml
+# profiles/example.yaml
+profile:
+  name: default
+  realtime_scale: 1.0        # speed up >1 for testing, slow down <1
+  engines:
+    search:
+      enabled: true
+      budget_per_day: 120
+      wordlist: data/wordlists/words.txt
+      queries_per_identity: 6
+    crawl:
+      enabled: true
+      budget_per_day: 40
+      seeds:
+        - https://en.wikipedia.org/wiki/Randomness
+      max_depth: 4
+      same_site_only: true
+    dns:
+      enabled: true
+      budget_per_day: 200
+  transports:
+    clearnet:
+      enabled: true
+      proxy: null                 # or "http://user:pass@proxy:8080", socks5://...
+    tor:
+      enabled: true
+      socks: 127.0.0.1:9050
+      control: 127.0.0.1:9051     # optional, enables new-circuit control
+      identities_per_circuit: 8
+      control_password: null      # prompts via CRICKET_TOR_CONTROL_PW if needed
+  contribute:
+    relay:
+      enabled: false              # community middle/bridge relay, NEVER an exit
+      mode: middle                # middle | bridge
+      nickname: mycricket
+      contact: you@example.com
+      bandwidth_rate: 5Mbit
+      or_port: 9001
+      dir_port: 9030
+```
+
+## Features
+
+- **Engine budgets** with day/night curve: activity drawn from a lognormal
+  cadence modulated by an S-curve diurnal profile in local time, so hit rates
+  look like a person's browsing, not a cron job.
+- **Per-identity fingerprints**: consistent (UA, Accept-Language, viewport
+  hints, query taste) sets pinned per identity; n identities rotate through
+  circuits/lifetime across the run.
+- **Transport split**: engines emit neutral `Target` objects; transports own
+  connection, IP diversity, and failure semantics. Tor lane forces absolute
+  isolation between identities; clearnet lane rotates proxy pool entries.
+- **Pacing**: lognormal inter-hit delays with fast/slow persona multipliers,
+  burst suppression, exponential backoff on 403/429/timeouts, soft budget
+  floors so the schedule always finishes.
+- **Crafted DNS packets** on clearnet (raw UDP, stdlib only), DoH-over-Tor on
+  the tor lane (arbitrary UDP user queries cannot traverse Tor circuits).
+
+## Tor vs clearnet — separate logic on purpose
+
+- Tor lane: everything through one local SOCKS daemon; identities get *fresh
+  circuits* (SOCKS5 user/pass isolation or `NEWNYM` via control port), no
+  cookie/DNS bleed-through, no HTTP keep-alive across identities. Absolute
+  DNS: any host resolution is remote-resolved by the circuit — the local
+  resolver never sees a query.
+- Clearnet lane: direct or pooled出 proxies; identities bound to a proxy +
+  UA + language for a lifetime; connect timeouts, retry dimming, and
+  proxy-health tracking so a dead proxy dims instead of erroring a lane.
+
+## Community contribution — relay, NEVER an exit
+
+`cricket relay gen` emits a **middle-relay or bridge** torrc: `ORPort` +
+`DirPort` + `ExitPolicy reject *:*`. The generator refuses any exit-policy
+request. Contributing bandwidth back keeps Tor fast for everyone and is the
+community-minded counterpart to consuming it.
+
+> Accuracy note: Tor has no "DNS node" role — arbitrary DNS queries cannot be
+> relayed. The community-minded equivalent of "a DNS node" is exactly this
+> non-exit (middle/bridge) relay: it carries the network's traffic — including
+> every end-to-end DNS lookup that exits do perform on behalf of clients.
+
+## Stealth / traffic strategies
+
+- Identity == consistent fingerprint: UA pool curated per persona,
+  Accept-Language pinned, do-not-track stable, query taste per identity
+  (topics drawn from a persona word set) so the query distribution mixes,
+  not matches, a sampled population.
+- Cadence: lognormal pacing from real browsing distributions; fast/slow
+  persona multipliers; burst suppression (min gap per identity).
+- Failure discipline: 403/429/timeout → exponential backoff with jitter,
+  proxy dimming, hard stop at `daily_max_failures`.
+- Red-team honesty: this mixes ranks, not miracles. Fingerprinting at the
+  router or CDN level is out of scope; do not aim this at sites you love.

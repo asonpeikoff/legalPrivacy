@@ -1,0 +1,40 @@
+# noisyCricket example profile — balanced daily noise on both transports
+profile:
+  name: example
+  realtime_scale: 1.0
+  engines:
+    search:
+      enabled: true
+      budget_per_day: 120
+      wordlist: data/wordlists/words.txt
+      queries_per_identity: 6
+    crawl:
+      enabled: true
+      budget_per_day: 40
+      seeds:
+        - https://en.wikipedia.org/wiki/Randomness
+      max_depth: 4
+      same_site_only: true
+    dns:
+      enabled: true
+      budget_per_day: 200
+  transports:
+    clearnet:
+      enabled: true
+      proxy: null
+    tor:
+      enabled: true
+      socks: 127.0.0.1:9050
+      control: 127.0.0.1:9051
+      identities_per_circuit: 8
+  daily_max_failures: 30
+  # community contribution — middle relay ONLY, see `cricket relay gen`
+  contribute:
+    relay:
+      enabled: false
+      mode: middle
+      nickname: mycricket
+      contact: null
+      bandwidth_rate: 5Mbit
+      or_port: 9001
+      dir_port: 9030
