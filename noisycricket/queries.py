@@ -56,7 +56,8 @@ _STOP = set("a an the of to in on for and or but with as at by from is are was w
 def headline_to_query(h: str) -> str:
     """News headline -> what a reader would actually type: the main clause, content words, 2-6 of them."""
     h = re.split(r"[:|–—]| - ", h)[0]
-    h = re.sub(r"[\"‘’“”']s?\b", " ", h)
+    h = re.sub(r"['’]s\b", "", h)
+    h = re.sub(r"[\"‘’“”']", "", h)
     words = [w.strip(",.?!()") for w in h.split()]
     words = [w for w in words if w and w.lower() not in _STOP and not w.isdigit()]
     return " ".join(words[:6])
@@ -102,7 +103,8 @@ class QuerySource:
         if st:
             if self.cfg.live:
                 news = [headline_to_query(h) for h in st.items("news")]
-                live = st.items("trends") + st.items("wiki") + [q for q in news if len(q.split()) >= 2]
+                wiki = [re.sub(r"\s*\([^)]*\)$", "", t) for t in st.items("wiki")]   # drop "(disambiguation)"
+                live = st.items("trends") + wiki + [q for q in news if len(q.split()) >= 2]
                 if live:
                     pools["live"] = live
             if self.cfg.dataset:
