@@ -42,8 +42,24 @@ BUILTIN_THEMES: dict[str, list[str]] = {
 BUILTIN_TOPICS = [t for v in BUILTIN_THEMES.values() for t in v]
 PATTERNS = ["{t}", "{t}", "{t} tutorial", "how to use {t}", "best {t}", "{t} tips", "{t} review",
             "what is {t}", "{t} for beginners", "{t} near me", "{t} reddit", "{t} guide"]
-REFINERS = ["review", "price", "near me", "reddit", "vs", "how to", "meaning", "images", "for beginners",
-            "2026", "cheap", "best", "youtube", "examples", "tutorial"]
+REFINERS = {   # refine in a way that fits where the query came from
+    "live": ["news", "wiki", "latest", "explained", "2026", "reddit", "images", "today", "update"],
+    "builtin": ["review", "reviews", "price", "near me", "reddit", "for beginners", "cheap", "best",
+                "youtube", "examples", "tutorial", "2026"],
+    "words": ["meaning", "synonym", "pronunciation", "in a sentence"],
+}
+_STOP = set("a an the of to in on for and or but with as at by from is are was were be been it its this that "
+            "these those has have had will would could should can may might says say said after over into "
+            "about amid than then just more most new why how what who when where which watch".split())
+
+
+def headline_to_query(h: str) -> str:
+    """News headline -> what a reader would actually type: the main clause, content words, 2-6 of them."""
+    h = re.split(r"[:|–—]| - ", h)[0]
+    h = re.sub(r"[\"‘’“”']s?\b", " ", h)
+    words = [w.strip(",.?!()") for w in h.split()]
+    words = [w for w in words if w and w.lower() not in _STOP and not w.isdigit()]
+    return " ".join(words[:6])
 
 WEIGHTS = {"live": 0.38, "dataset": 0.34, "builtin": 0.10, "words": 0.04}
 
@@ -85,7 +101,8 @@ class QuerySource:
         pools: dict[str, list[str]] = {}
         if st:
             if self.cfg.live:
-                live = st.items("trends") + st.items("wiki") + st.items("news")
+                news = [headline_to_query(h) for h in st.items("news")]
+                live = st.items("trends") + st.items("wiki") + [q for q in news if len(q.split()) >= 2]
                 if live:
                     pools["live"] = live
             if self.cfg.dataset:
@@ -101,9 +118,11 @@ class QuerySource:
     def next(self, identity=None) -> tuple[str, str]:
         """Return (query, origin). origin ∈ live|dataset|builtin|words|refine."""
         ident = getattr(identity, "id", None)
-        prev = self._last.get(ident)
-        if prev and self.rng.random() < 0.18:        # a person refines the previous search
-            q = f"{prev} {self.rng.choice(REFINERS)}"
+        last = self._last.pop(ident, None)            # refine at most once per base query
+        prev, prev_origin = last if last else (None, None)
+        if prev and prev_origin in REFINERS and len(prev.split()) <= 4 and "?" not in prev \
+                and not prev.startswith(("define ",)) and self.rng.random() < 0.22:
+            q = f"{prev} {self.rng.choice(REFINERS[prev_origin])}"     # a person narrows the previous search
             if safe_query(q) and q not in self._recent:
                 return self._finish(ident, q, "refine")
         pools = self._pools()
@@ -121,10 +140,15 @@ class QuerySource:
 
     def _finish(self, ident, q: str, origin: str) -> tuple[str, str]:
         q = re.sub(r"\s+", " ", q).strip()
+        if q.endswith("?") and self.rng.random() < 0.7:   # most people don't type the question mark
+            q = q[:-1].rstrip()
+        if self.rng.random() < 0.85:
+            q = q.lower()
         if origin != "dataset" and self.rng.random() < 0.03:
             q = _typo(self.rng, q)
         self._recent.append(q)
-        self._last[ident] = q if origin != "refine" else q
+        if origin != "refine":
+            self._last[ident] = (q, origin)
         if len(self._last) > 200:
             self._last.pop(next(iter(self._last)))
         return q, origin

@@ -298,6 +298,9 @@ class Runner:
             return
         if eng_name == "search":
             lane.follow_next = None
+            if target.role == "result" and self.domains is not None and hasattr(self.domains, "remember"):
+                import urllib.parse as _u
+                self.domains.remember(_u.urlparse(target.url).hostname or "")
             if result.html:
                 if target.role == "search" and self.rng.random() < self.click_prob \
                         and lane.search_factory is not None:
