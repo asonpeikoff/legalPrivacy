@@ -55,7 +55,8 @@ class Lane:
 def build_lanes(profile: Profile, wordlist: list[str],
                 rng: random.Random | None = None,
                 tor_gate: Callable[[], bool] | None = None,
-                tor_endpoint: Callable[[], tuple[str, str | None]] | None = None) -> list[Lane]:
+                tor_endpoint: Callable[[], tuple[str, str | None]] | None = None,
+                clearnet_transport: Transport | None = None) -> list[Lane]:
     """Build the active lanes.
 
     The tor lane exists only when Tor is enabled. It carries the onion engine
@@ -74,7 +75,7 @@ def build_lanes(profile: Profile, wordlist: list[str],
         names = profile.active_engines("clearnet")
         lanes.append(Lane(
             name="clearnet",
-            transport=ClearnetTransport(proxy=tr["clearnet"].proxy),
+            transport=clearnet_transport or ClearnetTransport(proxy=tr["clearnet"].proxy),
             engines=names,
             budgets={n: _budget(n, share) for n in names},
         ))
@@ -271,7 +272,7 @@ class Runner:
             "url": target.url, "status": result.status, "ok": result.ok,
             "error": result.error, "latency_ms": getattr(result, "latency_ms", None),
             "identity": getattr(identity, "id", None),
-            "note": target.note, "role": target.role,
+            "note": target.note, "role": target.role, "detail": getattr(result, "detail", None),
         }
         self.hit_log.append(rec)
         short = target.url if len(target.url) <= 90 else target.url[:87] + "…"
@@ -393,4 +394,15 @@ class Runner:
                 continue
             if not worked:
                 self.sleep_fn(2.0)       # all budgets spent or lanes gated: idle politely
+        self.close()
         self._emit("info", "scheduler", "Noise generation stopped.")
+
+    def close(self) -> None:
+        """Release transport resources (real browsers) from the thread that used them."""
+        for lane in self.lanes:
+            fn = getattr(lane.transport, "close", None)
+            if fn:
+                try:
+                    fn()
+                except Exception:
+                    pass

@@ -106,6 +106,12 @@ class HumanDriver:
         self.stats["moves"] += 1
 
     def scroll_burst(self, distance: float) -> None:
+        swipe = getattr(self.act, "swipe", None)
+        if self.act.mobile and swipe is not None:            # phones: one finger swipe per burst
+            swipe(distance)
+            self.act.sleep(self.rng.uniform(0.35, 0.9) * self.scale)   # let the fling settle
+            self.stats["scrolls"] += 1
+            return
         for dy, delay in scroll_steps(self.rng, distance, self.act.mobile):
             if self.act.stopped():
                 return

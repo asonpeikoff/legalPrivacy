@@ -117,13 +117,26 @@ class PlaywrightActuator:
         self.page.mouse.move(x, y)
 
     def wheel(self, dy: float) -> None:
-        if self.mobile and self.cdp is not None:
-            w, h = self.viewport()
-            self.cdp.send("Input.synthesizeScrollGesture", {
-                "x": w / 2 + random.uniform(-40, 40), "y": h * 0.6 + random.uniform(-60, 60),
-                "yDistance": -dy, "gestureSourceType": "touch", "speed": int(random.uniform(600, 1400))})
-        else:
+        self.page.mouse.wheel(0, dy)
+
+    def swipe(self, dy: float) -> None:
+        """A finger drag (real touch events; Chrome adds its own fling momentum)."""
+        if self.cdp is None:
             self.page.mouse.wheel(0, dy)
+            return
+        w, h = self.viewport()
+        x = w * random.uniform(0.35, 0.7)
+        travel = max(-h * 0.7, min(h * 0.7, dy * random.uniform(0.55, 0.8)))
+        y0 = h * (0.72 if travel > 0 else 0.3) + random.uniform(-30, 30)
+        n = random.randint(7, 13)
+        self.cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": x, "y": y0}]})
+        for i in range(1, n + 1):
+            t = i / n
+            t = t * t * (3 - 2 * t)
+            self.cdp.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [
+                {"x": x + random.uniform(-2, 2) + 6 * t, "y": y0 - travel * t}]})
+            self.page.wait_for_timeout(random.uniform(10, 22))
+        self.cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
 
     def sleep(self, seconds: float) -> None:
         end = time.monotonic() + seconds

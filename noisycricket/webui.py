@@ -162,6 +162,8 @@ class UIServer:
                         ctl.pause(bool(body.get("paused", True)))
                     elif path == "/api/test":
                         ctl.test_once()
+                    elif path == "/api/feeds/refresh":
+                        ctl.refresh_feeds()
                     elif path.startswith("/api/tor/"):
                         return self._json(ctl.tor_action(path.rsplit("/", 1)[1]))
                     elif path == "/api/config":
