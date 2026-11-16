@@ -37,6 +37,8 @@ same release directory, and runs a **private** Tor on its own ports and data
 folder (`SOCKS 19050`, control `19051` by default) — your system Tor / Tor Browser is never touched.
 Prefer your own Tor? Untick "Let noisyCricket manage Tor" and give its address.
 
+The 19 built-in seeds are official onion mirrors of lawful public sites (news, privacy services, software, search), taken from the curated list at [dark.fail](https://dark.fail) and cross-checked. Markets, leak/exploit forums, adult, piracy and imageboard sites are deliberately excluded.
+
 Every `.onion` seed is validated offline with the v3 checksum (sha3-256) before use, so a
 typo can never be dispatched; add your own seeds on the Tor tab.
 
