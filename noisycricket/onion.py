@@ -21,7 +21,8 @@ from .transports import Target
 # two independent sources agree on the address (the other directory, or the
 # project's own site), which guards against phishing clones; it must also pass
 # the offline v3 checksum. Deliberately EXCLUDED: markets, drug/leak/exploit
-# forums, adult sites, piracy sites and anonymous imageboards — noise should
+# forums, adult sites, piracy sites, anonymous imageboards and government/
+# law-enforcement sites — noise should
 # never touch illicit or unmoderated content.
 BUILTIN_ONION_SEEDS: list[tuple[str, str]] = [
     ("DuckDuckGo", "https://duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion/"),
@@ -42,7 +43,6 @@ BUILTIN_ONION_SEEDS: list[tuple[str, str]] = [
     ("Keybase", "http://keybase5wmilwokqirssclfnsqrjdsi7jdir5wy7y7iu3tanwmtp6oid.onion/"),
     ("keys.openpgp.org", "http://zkaan2xfbuxia2wpf7ofnkbz6r5zdbbvxbunvp5g2iebopbfc4iqmbad.onion/"),
     ("Archive.today", "http://archiveiya74codqgiixo33q62qlrqtkgmcitqx5u2oeqnmn5bpcbiyd.onion/"),
-    ("CIA", "http://ciadotgov4sjwlzihbbgxnqg3xiyrg7so2r2o3lt5wz5ypk4sxyjstad.onion/"),
     ("dark.fail", "http://darkfailenbsdla5mal2mxn2uz66od5vtzd5qozslagrfzachha3f3id.onion/"),
 ]
 
