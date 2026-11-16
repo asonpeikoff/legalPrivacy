@@ -17,9 +17,10 @@ from .engines import _LinkExtractor
 from .transports import Target
 
 # (label, url) — official onion mirrors of lawful, public sites.
-# Source: the curated list at dark.fail (cross-checked against addresses already
-# known for DuckDuckGo, NYT, Proton and Tor Project), then re-validated offline
-# with the v3 checksum. Deliberately EXCLUDED: markets, drug/leak/exploit
+# Sources: the curated lists at dark.fail and tor.taxi. A seed is accepted only if
+# two independent sources agree on the address (the other directory, or the
+# project's own site), which guards against phishing clones; it must also pass
+# the offline v3 checksum. Deliberately EXCLUDED: markets, drug/leak/exploit
 # forums, adult sites, piracy sites and anonymous imageboards — noise should
 # never touch illicit or unmoderated content.
 BUILTIN_ONION_SEEDS: list[tuple[str, str]] = [
@@ -31,6 +32,7 @@ BUILTIN_ONION_SEEDS: list[tuple[str, str]] = [
     ("The Intercept", "https://27m3p2uv7igmj6kvd4ql3cct5h3sdwrsajovkkndeufumzyfhlfev4qd.onion/"),
     ("Debian", "http://2s4yqjx5ul6okpp3f2gaunr2syex5jgbfpfvhxxbbjwnrsvbk5v3qbid.onion/"),
     ("Proton", "https://protonmailrmez3lotccipshtkleegetolb73fuirgj7r4o4vfu7ozyd.onion/"),
+    ("Qubes OS", "http://qubesosfasa4zl44o4tws22di6kepyzfeqv3tg4e3ztknltfxqrymdad.onion/"),
     ("Riseup", "http://vww6ybal4bd7szmgncyruucpgfkqahzddi37ktceo3ah7ngmcopnpyyd.onion/"),
     ("Tech Learning Collective", "http://lpiyu33yusoalp5kh3f4hak2so2sjjvjw5ykyvu2dulzosgvuffq6sad.onion/"),
     ("Blockchair", "http://blkchairbknpn73cfjhevhla7rkp4ed5gg2knctvv7it4lioy22defid.onion/"),
