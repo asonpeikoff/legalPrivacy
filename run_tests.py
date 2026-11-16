@@ -16,6 +16,7 @@ import tests.test_tor_onion
 import tests.test_controller
 import tests.test_humanize
 import tests.test_browser
+import tests.test_sources
 
 MODULES = [
     tests.test_identity,
@@ -26,6 +27,7 @@ MODULES = [
     tests.test_controller,
     tests.test_humanize,
     tests.test_browser,
+    tests.test_sources,
 ]
 
 

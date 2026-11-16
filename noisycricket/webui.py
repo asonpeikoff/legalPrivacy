@@ -30,10 +30,29 @@ def _index_html() -> bytes:
     return _INDEX
 
 
+def _load_token() -> str:
+    """Per-install dashboard token, kept between launches so a bookmarked link keeps working."""
+    from .paths import app_dir
+    p = app_dir() / "ui_token"
+    try:
+        tok = p.read_text(encoding="utf-8").strip()
+        if len(tok) >= 20:
+            return tok
+    except OSError:
+        pass
+    tok = secrets.token_urlsafe(18)
+    try:
+        p.write_text(tok, encoding="utf-8")
+        p.chmod(0o600)
+    except OSError:
+        pass
+    return tok
+
+
 class UIServer:
     def __init__(self, ctl: Controller, port: int = 8765):
         self.ctl = ctl
-        self.token = secrets.token_urlsafe(18)
+        self.token = _load_token()
         self.httpd = self._bind(port)
         self.port = self.httpd.server_address[1]
         self.httpd.RequestHandlerClass = self._make_handler()
