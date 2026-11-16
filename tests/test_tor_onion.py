@@ -28,7 +28,7 @@ def test_builtin_seeds_all_valid_v3():
 def test_builtin_seeds_unique_and_lawful_only():
     urls = [u for _, u in BUILTIN_ONION_SEEDS]
     assert len(urls) == len(set(urls)) >= 15
-    banned = ("market", "drug", "dread", "exploit", "porn", "pirate", "chan", "recon", "leak")
+    banned = ("market", "drug", "dread", "exploit", "porn", "pirate", "chan", "recon", "leak", "cia", "fbi", "police", "ncide", "gov")
     assert not any(b in n.lower() for n, _ in BUILTIN_ONION_SEEDS for b in banned)
 
 
