@@ -182,6 +182,56 @@ class Controller:
         threading.Thread(target=work, daemon=True).start()
         return self._speed
 
+    # ── My List ──────────────────────────────────────────────────────────────
+    def _domain_pool(self, _r):
+        ml = self.profile.mylist
+        return DomainPool(_r.Random(), self.feeds, my_sites=ml.sites if ml.enabled else None,
+                          random_share=ml.random_share)
+
+    def mylist_state(self) -> dict:
+        from .history import history_files
+        ml = self.profile.mylist
+        now = time.time()
+        ends = ml.watch_started + ml.watch_hours * 3600 if ml.watch_started else 0
+        return {"enabled": ml.enabled, "sites": ml.sites, "random_share": ml.random_share,
+                "watch_hours": ml.watch_hours, "watch_started": ml.watch_started, "watch_ends": ends,
+                "watch_done": bool(ml.watch_started) and now >= ends, "now": now,
+                "browsers": sorted({f"{f['browser']} ({f['profile']})" for f in history_files()}),
+                "running": self.running}
+
+    def mylist_scan(self, days: float) -> dict:
+        from .history import top_sites
+        days = max(1.0, min(365.0, float(days)))
+        res = top_sites(time.time() - days * 86400, denylist=self.feeds.denylist())
+        self.log.info("mylist", f"Scanned browser history (last {days:g} days): {len(res['sites'])} sites found.")
+        return res
+
+    def mylist_watch(self, action: str, hours: float | None = None) -> dict:
+        from .history import top_sites
+        ml = self.profile.mylist
+        if action == "start":
+            self.apply_config({"mylist": {"watch_started": time.time(),
+                                          "watch_hours": float(hours or ml.watch_hours)}})
+            self.log.info("mylist", f"Recording your sites for {self.profile.mylist.watch_hours:g} hours.")
+            return self.mylist_state()
+        if action == "cancel":
+            self.apply_config({"mylist": {"watch_started": 0}})
+            return self.mylist_state()
+        if action == "collect":
+            if not ml.watch_started:
+                raise ConfigError("Not recording.")
+            end = min(time.time(), ml.watch_started + ml.watch_hours * 3600)    # cut off at the window end
+            res = top_sites(ml.watch_started, end, denylist=self.feeds.denylist())
+            self.apply_config({"mylist": {"watch_started": 0}})
+            self.log.info("mylist", f"Recording collected: {len(res['sites'])} sites.")
+            return res
+        raise ConfigError(f"unknown action {action}")
+
+    def mylist_save(self, body: dict) -> dict:
+        keep = {k: body[k] for k in ("enabled", "sites", "random_share") if k in body}
+        self.apply_config({"mylist": keep})
+        return self.mylist_state()
+
     # ── user agents (Settings) ─────────────────────────────────────────────
     def ua_state(self) -> dict:
         from .useragents import library
@@ -312,7 +362,7 @@ class Controller:
             import random as _r
             self.runner = Runner(profile=prof, lanes=lanes, wordlist=words, log=self.log,
                                  stop_event=self._stop, sleep_fn=lambda s: self._stop.wait(s),
-                                 queries=self._query_source(words), domains=DomainPool(_r.Random(), self.feeds),
+                                 queries=self._query_source(words), domains=self._domain_pool(_r),
                                  rate=RatePlanner(_r.Random(), prof.rate),
                                  dns_plan=DnsPlan(_r.Random(), prof.dns, self.feeds.items("opennic")))
             self._thread = threading.Thread(target=self._run_loop, daemon=True, name="cricket-runner")
@@ -355,7 +405,7 @@ class Controller:
             import random as _r
             r = Runner(profile=prof, lanes=lanes, wordlist=words, log=self.log, sleep_fn=lambda s: None,
                        local_hour_fn=lambda: 12.0, queries=self._query_source(words),
-                       domains=DomainPool(_r.Random(), self.feeds),
+                       domains=self._domain_pool(_r),
                        dns_plan=DnsPlan(_r.Random(), prof.dns, self.feeds.items("opennic")))
             try:
                 r.run_once(wait=False)

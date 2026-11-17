@@ -79,6 +79,7 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
   <button data-t="set">Settings</button>
   <button data-t="health">Health</button>
   <button data-t="help">Help</button>
+  <button data-t="mylist">My List</button>
   <button data-t="tools">Tools</button>
 </nav>
 <main>
@@ -271,6 +272,27 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
   </div>
   <div class="row" style="justify-content:space-between;margin-top:16px"><button id="wBack">Back</button><button id="wNext" class="pri">Next</button></div>
 </div></div>
+<!-- MY LIST -->
+<section id="t-mylist" class="tab">
+  <div class="card"><h3>My List</h3>
+    <p class="small mute">Your own sites. When this is on, page visits and DNS lookups come from your list, with a share of other sites mixed in, so the noise looks like your real interests.</p>
+    <label class="chk"><input type="checkbox" id="mEnabled"><span><b>Visit sites from My List</b></span></label>
+    <div class="row">Mix in other sites <input type="number" id="mShare" min="0" max="100" style="width:70px">% <span class="small mute">(30% recommended: enough variety that the noise isn't just your list)</span></div>
+    <div class="row"><input type="text" id="mAdd" placeholder="add a site, e.g. example.com" style="flex:1"><button id="mAddBtn">Add</button></div>
+    <div class="scroll" style="max-height:260px"><table><thead><tr><th>#</th><th>Site</th><th></th></tr></thead><tbody id="mBody"></tbody></table></div>
+    <div class="row" style="margin-top:8px"><button id="mSave">Save My List</button><span class="small mute" id="mNote"></span></div>
+  </div>
+  <div class="card"><h3>Find my sites</h3>
+    <p class="small mute">Reads your browsers' history on this computer only. Nothing is sent anywhere. Only site names and visit counts are read, and nothing is kept until you add sites. Sites the safety filter blocks are left out.</p>
+    <div class="small mute" id="mBrowsers"></div>
+    <div class="row" style="margin-top:8px"><b>From history:</b> last <input type="number" id="mDays" value="30" min="1" max="365" style="width:70px"> days <span class="small mute">(30 recommended)</span> <button id="mScan">Scan my history</button></div>
+    <div class="row"><b>Or record:</b> from now for
+      <select id="mHours"><option value="12">12 hours</option><option value="24" selected>24 hours (recommended)</option><option value="48">48 hours</option></select>
+      <button id="mWatch">Start recording</button></div>
+    <div id="mWatchState" class="small" style="margin-top:4px"></div>
+    <div id="mFound" style="margin-top:8px"></div>
+  </div>
+</section>
 <!-- TOOLS -->
 <section id="t-tools" class="tab">
   <div class="card"><h3>DNS leak check</h3>
@@ -319,7 +341,7 @@ const fmtDur=s=>{s=Math.floor(s);const h=Math.floor(s/3600),m=Math.floor(s%3600/
 const fmtB=n=>n>1e9?(n/1e9).toFixed(2)+' GB':n>1e6?(n/1e6).toFixed(1)+' MB':n>1e3?(n/1e3).toFixed(0)+' KB':(n||0)+' B';
 
 // tabs
-$$('#nav button').forEach(b=>b.onclick=()=>{$$('#nav button').forEach(x=>x.classList.toggle('on',x===b));$$('.tab').forEach(t=>t.classList.toggle('on',t.id==='t-'+b.dataset.t));if(b.dataset.t==='log')renderLog(true);if(b.dataset.t==='set')fillSettings(true);if(b.dataset.t==='tor')fillTor(true);if(b.dataset.t==='tools')$('#toolCfg').textContent=S?S.config_path:''});
+$$('#nav button').forEach(b=>b.onclick=()=>{$$('#nav button').forEach(x=>x.classList.toggle('on',x===b));$$('.tab').forEach(t=>t.classList.toggle('on',t.id==='t-'+b.dataset.t));if(b.dataset.t==='log')renderLog(true);if(b.dataset.t==='set')fillSettings(true);if(b.dataset.t==='tor')fillTor(true);if(b.dataset.t==='tools')$('#toolCfg').textContent=S?S.config_path:'';if(b.dataset.t==='mylist')loadML()});
 
 let S=null, hits=[], hitAfter=0, logs=[], logAfter=0, errCount=0, srcOn=new Set(), srcAll=new Set();
 let dirty={set:false,tor:false};
@@ -455,6 +477,45 @@ $('#tSave').onclick=async()=>{
   try{await api('/api/config',{transports:{tor:{enabled:$('#tEnable').checked,onion:$('#tOnion').checked,clearnet_via_tor:$('#tClear').checked,manage:$('#tManage').checked,socks:$('#tSocks').value,control:$('#tCtl').value||null,onion_seeds:$('#tSeeds').value,bridges:$('#tBridges').value}}});
     dirty.tor=false;$('#tSaved').textContent='saved ✓ '+(S&&S.running?'(Stop → Start to apply)':'');toast('Tor settings saved');await poll();fillTor(true)}catch(e){toast(e.message,1)}
 };
+// my list
+let ML=null, mFound=[];
+function fmtTime(t){return new Date(t*1000).toLocaleString()}
+function renderML(){
+  if(!ML)return;
+  $('#mBody').innerHTML=ML.sites.map((d,i)=>`<tr><td>${i+1}</td><td>${esc(d)}</td><td><button data-mrm="${i}">Remove</button></td></tr>`).join('')||'<tr><td colspan=3 class="mute">Empty. Add sites, or find them below.</td></tr>';
+  $$('#mBody [data-mrm]').forEach(b=>b.onclick=()=>{ML.sites.splice(+b.dataset.mrm,1);renderML();$('#mNote').textContent='unsaved changes'});
+}
+function fillML(){
+  if(!ML)return; $('#mEnabled').checked=ML.enabled; $('#mShare').value=Math.round(ML.random_share*100); renderML();
+  $('#mBrowsers').textContent=ML.browsers.length?('Browsers found: '+ML.browsers.join(', ')):'No browser history found on this computer.';
+  const w=$('#mWatchState');
+  if(!ML.watch_started){w.textContent='';$('#mWatch').textContent='Start recording';}
+  else if(ML.watch_done){w.innerHTML=`Recording finished at ${esc(fmtTime(ML.watch_ends))}. <button id="mCollect">Collect results</button> <button id="mCancel">Discard</button>`;}
+  else{w.innerHTML=`Recording until ${esc(fmtTime(ML.watch_ends))}. Use your browsers normally; it stops counting at that time. <button id="mCollect">Collect now</button> <button id="mCancel">Cancel</button>`;}
+  if($('#mCollect'))$('#mCollect').onclick=()=>mWatch('collect');
+  if($('#mCancel'))$('#mCancel').onclick=()=>mWatch('cancel');
+}
+async function loadML(){try{ML=await api('/api/mylist');fillML()}catch(e){$('#mNote').textContent=e.message}}
+function showFound(res){
+  mFound=res.sites||[];
+  const errs=(res.errors||[]).length?`<div class="warnc small">${esc(res.errors.join('; '))}</div>`:'';
+  if(!mFound.length){$('#mFound').innerHTML=`<div class="mute small">No sites found.</div>`+errs;return}
+  $('#mFound').innerHTML=`<div class="small">Found ${mFound.length} sites${res.filtered?` (${res.filtered} left out by the safety filter)`:''}. Tick the ones to add:</div>
+    <div class="scroll" style="max-height:280px"><table><thead><tr><th><input type="checkbox" id="mAll" checked></th><th>Site</th><th>Visits</th></tr></thead><tbody>`+
+    mFound.map((x,i)=>`<tr><td><input type="checkbox" data-mf="${i}" ${i<25?'checked':''}></td><td>${esc(x[0])}</td><td>${x[1]}</td></tr>`).join('')+
+    `</tbody></table></div><div class="row"><button id="mAddFound">Add ticked sites to My List</button></div>`+errs;
+  $('#mAll').onchange=e=>$$('[data-mf]').forEach(c=>c.checked=e.target.checked);
+  $('#mAddFound').onclick=()=>{$$('[data-mf]').forEach(c=>{const d=mFound[+c.dataset.mf][0];if(c.checked&&!ML.sites.includes(d))ML.sites.push(d)});renderML();$('#mNote').textContent='unsaved changes — press Save My List';};
+}
+async function mWatch(action){
+  try{const r=await api('/api/mylist/watch',{action,hours:parseFloat($('#mHours').value)});
+    if(action==='collect'){showFound(r);await loadML()}else{ML=r;fillML()}}catch(e){toast(e.message,1)}
+}
+$('#mWatch').onclick=()=>{if(!ML||!ML.watch_started)mWatch('start')};
+$('#mScan').onclick=async()=>{$('#mFound').textContent='Reading history…';try{showFound(await api('/api/mylist/scan',{days:parseFloat($('#mDays').value||30)}))}catch(e){$('#mFound').textContent=e.message}};
+$('#mAddBtn').onclick=()=>{const d=$('#mAdd').value.trim().toLowerCase().replace(/^https?:\/\//,'').replace(/^www\./,'').split('/')[0];if(d&&ML&&!ML.sites.includes(d)){ML.sites.push(d);renderML();$('#mAdd').value='';$('#mNote').textContent='unsaved changes'}};
+$('#mSave').onclick=async()=>{try{ML=await api('/api/mylist',{enabled:$('#mEnabled').checked,sites:ML.sites,random_share:parseInt($('#mShare').value||30)/100});fillML();$('#mNote').textContent='saved ✓ '+(ML.running?'(Stop → Start to apply)':'');toast('My List saved')}catch(e){$('#mNote').textContent=e.message;toast(e.message,1)}};
+
 // user agents
 let UA=null;
 function uaRadioValue(){return document.querySelector('input[name=uamode]:checked')?.value||'rotate-hour'}

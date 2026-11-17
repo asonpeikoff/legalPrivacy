@@ -41,9 +41,12 @@ def looks_browsable(domain: str) -> bool:
 
 
 class DomainPool:
-    def __init__(self, rng: random.Random, store: FeedStore | None = None):
+    def __init__(self, rng: random.Random, store: FeedStore | None = None,
+                 my_sites: list[str] | None = None, random_share: float = 0.3):
         self.rng = rng
         self.store = store
+        self.my_sites = [s for s in (my_sites or []) if safe_domain(s)]   # most-visited first
+        self.random_share = random_share
         self._recent: deque[str] = deque(maxlen=60)
         self._seen_good: deque[str] = deque(maxlen=300)    # sites reached by clicking search results
 
@@ -51,6 +54,13 @@ class DomainPool:
         """Record a site the user persona actually reached organically (used as a later start point)."""
         if host and host not in self._seen_good and safe_domain(host):
             self._seen_good.append(host)
+
+    def _mine(self) -> str | None:
+        """A site from My List, or None when this draw should come from the other sources."""
+        if not self.my_sites or self.rng.random() < self.random_share:
+            return None
+        weights = [1.0 / (i + 3) for i in range(len(self.my_sites))]    # your top sites most often
+        return self.rng.choices(self.my_sites, weights=weights)[0]
 
     def _ranked(self) -> list[str]:
         ranked = self.store.items("tranco") if self.store else []
@@ -61,6 +71,10 @@ class DomainPool:
     def pick(self, browsable: bool = False) -> str:
         """Zipf-weighted draw: popular sites dominate, like real browsing, but the tail still appears.
         browsable=True restricts to things people open in a browser (DNS lookups use everything)."""
+        mine = self._mine()
+        if mine:
+            self._recent.append(mine)
+            return mine
         ranked = self._ranked()
         if browsable:
             ranked = [x for x in ranked[:1500] if looks_browsable(x)] or FALLBACK_DOMAINS
@@ -77,7 +91,10 @@ class DomainPool:
         return f"www.{d}" if self.rng.random() < 0.45 and d.count(".") == 1 else d
 
     def visit_host(self) -> str:
-        """A site to open: half the time one reached earlier via search, otherwise a popular browsable site."""
+        """A site to open: My List first (if set), else one reached earlier via search, else a popular site."""
+        mine = self._mine()
+        if mine:
+            return f"www.{mine}" if mine.count(".") == 1 and self.rng.random() < 0.6 else mine
         if self._seen_good and self.rng.random() < 0.5:
             return self.rng.choice(list(self._seen_good))
         d = self.pick(browsable=True)

@@ -154,6 +154,8 @@ class UIServer:
                         return self._send(200, "\n".join(lines).encode(), "text/plain; charset=utf-8")
                     if u.path == "/api/tools/resolvers":
                         return self._json(ctl.resolvers_check())
+                    if u.path == "/api/mylist":
+                        return self._json(ctl.mylist_state())
                     if u.path == "/api/useragents":
                         return self._json(ctl.ua_state())
                     if u.path == "/api/tools/speed":
@@ -197,6 +199,12 @@ class UIServer:
                         ctl.update_app(body)
                     elif path == "/api/wizard":
                         return self._json(ctl.wizard(body))
+                    elif path == "/api/mylist":
+                        return self._json(ctl.mylist_save(body))
+                    elif path == "/api/mylist/scan":
+                        return self._json(ctl.mylist_scan(body.get("days", 30)))
+                    elif path == "/api/mylist/watch":
+                        return self._json(ctl.mylist_watch(str(body.get("action")), body.get("hours")))
                     elif path == "/api/useragents":
                         return self._json(ctl.ua_save(body))
                     elif path == "/api/useragents/detect":

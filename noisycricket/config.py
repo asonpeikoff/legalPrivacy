@@ -134,6 +134,25 @@ class IdentityConfig:
 
 
 @dataclass
+class MyListConfig:
+    """Your own sites (My List). Page visits and DNS lookups come from here first."""
+    enabled: bool = False
+    sites: list[str] = field(default_factory=list)   # site names, most-visited first
+    random_share: float = 0.3     # share of visits/lookups from the other sources instead
+    watch_started: float = 0.0    # "recording" window start (unix time); 0 = not recording
+    watch_hours: float = 24.0     # recording window length
+
+    def validate(self) -> None:
+        if not 0 <= self.random_share <= 1:
+            raise ConfigError("mylist.random_share must be between 0 and 1")
+        if not 1 <= self.watch_hours <= 72:
+            raise ConfigError("mylist.watch_hours must be between 1 and 72")
+        for s in self.sites:
+            if not s or " " in s or "/" in s or "." not in s or len(s) > 253:
+                raise ConfigError(f"mylist: '{s}' is not a site name like example.com")
+
+
+@dataclass
 class QuerySources:
     """Where search queries come from (mixed; none dominates). See queries.py."""
     live: bool = True        # Google Trends, Wikipedia most-read, BBC headlines (refreshed daily)
@@ -162,6 +181,7 @@ class Profile:
     rate: "RateConfig" = field(default_factory=lambda: RateConfig())
     dns: "DnsConfig" = field(default_factory=lambda: DnsConfig())
     identity: "IdentityConfig" = field(default_factory=lambda: IdentityConfig())
+    mylist: "MyListConfig" = field(default_factory=lambda: MyListConfig())
 
     def active_engines(self, transport: str) -> list[str]:
         """Engines a lane runs. Onion is Tor-only; clearnet engines run on Tor
@@ -208,6 +228,7 @@ def profile_to_dict(profile: Profile) -> dict[str, Any]:
         "rate": asdict(profile.rate),
         "dns": asdict(profile.dns),
         "identity": asdict(profile.identity),
+        "mylist": asdict(profile.mylist),
     }}
 
 
@@ -263,6 +284,24 @@ def apply_overrides(profile: Profile, raw: dict[str, Any]) -> Profile:
         profile.identity = IdentityConfig(**{k: str(v) for k, v in merged.items()
                                              if k in IdentityConfig.__dataclass_fields__})
         profile.identity.validate()
+    if p.get("mylist"):
+        merged = profile.mylist.__dict__ | p["mylist"]
+        sites = merged.get("sites") or []
+        if isinstance(sites, str):
+            sites = sites.replace(",", "\n").splitlines()
+        clean = []
+        for x in sites:
+            x = str(x).strip().lower().removeprefix("https://").removeprefix("http://").split("/")[0]
+            x = x.removeprefix("www.")
+            if x and x not in clean:
+                clean.append(x)
+        merged["sites"] = clean
+        profile.mylist = MyListConfig(
+            enabled=bool(merged.get("enabled")), sites=clean,
+            random_share=float(merged.get("random_share", 0.3)),
+            watch_started=float(merged.get("watch_started") or 0),
+            watch_hours=float(merged.get("watch_hours", 24)))
+        profile.mylist.validate()
     if "daily_max_failures" in p:
         profile.daily_max_failures = int(p["daily_max_failures"])
     for name, eng in profile.engines.items():
