@@ -274,6 +274,11 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
       <select id="sBrowser"><option value="auto">Auto (recommended, default)</option><option value="on">Always</option><option value="off">Off — plain HTTP</option></select>
       <span class="small" id="sBrowserInfo"></span></div>
     <div class="small mute">A real Chrome/Edge/Chromium scrolls, pauses to read, moves the mouse, clicks or taps search results and now and then downloads a file (discarded). Plain HTTP can't do any of that and is easier to spot.</div>
+    <div class="row">Browser engine <select id="sEngine">
+      <option value="auto">Match my own browser (recommended, default)</option>
+      <option value="chromium">Chromium / Chrome</option>
+      <option value="firefox">Firefox</option></select></div>
+    <div class="small mute">Each engine has its own network fingerprint. Matching yours makes the noise look like you. Firefox needs a one-time download (<code>python -m playwright install firefox</code>); without it, Chromium is used. Firefox can't emulate phones, so phone visits run as desktop with it.</div>
     <div class="row">Browser window <select id="sWin">
       <option value="headless">Hidden (recommended, default)</option>
       <option value="offscreen">Real window, off-screen</option>
@@ -723,7 +728,7 @@ function fillSettings(force){
     ...(torOn2?[{key:'onion',label:'Tor .onion sites',value:tr.onion??15,hint:'(about 10–15% recommended)'}]:[])]);
   $('#xMobile').value=Math.round((tr.mobile_share??0.55)*100);$('#xDevice').value=tr.device||'iPhone 13';
   $('#xDevice').onchange=()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'};
-  $('#sBrowser').value=p.transports.clearnet.browser||'auto';$('#sWin').value=p.transports.clearnet.browser_visible?'visible':(p.transports.clearnet.browser_offscreen?'offscreen':'headless');
+  $('#sBrowser').value=p.transports.clearnet.browser||'auto';$('#sEngine').value=p.transports.clearnet.browser_engine||'auto';$('#sWin').value=p.transports.clearnet.browser_visible?'visible':(p.transports.clearnet.browser_offscreen?'offscreen':'headless');
   const q=p.queries||{};$('#qLive').checked=q.live!==false;$('#qData').checked=q.dataset!==false;$('#qBuiltin').checked=q.builtin!==false;$('#qWords').checked=q.words!==false;$('#sAuto').checked=!!S.app.autostart;$('#sPath').textContent=S.config_path;dirty.set=false;
   $$('#t-set input').forEach(i=>i.oninput=()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'});
 }
@@ -732,7 +737,7 @@ async function saveSettings(auto){
   const rnd=parseInt($('#sRand').value||0)/100;
   try{await api('/api/config',{realtime_scale:parseFloat($('#sScale').value),daily_max_failures:parseInt($('#sMaxF').value),engines,rate:{mode:rnd>0?'random':'steady',level:parseFloat($('#sLevel').value),randomness:rnd},
       dns:{mode:document.querySelector('input[name=dnsm]:checked').value,system_share:parseInt($('#dShare').value||50)/100,opennic:$('#dOpen').checked,quad9:$('#dQuad9').checked,custom:$('#dCustom').value},
-      transports:{clearnet:{enabled:$('#sClear').checked,proxy:$('#sProxy').value||null,browser:$('#sBrowser').value,browser_visible:$('#sWin').value==='visible',browser_offscreen:$('#sWin').value==='offscreen'}},
+      transports:{clearnet:{enabled:$('#sClear').checked,proxy:$('#sProxy').value||null,browser:$('#sBrowser').value,browser_visible:$('#sWin').value==='visible',browser_offscreen:$('#sWin').value==='offscreen',browser_engine:$('#sEngine').value}},
       queries:{live:$('#qLive').checked,dataset:$('#qData').checked,builtin:$('#qBuiltin').checked,words:$('#qWords').checked},
       traffic:{pattern:(document.querySelector('input[name=xpat]:checked')||{}).value||'drift',...(()=>{const m=window._trMix.values();return {browser:m.browser,plain:m.plain,onion:m.onion??window._trOnion}})(),
                mobile_share:parseInt($('#xMobile').value||0)/100,device:$('#xDevice').value},

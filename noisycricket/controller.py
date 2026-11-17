@@ -407,7 +407,9 @@ class Controller:
                                          "Using plain HTTP instead.")
             return None
         from .browser import BrowserTransport
+        engine = self._browser_engine()
         return BrowserTransport(proxy=cfg.proxy, headless=not (cfg.browser_visible or cfg.browser_offscreen),
+                                engine=engine,
                                 offscreen=cfg.browser_offscreen and not cfg.browser_visible, executable=info["detail"],
                                 low_data=self.profile.extras.low_data,
                                 stop_event=stop, scale=lambda: self.profile.realtime_scale,
@@ -420,6 +422,19 @@ class Controller:
         import random as _r
         from .interests import Interests
         return Interests(_r.Random(), ex.interest_list, ex.interest_active, ex.interest_rotate_days, ex.interest_salt)
+
+    def _browser_engine(self) -> str:
+        """auto = match your own browser: Firefox if your user agent is Firefox and Playwright's
+        Firefox is installed; otherwise Chromium."""
+        from .browser import find_playwright_firefox
+        want = self.profile.transports["clearnet"].browser_engine
+        if want == "auto":
+            want = "firefox" if "Firefox/" in self.profile.identity.own_ua else "chromium"
+        if want == "firefox" and not find_playwright_firefox():
+            self.log.warn("browser", "Firefox engine wanted, but Playwright's Firefox isn't installed "
+                                     "(run: python -m playwright install firefox). Using Chromium.")
+            return "chromium"
+        return want
 
     def _query_source(self, words):
         import random as _r

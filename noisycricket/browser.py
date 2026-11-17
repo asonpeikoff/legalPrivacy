@@ -79,6 +79,28 @@ def find_browser() -> str | None:
     return None
 
 
+def find_playwright_firefox() -> str | None:
+    """Playwright's own Firefox build (installed with `python -m playwright install firefox`).
+    Playwright cannot drive an ordinary Firefox install, only this build."""
+    bases = [os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "")]
+    home = Path.home()
+    if sys.platform == "win32":
+        bases.append(os.path.join(os.environ.get("LOCALAPPDATA", str(home / "AppData" / "Local")), "ms-playwright"))
+        pats = ["firefox-*/firefox/firefox.exe"]
+    elif sys.platform == "darwin":
+        bases.append(str(home / "Library" / "Caches" / "ms-playwright"))
+        pats = ["firefox-*/firefox/Nightly.app/Contents/MacOS/firefox"]
+    else:
+        bases.append(str(home / ".cache" / "ms-playwright"))
+        pats = ["firefox-*/firefox/firefox"]
+    for base in filter(None, bases):
+        for pat in pats:
+            hits = sorted(glob.glob(os.path.join(base, pat)))
+            if hits:
+                return hits[-1]
+    return None
+
+
 def browser_support() -> tuple[bool, str]:
     """(available, human-readable reason)."""
     try:
@@ -179,8 +201,9 @@ class BrowserTransport(Transport):
                  stop_event: threading.Event | None = None, scale: Callable[[], float] = lambda: 1.0,
                  download_prob: float = 0.03, on_event: Callable[[str, str], None] | None = None,
                  rng: random.Random | None = None, low_data: bool = False, image_prob: float = 0.04,
-                 offscreen: bool = False):
-        self.offscreen = offscreen and not headless
+                 offscreen: bool = False, engine: str = "chromium"):
+        self.engine = engine if engine in ("chromium", "firefox") else "chromium"
+        self.offscreen = offscreen and not headless and self.engine == "chromium"
         self.low_data = low_data
         self.image_prob = 0.0 if low_data else image_prob     # no images loaded in low-data mode
         self.proxy, self.headless = proxy, headless
@@ -199,6 +222,15 @@ class BrowserTransport(Transport):
         if self._browser is not None:
             return
         from playwright.sync_api import sync_playwright
+        if self.engine == "firefox":
+            # Firefox (Gecko): its own TLS/HTTP fingerprint, the same as people browsing with Firefox.
+            self._pw = sync_playwright().start()
+            self._browser = self._pw.firefox.launch(headless=self.headless,
+                                                    proxy={"server": self.proxy} if self.proxy else None)
+            self._major = (self._browser.version or "0").split(".")[0]
+            self.on_event("info", f"Real browser started: Firefox {self._browser.version}"
+                                  f" ({'headless' if self.headless else 'visible'})")
+            return
         if not self.executable:
             raise RuntimeError("no Chromium-family browser found")
         self._pw = sync_playwright().start()
@@ -267,6 +299,8 @@ class BrowserTransport(Transport):
         # The identity decides: phone (and which phone) or desktop. Older identities without
         # that information fall back to a random share.
         mobile = bool(identity.mobile) if hasattr(identity, "mobile") else rng.random() < MOBILE_SHARE
+        if self.engine == "firefox":
+            mobile = False          # Playwright's Firefox can't emulate a phone; those visits run as desktop
         device = MOBILE_DEVICES.get(getattr(identity, "device", "") or "")
         ios = bool(mobile and "iPhone" in (getattr(identity, "user_agent", "") or ""))
         if mobile and device is None:
@@ -312,7 +346,7 @@ class BrowserTransport(Transport):
                                    {"brand": "Not-A.Brand", "version": "24"}],
                         "platform": "Android", "platformVersion": "10.0.0", "architecture": "",
                         "model": "K", "mobile": True}})
-            else:
+            elif self.engine == "chromium":
                 ov = self._desktop_override()
                 if ov:
                     cdp = ctx.new_cdp_session(page)

@@ -56,6 +56,7 @@ class TransportConfig:
     browser: str = "auto"             # clearnet: auto | on | off — drive a real browser like a person
     browser_visible: bool = False     # clearnet: show the browser window instead of running headless
     browser_offscreen: bool = False   # clearnet: a real window, but parked off-screen (real graphics, not seen)
+    browser_engine: str = "auto"      # clearnet: auto (match your browser) | chromium | firefox
     # --- tor lane only ---
     socks: str = DEFAULT_TOR_SOCKS
     control: str | None = None
@@ -72,6 +73,8 @@ class TransportConfig:
     def validate(self, name: str) -> None:
         if self.browser not in ("auto", "on", "off"):
             raise ConfigError(f"transport '{name}': browser must be auto, on or off")
+        if self.browser_engine not in ("auto", "chromium", "firefox"):
+            raise ConfigError(f"transport '{name}': browser_engine must be auto, chromium or firefox")
         if self.identities_per_circuit < 1:
             raise ConfigError(f"transport '{name}': identities_per_circuit >= 1")
 
