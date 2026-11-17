@@ -146,13 +146,13 @@ class TrafficObserver:
             pass
         return pids
 
-    def _connections(self) -> list[tuple[str, int | None]]:
-        """[(remote ip, pid)] for established connections; falls back to our own processes."""
+    def _connections(self) -> list[tuple]:
+        """[(remote ip, pid, local port)] for open connections; falls back to our own processes."""
         out = []
         try:
             for c in psutil.net_connections(kind="inet"):
                 if c.raddr and (c.status in ("ESTABLISHED", "SYN_SENT") or c.type == 2):
-                    out.append((c.raddr.ip, c.pid))
+                    out.append((c.raddr.ip, c.pid, c.laddr.port if c.laddr else 0))
             self.limited = False
         except (psutil.AccessDenied, PermissionError, OSError):
             self.limited = True                     # macOS without admin: only our own processes
@@ -160,7 +160,7 @@ class TrafficObserver:
                 try:
                     for c in psutil.Process(pid).net_connections(kind="inet"):
                         if c.raddr:
-                            out.append((c.raddr.ip, pid))
+                            out.append((c.raddr.ip, pid, c.laddr.port if c.laddr else 0))
                 except Exception:
                     pass
         return out
@@ -172,17 +172,22 @@ class TrafficObserver:
         own = self._own_pids()
         tor = self.tor_pid()
         seen: dict[str, str] = {}
-        for ip, pid in self.conn_fn():
+        ports: dict[str, set] = {}
+        for item in self.conn_fn():
+            ip, pid = item[0], item[1]
             if not _is_public(ip):
                 continue
+            ports.setdefault(ip, set()).add(item[2] if len(item) > 2 else 0)
             kind = "tor" if (tor and pid == tor) else ("noise" if pid in own else "you")
             if seen.get(ip) != "noise":            # if both, the noise owns the label
                 seen[ip] = kind
         with self._lock:
             for ip, kind in seen.items():
-                n = self.live.setdefault(ip, {"kind": kind, "first": now, "seen": 0})
+                n = self.live.setdefault(ip, {"kind": kind, "first": now, "seen": 0, "ports": set()})
                 n["kind"], n["last"] = kind, now
                 n["seen"] += 1
+                if len(n["ports"]) < 500:
+                    n["ports"] |= ports.get(ip, set())     # each new local port = a new connection
                 if kind == "you":
                     self.recent_you.append((now, ip))
             for ip in [k for k, v in self.live.items() if now - v.get("last", 0) > 180]:
@@ -239,9 +244,11 @@ class TrafficObserver:
                     continue
                 name = self.names.get(ip, "") if n["kind"] != "you" else ""
                 who = {"you": "Your apps", "noise": "noisyCricket", "tor": "Tor (noisyCricket)"}[n["kind"]]
+                conns = max(1, len(n.get("ports", ())))
                 out.append({"id": ip, "label": name or (ip if n["kind"] != "you" else ""),
-                            "kind": n["kind"], "weight": n["seen"], "active": now - n["last"] < self.interval * 1.5,
-                            "detail": f"{who} · {ip} · seen {n['seen']}× · {int(now - n['first'])} s"})
+                            "kind": n["kind"], "weight": conns, "active": now - n["last"] < self.interval * 1.5,
+                            "detail": f"{who} · {ip} · {conns} connection{'s' if conns > 1 else ''} · "
+                                      f"connected {int(now - n['first'])} s"})
         return out
 
     def compare(self) -> dict:
