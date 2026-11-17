@@ -9,6 +9,7 @@ import unittest
 sys.path.insert(0, ".")
 
 import tests.test_identity
+import tests.test_packages
 import tests.test_pacing
 import tests.test_relay
 import tests.test_scheduler
@@ -27,6 +28,7 @@ import tests.test_observe
 
 MODULES = [
     tests.test_identity,
+    tests.test_packages,
     tests.test_pacing,
     tests.test_relay,
     tests.test_scheduler,

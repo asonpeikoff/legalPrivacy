@@ -27,7 +27,7 @@ from .paths import getenv
 @dataclass
 class Target:
     url: str
-    kind: str = "html"            # html | doh | dns
+    kind: str = "html"            # html | doh | dns | pkg
     timeout: float = 25.0
     referer: str | None = None    # set on click-through / link-follow hits
     note: str | None = None       # e.g. query origin ("trends", "dataset"…), shown in the log

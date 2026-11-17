@@ -195,6 +195,7 @@ class ExtrasConfig:
     site_list: str = "both"       # both = Tranco re-ranked by Chrome's real browsing (CrUX), default | tranco
     persona: str = ""             # who the noise mostly looks like ("" = nobody in particular), e.g. "Data scientist"
     persona_share: float = 0.6    # how closely the persona is followed (share of visits and searches)
+    packages: str = "auto"        # real pip/npm installs (removed again): auto (techy personas) | on | off
     household: bool = False       # noise from a virtual household of several people
     household_size: int = 3       # 2..5 people, member 1 = you
 
@@ -229,6 +230,8 @@ class ExtrasConfig:
             raise ConfigError(f"extras.persona: unknown persona '{self.persona}'")
         if not 0 <= float(self.persona_share) <= 1:
             raise ConfigError("extras.persona_share must be between 0 and 1")
+        if self.packages not in ("auto", "on", "off"):
+            raise ConfigError("extras.packages must be auto, on or off")
         if not 2 <= int(self.household_size) <= 5:
             raise ConfigError("extras.household_size must be 2 to 5")
         if self.site_list not in ("both", "tranco"):
@@ -301,6 +304,7 @@ class Profile:
         "crawl": EngineConfig(budget_per_day=40),
         "dns": EngineConfig(budget_per_day=200),
         "onion": EngineConfig(budget_per_day=40, max_depth=3),
+        "packages": EngineConfig(budget_per_day=12),
     })
     transports: dict[str, TransportConfig] = field(default_factory=lambda: {
         "clearnet": TransportConfig(),
@@ -319,7 +323,9 @@ class Profile:
     def active_engines(self, transport: str) -> list[str]:
         """Engines a lane runs. Onion is Tor-only; clearnet engines run on Tor
         only when the user explicitly opted into clearnet_via_tor."""
-        on = [n for n, e in self.engines.items() if e.enabled]
+        on = [n for n, e in self.engines.items() if e.enabled and (n != "packages" or self.packages_on())]
+        if transport == "tor":
+            on = [n for n in on if n != "packages"]           # package installs never go over Tor
         if transport == "clearnet":
             return [n for n in on if n != "onion"]
         if transport == "tor":
@@ -331,6 +337,12 @@ class Profile:
                 out.append("onion")
             return out
         return []
+
+    def packages_on(self) -> bool:
+        """Package-manager noise: auto = on for the Data scientist and Developer personas."""
+        from .packages import TECHY_PERSONAS
+        mode = self.extras.packages
+        return mode == "on" or (mode == "auto" and self.extras.persona in TECHY_PERSONAS)
 
     def clearnet_lane_count(self) -> int:
         """How many lanes share the clearnet engines' daily budgets."""
@@ -438,7 +450,8 @@ def apply_overrides(profile: Profile, raw: dict[str, Any]) -> Profile:
             activity=str(m["activity"]), busy_kbps=int(m["busy_kbps"]), metrics=bool(m["metrics"]),
             site_list="tranco" if m.get("site_list") == "tranco" else "both",
             household=bool(m.get("household")), household_size=int(m.get("household_size") or 3),
-            persona=str(m.get("persona") or ""), persona_share=float(m.get("persona_share", 0.6)))
+            persona=str(m.get("persona") or ""), persona_share=float(m.get("persona_share", 0.6)),
+            packages=str(m.get("packages") or "auto"))
         if (profile.extras.interests or profile.extras.household) and not profile.extras.interest_salt:
             import secrets as _s
             profile.extras.interest_salt = _s.token_hex(8)

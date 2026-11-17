@@ -89,7 +89,7 @@ def build_lanes(profile: Profile, wordlist: list[str],
             engines=names,
             budgets={n: _budget(n, share) for n in names},
         ))
-        page_engines = [n for n in names if n != "dns"]   # DNS lookups are not browser work
+        page_engines = [n for n in names if n not in ("dns", "packages")]   # not browser work
         if plain_transport is not None and page_engines:
             lanes.append(Lane(name="clearnet-plain", transport=plain_transport, engines=page_engines,
                               budgets={n: _budget(n, share) for n in page_engines}))
@@ -408,6 +408,8 @@ class Runner:
             return self.probe_fn(lane, identity, target)
         if target.kind == "dns":
             return self._dns_probe(target)
+        if target.kind == "pkg":
+            return self._pkg_probe(lane, target)
         t0 = time.time()
         res = lane.transport.hit(identity, target)
         total = (time.time() - t0) * 1000.0
@@ -436,6 +438,26 @@ class Runner:
             res.bytes = 300 if ex is not None and ex.browser_dns else 100
             return res
         return HitResult(None, error=f"dns query to {server} failed")
+
+    def _packages(self, lane: Lane):
+        pk = self.__dict__.get("_pkg")
+        if pk is None:
+            from .packages import PackageNoise
+            from .paths import app_dir
+            proxy = getattr(lane.transport, "proxy", None)
+            pk = self.__dict__["_pkg"] = PackageNoise(app_dir() / "packages", self.rng,
+                                                      persona=self.profile.extras.persona,
+                                                      proxy=proxy if isinstance(proxy, str) else None)
+        return pk
+
+    def _pkg_probe(self, lane: Lane, target: Target) -> HitResult:
+        """A real pip/npm command in legalPrivacy's own throwaway environment."""
+        action, _, pkg = target.url[len("pkg://"):].partition("/")
+        t0 = time.time()
+        r = self._packages(lane).do(action, pkg)
+        res = HitResult(200 if r["ok"] else None, "", error=r["error"])
+        res.bytes, res.latency_ms = r["bytes"], (time.time() - t0) * 1000.0
+        return res
 
     def _dns_label(self, server: str) -> str:
         if self.dns_plan is not None:
@@ -491,7 +513,7 @@ class Runner:
         identity, pacer = self._identity_pacer_for(lane)
         target = self._make_target(lane, eng_name, identity)
         ex = getattr(self.profile, "extras", None)
-        if ex is not None and ex.polite and target.kind != "dns" and target.role != "search":
+        if ex is not None and ex.polite and target.kind == "html" and target.role != "search":
             import urllib.parse as _up
             for _ in range(3):                            # polite: no site twice within a minute
                 host = _up.urlparse(target.url).hostname or ""
@@ -534,7 +556,7 @@ class Runner:
             if host:
                 self._emit("warn", lane.name, f"{host} showed its “are you a robot?” check. Using other search "
                            f"engines for about {hours:.0f} h, the way a person would switch.")
-        if target.kind != "dns":
+        if target.kind == "html":
             import urllib.parse as _up
             self._host_last[_up.urlparse(target.url).hostname or ""] = self.clock()
         self.bytes_today += int(getattr(result, "bytes", 0) or len(result.html or ""))
@@ -594,7 +616,8 @@ class Runner:
                     target: Target, result: HitResult) -> None:
         self._hit_seq += 1
         status = f"HTTP {result.status}" if result.status else (result.error or "ERROR")
-        shown = target.url.split("/", 3)[-1] if target.kind == "dns" else target.url   # dns: just the name
+        shown = (target.url.split("/", 3)[-1] if target.kind == "dns"                # dns: just the name
+                 else target.note if target.kind == "pkg" else target.url)              # pkg: "pip install numpy"
         rec = {
             "seq": self._hit_seq, "ts": time.time(), "lane": lane.name, "engine": eng_name,
             "url": shown, "status": result.status, "ok": result.ok,
@@ -703,6 +726,11 @@ class Runner:
             _packet, domain, server = fac.make_query()
             via = "your normal DNS" if server == "system" else self._dns_label(server)
             return Target(url=f"dns://{server}/{domain}", kind="dns", timeout=4.0, note=f"via {via}")
+        if eng_name == "packages":
+            pk = self._packages(lane)
+            action, pkg = pk.choose()
+            label = pk.label(action, pkg)
+            return Target(url=f"pkg://{action}/{pkg}", kind="pkg", timeout=600.0, note=label)
         raise ValueError(f"unknown engine '{eng_name}'")
 
     def run(self) -> dict[str, dict[str, int]]:

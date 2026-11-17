@@ -201,6 +201,9 @@ All optional:
 - **Your own activity:** pause while you're using the connection, or run mostly while you're active
 - **Persona:** who the noise mostly looks like (Data scientist, Developer, Sports fan, Student, Home cook and
   gardener, Traveller), followed mostly but not perfectly (60% by default)
+- **Package installs:** real `pip` (and `npm`) installs, downloads and uninstalls of popular packages, in
+  legalPrivacy's own separate environment, removed again afterwards. On automatically for the Data scientist and
+  Developer personas
 - **Interests:** a few steady themes at a time, changing every so often
 - **Household:** noise from 2–5 virtual people with their own devices, browsers and hours
 - **Search engines:** how often each is used
