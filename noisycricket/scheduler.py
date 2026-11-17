@@ -225,13 +225,16 @@ class Runner:
         noise = DnsNoise(self.rng, self.wordlist, self.domains)
         if noise.fire(packet, server, timeout=target.timeout):
             return HitResult(200, "")
-        return HitResult(None, error=f"dns query to {server} failed")
+        if self.dns_plan is not None and hasattr(self.dns_plan, "mark_failed"):
+            self.dns_plan.mark_failed(server)          # next lookups move to another / the fallback
+        return HitResult(None, error=f"no answer from {server}")
 
     def _dns_label(self, server: str) -> str:
         if self.dns_plan is not None:
             for ip, label in self.dns_plan.secure_servers():
                 if ip == server:
-                    return f"{label} ({ip})"
+                    fb = any(r["ip"] == ip and r["role"] == "fallback" for r in self.dns_plan.cfg.resolvers)
+                    return f"{label}{' (fallback)' if fb else ''} {ip}"
         return server
 
     def _local_hour(self) -> float | None:

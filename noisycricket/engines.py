@@ -329,8 +329,10 @@ class DnsNoise:
         try:
             sock.settimeout(timeout)
             sock.sendto(packet, (server, 53))
-            data, _ = sock.recvfrom(512)
-            return len(data) >= 12
+            while True:
+                data, addr = sock.recvfrom(1500)
+                if addr[0] == server and data[:2] == packet[:2]:   # reply from the IP we asked, same id
+                    return len(data) >= 12
         except OSError:
             return False
         finally:

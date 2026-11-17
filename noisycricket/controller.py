@@ -51,6 +51,9 @@ class Controller:
         self._load()
         self.tor: TorManager | None = None
         self.feeds = FeedStore(self.log)
+        import random as _r
+        self.dns_plan = DnsPlan(_r.Random(), self.profile.dns, self.feeds.items("opennic"))
+        self._dns_timer = False
         self._feed_timer_started = False
         self.runner: Runner | None = None
         self._thread: threading.Thread | None = None
@@ -245,7 +248,7 @@ class Controller:
                                  stop_event=self._stop, sleep_fn=lambda s: self._stop.wait(s),
                                  queries=self._query_source(words), domains=DomainPool(_r.Random(), self.feeds),
                                  rate=RatePlanner(_r.Random(), prof.rate),
-                                 dns_plan=DnsPlan(_r.Random(), prof.dns, self.feeds.items("opennic")))
+                                 dns_plan=self._fresh_dns_plan())
             self._thread = threading.Thread(target=self._run_loop, daemon=True, name="cricket-runner")
             self._thread.start()
             self.log.info("app", "Started: lanes = " + ", ".join(
@@ -285,7 +288,7 @@ class Controller:
             r = Runner(profile=prof, lanes=lanes, wordlist=words, log=self.log, sleep_fn=lambda s: None,
                        local_hour_fn=lambda: 12.0, queries=self._query_source(words),
                        domains=DomainPool(_r.Random(), self.feeds),
-                       dns_plan=DnsPlan(_r.Random(), prof.dns, self.feeds.items("opennic")))
+                       dns_plan=self._fresh_dns_plan())
             try:
                 r.run_once(wait=False)
             except MaxFailuresExceeded as exc:
@@ -313,7 +316,28 @@ class Controller:
             "rate_info": [describe_rate(lv, self._search_share()) for lv in range(1, 11)],
             "hour_target": round(self.runner.hour_target) if self.runner and self.running else None,
             "opennic": [x.split("|") for x in self.feeds.items("opennic")],
+            "dns": self.dns_plan.report(),
         }
+
+    def _fresh_dns_plan(self) -> DnsPlan:
+        """Point the shared plan at the current settings; re-check resolvers if they'll be used."""
+        self.dns_plan.cfg = self.profile.dns
+        if self.profile.dns.mode != "system":
+            self.dns_plan.check_async()
+            if not self._dns_timer:
+                self._dns_timer = True
+
+                def loop():
+                    while True:
+                        time.sleep(600)
+                        if self.running and self.profile.dns.mode != "system":
+                            self.dns_plan.check_async()
+                threading.Thread(target=loop, daemon=True, name="dns-recheck").start()
+        return self.dns_plan
+
+    def check_dns(self) -> None:
+        self.dns_plan.cfg = self.profile.dns
+        self.dns_plan.check_async()
 
     def _search_share(self) -> float:
         e = self.profile.engines
