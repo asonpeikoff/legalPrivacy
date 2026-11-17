@@ -52,3 +52,20 @@ def test_budget_exhausts_and_counts_failures():
     b2.record_failure(1.0)
     b2.record_hit(1.0)
     assert b2.failures == 1 and not b2.exhausted
+
+
+def test_sittings_fit_the_hour_but_are_irregular():
+    import random
+    import statistics
+    from noisycricket.pacing import SessionPacer
+    totals, gaps0 = [], None
+    for seed in range(100):
+        sp = SessionPacer(random.Random(seed))
+        hits, t, gaps = 20, 0.0, []
+        while hits:
+            g = sp.next_gap(hits, max(60.0, 3600.0 - t))
+            gaps.append(g); t += g; hits -= 1
+        totals.append(t)
+        gaps0 = gaps0 or gaps
+    assert 2400 < statistics.median(totals) < 4800          # the hour's total still fits
+    assert statistics.pstdev(gaps0) / statistics.mean(gaps0) > 1.0   # bursty, not a steady drip

@@ -79,6 +79,8 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
   <button data-t="set">Settings</button>
   <button data-t="health">Health</button>
   <button data-t="help">Help</button>
+  <button data-t="mylist">My List</button>
+  <button data-t="tools">Tools</button>
 </nav>
 <main>
 
@@ -181,6 +183,49 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
     <label class="chk"><input type="checkbox" id="dQuad9"><span><b>Quad9</b> 9.9.9.9 and 149.112.112.112 <span class="mute">(blocks malware domains, DNSSEC)</span></span></label>
     <div class="row">Your own resolvers <input type="text" id="dCustom" placeholder="optional, e.g. 1.2.3.4, 5.6.7.8" style="flex:1;min-width:220px"></div>
   </div>
+  <div class="card"><h3>Traffic mix</h3>
+    <div class="small mute">What kinds of noise run, and how the mix changes over time. Ordinary web noise never goes through Tor; .onion noise always does, in its own lane.</div>
+    <div style="margin-top:8px"><b>How the mix changes</b></div>
+    <label class="opt"><input type="radio" name="xpat" value="drift"> <b>Drift</b> <span class="mute">(recommended, default) — the shares wander slowly through the day, like a person who browses more on the phone some hours and more on the computer others</span></label>
+    <label class="opt"><input type="radio" name="xpat" value="blend"> <b>Blend</b> <span class="mute">— the same mix every hour</span></label>
+    <label class="opt"><input type="radio" name="xpat" value="alternate"> <b>Alternate</b> <span class="mute">— one kind at a time, switching every 1–3 hours (phone hours, computer hours, onion hours)</span></label>
+    <div style="margin-top:8px"><b>How much of each</b> <span class="small mute">— relative amounts</span></div>
+    <div class="row">Web pages in a real browser <input type="number" id="xBrowser" min="0" style="width:80px"> <span class="small mute">(recommended: most of it — scrolls, runs pages, looks like a person)</span></div>
+    <div class="row">Web pages over plain HTTP <input type="number" id="xPlain" min="0" style="width:80px"> <span class="small mute">(0 recommended — no JavaScript or scrolling, easier to tell apart; used anyway when no browser is installed)</span></div>
+    <div class="row">Tor .onion sites <input type="number" id="xOnion" min="0" style="width:80px"> <span class="small mute">(15 recommended; only runs when Tor is on)</span></div>
+    <div style="margin-top:8px"><b>Phones</b></div>
+    <div class="row">Share of noise that is a phone <input type="number" id="xMobile" min="0" max="100" style="width:70px">% <span class="small mute">(35% recommended)</span></div>
+    <div class="row">Phone to emulate <select id="xDevice">
+      <option value="iPhone 13">iPhone 13 (default, recommended)</option>
+      <option value="iPhone 15">iPhone 15</option>
+      <option value="iPhone SE (3rd gen)">iPhone SE (3rd gen)</option>
+      <option value="Pixel 7">Pixel 7</option>
+      <option value="Galaxy S24">Galaxy S24</option>
+      <option value="mix">Mix of phones (mostly iPhone 13)</option></select></div>
+    <div class="small mute">In the real browser, a phone gets that phone's screen size, touch input and its own browser's user agent (Safari for iPhones, with no Chrome-only headers). It still runs on this computer's Chromium underneath, so a site that checks deeply can tell.</div>
+  </div>
+  <div class="card"><h3>User agent</h3>
+    <div class="small mute">The user agent is the line every browser sends that says what browser and system it is. Noise that claims a different browser than yours can stand out. Pick how the plain-HTTP noise sets it.</div>
+    <div class="small" style="margin-top:8px"><b>Advice</b>
+      <ul style="margin:4px 0 0 18px">
+        <li><b>Your own browser's user agent</b> means the noise looks like you, same as your real traffic. This is what we recommend.</li>
+        <li><b>Random</b> changes the browser the noise claims to be every hour or day, drawn from the library below. Good if you want noise to look like a mix of visitors; it adds a second browser on your connection.</li>
+        <li><b>One library entry</b> is a single fixed browser. Only pick this for a specific reason, since one fixed browser is an easy pattern.</li>
+      </ul></div>
+    <label class="opt"><input type="radio" name="uamode" value="own"> <b>Pin to my own browser's user agent</b> <span class="mute">(recommended)</span></label>
+    <label class="opt"><input type="radio" name="uamode" value="rotate-hour"> <b>Random, changing every hour</b> <span class="mute">(default)</span></label>
+    <label class="opt"><input type="radio" name="uamode" value="rotate-day"> <b>Random, changing every day</b></label>
+    <label class="opt"><input type="radio" name="uamode" value="lib"> <b>Pin to one library entry</b> <span class="mute">(not recommended; pick one below)</span></label>
+    <div class="row" style="margin-top:6px">Your browser's user agent <input type="text" id="uOwn" placeholder="paste it, or press Detect" style="flex:1;min-width:260px"></div>
+    <div class="row"><button id="uDetect">Detect from my browser</button> <span class="small mute">Starts your installed Chrome/Chromium briefly, headless, to read it. Find it by hand in chrome://version (Chrome, Edge) or about:support (Firefox).</span></div>
+    <div class="row"><button id="uSave">Save user agent choice</button> <span class="small mute" id="uNote"></span></div>
+    <div class="small mute" id="uApplies"></div>
+    <details style="margin-top:10px"><summary><b>User-agent library</b> <span class="small mute" id="uCount"></span></summary>
+      <div class="row" style="margin-top:6px"><input type="text" id="uSearch" placeholder="filter, e.g. Firefox or 158" style="flex:1"></div>
+      <div class="scroll" style="max-height:340px"><table><thead><tr><th>Group</th><th>Platform</th><th>Release</th><th>Share</th><th>User agent</th><th></th></tr></thead><tbody id="uBody"></tbody></table></div>
+      <div class="small mute" style="margin-top:6px">Shares are how often each entry is picked when random. They are modelled from release age, not measured.</div>
+    </details>
+  </div>
   <div class="card"><h3>General</h3>
     <div class="row">Speed <input type="number" id="sScale" step="0.1" min="0.05" style="width:90px"> <span class="small mute">1.0 = human pace; lower = faster (for testing)</span></div>
     <div class="row">Stop after <input type="number" id="sMaxF" min="1" style="width:90px"> failures per day</div>
@@ -248,6 +293,58 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
   </div>
   <div class="row" style="justify-content:space-between;margin-top:16px"><button id="wBack">Back</button><button id="wNext" class="pri">Next</button></div>
 </div></div>
+<!-- MY LIST -->
+<section id="t-mylist" class="tab">
+  <div class="card"><h3>My List</h3>
+    <p class="small mute">Your own sites. When this is on, page visits and DNS lookups come from your list, with a share of other sites mixed in, so the noise looks like your real interests.</p>
+    <label class="chk"><input type="checkbox" id="mEnabled"><span><b>Visit sites from My List</b></span></label>
+    <div class="row">Mix in other sites <input type="number" id="mShare" min="0" max="100" style="width:70px">% <span class="small mute">(30% recommended: enough variety that the noise isn't just your list)</span></div>
+    <div class="row"><input type="text" id="mAdd" placeholder="add a site, e.g. example.com" style="flex:1"><button id="mAddBtn">Add</button></div>
+    <div class="scroll" style="max-height:260px"><table><thead><tr><th>#</th><th>Site</th><th>How often</th><th></th></tr></thead><tbody id="mBody"></tbody></table></div>
+    <div class="row" style="margin-top:8px"><button id="mSave">Save My List</button><span class="small mute" id="mNote"></span></div>
+  </div>
+  <div class="card"><h3>Find my sites</h3>
+    <p class="small mute">Reads your browsers' history on this computer only. Nothing is sent anywhere. Only site names and visit counts are read, and nothing is kept until you add sites. Sites the safety filter blocks are left out.</p>
+    <div class="small mute" id="mBrowsers"></div>
+    <div class="row" style="margin-top:8px"><b>From history:</b> last <input type="number" id="mDays" value="30" min="1" max="365" style="width:70px"> days <span class="small mute">(30 recommended)</span> <button id="mScan">Scan my history</button></div>
+    <div class="row"><b>From bookmarks:</b> <button id="mBm">Import my bookmarks</button>
+      <span class="small">or a bookmarks export file <input type="file" id="mBmFile" accept=".html,.htm"></span></div>
+    <div class="small mute">Bookmarks have no visit counts, so they come in as “Sometimes”; set “How often” for each yourself.</div>
+    <div class="row"><b>Or record:</b> from now for
+      <select id="mHours"><option value="12">12 hours</option><option value="24" selected>24 hours (recommended)</option><option value="48">48 hours</option></select>
+      <button id="mWatch">Start recording</button></div>
+    <div id="mWatchState" class="small" style="margin-top:4px"></div>
+    <div id="mFound" style="margin-top:8px"></div>
+  </div>
+</section>
+<!-- TOOLS -->
+<section id="t-tools" class="tab">
+  <div class="card"><h3>DNS leak check</h3>
+    <p class="small mute">Shows which DNS servers your computer is set to use, and whether any of them is one you did not choose for noise. Each click makes one lookup of a random, never-used name.</p>
+    <div class="row"><button id="toolDns">Run DNS check</button></div>
+    <div id="toolDnsOut" class="small" style="margin-top:8px"></div>
+    <div class="small mute" style="margin-top:8px">This check reads your computer's own configuration. To see which resolver actually answers, the external test is the authoritative one:
+      <a href="https://www.dnsleaktest.com/" target="_blank" rel="noopener">dnsleaktest.com</a> (opens in a new tab).</div>
+  </div>
+  <div class="card"><h3>Speed test</h3>
+    <p class="small mute">Downloads about 10 MB and uploads 2 MB once, over the normal internet (not Tor), through your clearnet proxy if you set one. Runs only when you click.</p>
+    <div class="row"><button id="toolSpeed">Run speed test</button><span class="small mute" id="toolSpeedNote"></span></div>
+    <div id="toolSpeedOut" class="small" style="margin-top:8px"></div>
+  </div>
+  <div class="card"><h3>Live log</h3>
+    <p class="small mute">The live log is kept in memory only. Nothing is written to disk, and it is cleared when noisyCricket quits.</p>
+    <div class="row"><button id="toolClearLog">Clear live log now</button><span class="small mute" id="toolLogNote"></span></div>
+  </div>
+  <div class="card"><h3>Related checks</h3>
+    <p class="small mute">Outside links, opened only when you click them, in a new tab.</p>
+    <div class="row"><a href="https://check.torproject.org/" target="_blank" rel="noopener">Check whether Tor is in use (check.torproject.org)</a></div>
+    <div class="row"><a href="https://www.opennicproject.org/" target="_blank" rel="noopener">About OpenNIC resolvers (opennicproject.org)</a></div>
+  </div>
+  <div class="card"><h3>Files</h3>
+    <div class="small">Config file: <code id="toolCfg"></code></div>
+    <div class="small mute" style="margin-top:6px">No log file is kept. The only file noisyCricket writes is that config file.</div>
+  </div>
+</section>
 <div id="toast"></div>
 
 <script>
@@ -268,7 +365,7 @@ const fmtDur=s=>{s=Math.floor(s);const h=Math.floor(s/3600),m=Math.floor(s%3600/
 const fmtB=n=>n>1e9?(n/1e9).toFixed(2)+' GB':n>1e6?(n/1e6).toFixed(1)+' MB':n>1e3?(n/1e3).toFixed(0)+' KB':(n||0)+' B';
 
 // tabs
-$$('#nav button').forEach(b=>b.onclick=()=>{$$('#nav button').forEach(x=>x.classList.toggle('on',x===b));$$('.tab').forEach(t=>t.classList.toggle('on',t.id==='t-'+b.dataset.t));if(b.dataset.t==='log')renderLog(true);if(b.dataset.t==='set')fillSettings(true);if(b.dataset.t==='tor')fillTor(true)});
+$$('#nav button').forEach(b=>b.onclick=()=>{$$('#nav button').forEach(x=>x.classList.toggle('on',x===b));$$('.tab').forEach(t=>t.classList.toggle('on',t.id==='t-'+b.dataset.t));if(b.dataset.t==='log')renderLog(true);if(b.dataset.t==='set')fillSettings(true);if(b.dataset.t==='tor')fillTor(true);if(b.dataset.t==='tools')$('#toolCfg').textContent=S?S.config_path:'';if(b.dataset.t==='mylist')loadML()});
 
 let S=null, hits=[], hitAfter=0, logs=[], logAfter=0, errCount=0, srcOn=new Set(), srcAll=new Set();
 let dirty={set:false,tor:false};
@@ -404,16 +501,109 @@ $('#tSave').onclick=async()=>{
   try{await api('/api/config',{transports:{tor:{enabled:$('#tEnable').checked,onion:$('#tOnion').checked,clearnet_via_tor:$('#tClear').checked,manage:$('#tManage').checked,socks:$('#tSocks').value,control:$('#tCtl').value||null,onion_seeds:$('#tSeeds').value,bridges:$('#tBridges').value}}});
     dirty.tor=false;$('#tSaved').textContent='saved ✓ '+(S&&S.running?'(Stop → Start to apply)':'');toast('Tor settings saved');await poll();fillTor(true)}catch(e){toast(e.message,1)}
 };
+// my list
+let ML=null, mFound=[];
+function fmtTime(t){return new Date(t*1000).toLocaleString()}
+function renderML(){
+  if(!ML)return;
+  ML.weights=ML.weights||{};
+  const OFT=[[1,'Rarely'],[3,'Sometimes'],[6,'Often'],[10,'Very often']];
+  const near=v=>OFT.reduce((a,b)=>Math.abs(b[0]-v)<Math.abs(a[0]-v)?b:a)[0];
+  $('#mBody').innerHTML=ML.sites.map((d,i)=>`<tr><td>${i+1}</td><td>${esc(d)}</td><td><select data-mw="${esc(d)}">${OFT.map(([v,l])=>`<option value="${v}" ${near(ML.weights[d]??3)===v?'selected':''}>${l}</option>`).join('')}</select></td><td><button data-mrm="${i}">Remove</button></td></tr>`).join('')||'<tr><td colspan=4 class="mute">Empty. Add sites, or find them below.</td></tr>';
+  $$('#mBody [data-mw]').forEach(sel=>sel.onchange=()=>{ML.weights[sel.dataset.mw]=parseFloat(sel.value);$('#mNote').textContent='unsaved changes'});
+  $$('#mBody [data-mrm]').forEach(b=>b.onclick=()=>{ML.sites.splice(+b.dataset.mrm,1);renderML();$('#mNote').textContent='unsaved changes'});
+}
+function fillML(){
+  if(!ML)return; $('#mEnabled').checked=ML.enabled; $('#mShare').value=Math.round(ML.random_share*100); renderML();
+  $('#mBrowsers').textContent=ML.browsers.length?('Browsers found: '+ML.browsers.join(', ')):'No browser history found on this computer.';
+  const w=$('#mWatchState');
+  if(!ML.watch_started){w.textContent='';$('#mWatch').textContent='Start recording';}
+  else if(ML.watch_done){w.innerHTML=`Recording finished at ${esc(fmtTime(ML.watch_ends))}. <button id="mCollect">Collect results</button> <button id="mCancel">Discard</button>`;}
+  else{w.innerHTML=`Recording until ${esc(fmtTime(ML.watch_ends))}. Use your browsers normally; it stops counting at that time. <button id="mCollect">Collect now</button> <button id="mCancel">Cancel</button>`;}
+  if($('#mCollect'))$('#mCollect').onclick=()=>mWatch('collect');
+  if($('#mCancel'))$('#mCancel').onclick=()=>mWatch('cancel');
+}
+async function loadML(){try{ML=await api('/api/mylist');fillML()}catch(e){$('#mNote').textContent=e.message}}
+let mFoundKind='history';
+function showFound(res,kind){
+  mFound=res.sites||[]; mFoundKind=kind||'history';
+  const errs=(res.errors||[]).length?`<div class="warnc small">${esc(res.errors.join('; '))}</div>`:'';
+  if(!mFound.length){$('#mFound').innerHTML=`<div class="mute small">No sites found.</div>`+errs;return}
+  $('#mFound').innerHTML=`<div class="small">Found ${mFound.length} sites${res.filtered?` (${res.filtered} left out by the safety filter)`:''}. Tick the ones to add:</div>
+    <div class="scroll" style="max-height:280px"><table><thead><tr><th><input type="checkbox" id="mAll" checked></th><th>Site</th><th>Visits</th></tr></thead><tbody>`+
+    mFound.map((x,i)=>`<tr><td><input type="checkbox" data-mf="${i}" ${i<25?'checked':''}></td><td>${esc(x[0])}</td><td>${x[1]}</td></tr>`).join('')+
+    `</tbody></table></div><div class="row"><button id="mAddFound">Add ticked sites to My List</button></div>`+errs;
+  $('#mAll').onchange=e=>$$('[data-mf]').forEach(c=>c.checked=e.target.checked);
+  $('#mAddFound').onclick=()=>{
+    ML.weights=ML.weights||{};
+    $$('[data-mf]').forEach(c=>{const i=+c.dataset.mf, d=mFound[i][0];if(!c.checked)return;
+      if(!ML.sites.includes(d))ML.sites.push(d);
+      // visits -> "how often": top tenth very often, next fifth often, next third sometimes, rest rarely
+      const r=i/Math.max(1,mFound.length);
+      if(ML.weights[d]===undefined)ML.weights[d]=mFoundKind==='bookmarks'?3:(r<0.1?10:r<0.3?6:r<0.6?3:1);});
+    renderML();$('#mNote').textContent='unsaved changes — press Save My List';};
+}
+async function mWatch(action){
+  try{const r=await api('/api/mylist/watch',{action,hours:parseFloat($('#mHours').value)});
+    if(action==='collect'){showFound(r);await loadML()}else{ML=r;fillML()}}catch(e){toast(e.message,1)}
+}
+$('#mWatch').onclick=()=>{if(!ML||!ML.watch_started)mWatch('start')};
+$('#mScan').onclick=async()=>{$('#mFound').textContent='Reading history…';try{showFound(await api('/api/mylist/scan',{days:parseFloat($('#mDays').value||30)}))}catch(e){$('#mFound').textContent=e.message}};
+$('#mAddBtn').onclick=()=>{const d=$('#mAdd').value.trim().toLowerCase().replace(/^https?:\/\//,'').replace(/^www\./,'').split('/')[0];if(d&&ML&&!ML.sites.includes(d)){ML.sites.push(d);renderML();$('#mAdd').value='';$('#mNote').textContent='unsaved changes'}};
+$('#mBm').onclick=async()=>{$('#mFound').textContent='Reading bookmarks…';try{showFound(await api('/api/mylist/bookmarks',{}),'bookmarks')}catch(e){$('#mFound').textContent=e.message}};
+$('#mBmFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;$('#mFound').textContent='Reading file…';
+  const text=await f.text(); const urls=[...text.matchAll(/href\s*=\s*"([^"]+)"/gi)].map(m=>m[1]).filter(u=>/^https?:/i.test(u));
+  try{showFound(await api('/api/mylist/bookmarks',{urls}),'bookmarks')}catch(err){$('#mFound').textContent=err.message}; e.target.value='';};
+$('#mSave').onclick=async()=>{try{ML=await api('/api/mylist',{enabled:$('#mEnabled').checked,sites:ML.sites,weights:Object.fromEntries(ML.sites.map(d=>[d,(ML.weights||{})[d]??3])),random_share:parseInt($('#mShare').value||30)/100});fillML();$('#mNote').textContent='saved ✓ '+(ML.running?'(Stop → Start to apply)':'');toast('My List saved')}catch(e){$('#mNote').textContent=e.message;toast(e.message,1)}};
+
+// user agents
+let UA=null;
+function uaRadioValue(){return document.querySelector('input[name=uamode]:checked')?.value||'rotate-hour'}
+function fillUA(){
+  if(!UA)return; const m=UA.mode, ev=UA.rotate_every;
+  const v= m==='pin'?(UA.pin==='own'?'own':'lib'):(ev==='day'?'rotate-day':'rotate-hour');
+  (document.querySelector(`input[name=uamode][value=${v}]`)||{}).checked=true;
+  if(!$('#uOwn').matches(':focus'))$('#uOwn').value=UA.own_ua||'';
+  $('#uApplies').textContent=UA.applies_to;
+  $('#uCount').textContent=`(${UA.library.length} entries)`;
+  renderUABody();
+}
+function renderUABody(){
+  if(!UA)return; const q=($('#uSearch').value||'').toLowerCase();
+  const rows=UA.library.filter(r=>!q||(r.ua+' '+r.group+' '+r.platform+' '+r.release).toLowerCase().includes(q)).slice(0,300);
+  $('#uBody').innerHTML=rows.map(r=>`<tr><td>${esc(r.group)}</td><td>${esc(r.platform)}</td><td>${esc(r.release||'—')}</td><td>${r.share}%</td><td><code style="font-size:11px">${esc(r.ua)}</code></td><td><button data-pin="${esc(r.id)}">Pin this</button></td></tr>`).join('')||'<tr><td colspan=6 class="mute">No match.</td></tr>';
+  $$('#uBody [data-pin]').forEach(b=>b.onclick=()=>saveUA({pin:b.dataset.pin}));
+}
+async function loadUA(){try{UA=await api('/api/useragents');fillUA()}catch(e){$('#uNote').textContent=e.message}}
+async function saveUA(override){
+  const v=uaRadioValue(); let body;
+  if(override){body={ua_mode:'pin',ua_pin:override.pin}}
+  else if(v==='own')body={ua_mode:'pin',ua_pin:'own'};
+  else if(v==='lib')body={ua_mode:'pin'};
+  else body={ua_mode:'rotate',rotate_every:v==='rotate-day'?'day':'hour'};
+  body.own_ua=$('#uOwn').value.trim();
+  if(body.ua_mode==='pin'&&body.ua_pin==='own'&&!body.own_ua){$('#uNote').textContent='Paste or detect your browser’s user agent first.';return}
+  if(body.ua_mode==='pin'&&!body.ua_pin){$('#uNote').textContent='Click “Pin this” on a library entry below.';$('#uSearch').focus();return}
+  try{UA=await api('/api/useragents',body);fillUA();$('#uNote').textContent='saved ✓ '+(UA.running?'(Stop → Start to apply)':'');toast('User agent choice saved')}catch(e){$('#uNote').textContent=e.message;toast(e.message,1)}
+}
+$('#uSave').onclick=()=>saveUA();
+$('#uSearch').oninput=renderUABody;
+$('#uDetect').onclick=async()=>{$('#uNote').textContent='Starting your browser briefly…';try{const d=await api('/api/useragents/detect',{});if(d.error){$('#uNote').textContent=d.error}else{$('#uOwn').value=d.ua;$('#uNote').textContent='Detected. Press “Save user agent choice” to use it.'}}catch(e){$('#uNote').textContent=e.message}};
+
 // settings
 function fillSettings(force){
   if(!S||(dirty.set&&!force))return;const p=S.profile;
   $('#engines').innerHTML=Object.entries(p.engines).map(([n,e])=>`<div class="row"><label class="chk" style="margin:0;width:150px"><input type="checkbox" data-en="${n}" ${e.enabled?'checked':''}> ${n==='onion'?'🧅 onion':n}</label><input type="number" min="0" data-bud="${n}" value="${e.budget_per_day}" style="width:100px"> <span class="small mute">weight${n==='onion'?' (needs Tor)':''}</span></div>`).join('');
   const r=p.rate||{mode:'random',level:5};document.querySelector(`input[name=srmode][value=${r.mode}]`).checked=true;$('#sLevel').value=r.level;rateInfo('sLevel','sLevelInfo');
-  const d=p.dns||{};(document.querySelector(`input[name=dnsm][value=${d.mode||'system'}]`)||{}).checked=true;
+  const d=p.dns||{};(document.querySelector(`input[name=dnsm][value=${d.mode||'mix'}]`)||{}).checked=true;
   $('#dShare').value=Math.round((d.system_share??0.7)*100);$('#dOpen').checked=d.opennic!==false;$('#dQuad9').checked=!!d.quad9;$('#dCustom').value=(d.custom||[]).join(', ');
   $('#dOpenN').textContent=(S.opennic||[]).length;$('#dOpenList').innerHTML=(S.opennic||[]).map(o=>esc(o[1]+' '+o[0]+' ('+(o[2]||'?')+')')).join('<br>');
   $('#sScale').value=p.realtime_scale;$('#sMaxF').value=p.daily_max_failures;$('#sProxy').value=p.transports.clearnet.proxy||'';
-  $('#sClear').checked=p.transports.clearnet.enabled;
+  $('#sClear').checked=p.transports.clearnet.enabled;loadUA();
+  const tr=p.traffic||{};(document.querySelector(`input[name=xpat][value=${tr.pattern||'drift'}]`)||{}).checked=true;
+  $('#xBrowser').value=tr.browser??100;$('#xPlain').value=tr.plain??0;$('#xOnion').value=tr.onion??15;
+  $('#xMobile').value=Math.round((tr.mobile_share??0.35)*100);$('#xDevice').value=tr.device||'iPhone 13';
+  $('#xDevice').onchange=()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'};
   $('#sBrowser').value=p.transports.clearnet.browser||'auto';$('#sVisible').checked=!!p.transports.clearnet.browser_visible;
   const q=p.queries||{};$('#qLive').checked=q.live!==false;$('#qData').checked=q.dataset!==false;$('#qBuiltin').checked=q.builtin!==false;$('#qWords').checked=q.words!==false;$('#sAuto').checked=!!S.app.autostart;$('#sPath').textContent=S.config_path;dirty.set=false;
   $$('#t-set input').forEach(i=>i.oninput=()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'});
@@ -423,16 +613,44 @@ $('#sSave').onclick=async()=>{
   try{await api('/api/config',{realtime_scale:parseFloat($('#sScale').value),daily_max_failures:parseInt($('#sMaxF').value),engines,rate:{mode:document.querySelector('input[name=srmode]:checked').value,level:parseFloat($('#sLevel').value)},
       dns:{mode:document.querySelector('input[name=dnsm]:checked').value,system_share:parseInt($('#dShare').value||70)/100,opennic:$('#dOpen').checked,quad9:$('#dQuad9').checked,custom:$('#dCustom').value},
       transports:{clearnet:{enabled:$('#sClear').checked,proxy:$('#sProxy').value||null,browser:$('#sBrowser').value,browser_visible:$('#sVisible').checked}},
-      queries:{live:$('#qLive').checked,dataset:$('#qData').checked,builtin:$('#qBuiltin').checked,words:$('#qWords').checked}});
+      queries:{live:$('#qLive').checked,dataset:$('#qData').checked,builtin:$('#qBuiltin').checked,words:$('#qWords').checked},
+      traffic:{pattern:(document.querySelector('input[name=xpat]:checked')||{}).value||'drift',browser:parseFloat($('#xBrowser').value||0),
+               plain:parseFloat($('#xPlain').value||0),onion:parseFloat($('#xOnion').value||0),
+               mobile_share:parseInt($('#xMobile').value||0)/100,device:$('#xDevice').value}});
     await api('/api/app',{autostart:$('#sAuto').checked});dirty.set=false;$('#sSaved').textContent='saved ✓ '+(S&&S.running?'(Stop → Start to apply)':'');toast('Settings saved');poll()}catch(e){toast(e.message,1)}
 };
 $('#sWiz').onclick=()=>showWiz();
 function rateInfo(sl,out){
   if(!S||!S.rate_info)return;const d=S.rate_info[parseInt($('#'+sl).value)-1];
-  $('#'+out).innerHTML=`<b>Level ${d.level} — ${esc(d.name)}.</b> About <b>${d.searches_per_hour} searches an hour</b> (≈${d.actions_per_hour} actions an hour counting page visits and DNS lookups). Over a 15-hour waking day that's ≈${d.searches_per_day_awake} searches. For comparison, an average person does about 4 searches a day (SparkToro study of US users), so this is about <b>${d.vs_average_person}×</b> that. Noise only hides you if it's at least comparable to your real activity.`;
+  $('#'+out).innerHTML=`<b>Level ${d.level} — ${esc(d.name)}.</b> About <b>${d.searches_per_hour} searches an hour</b> (≈${d.actions_per_hour} actions an hour counting page visits and DNS lookups). Over a 15-hour waking day that's ≈${d.searches_per_day_awake} searches. For comparison, studies of typed Google searches find about 4 a day for an active US desktop user (SparkToro/Datos, 2024; the median is about 2), so this is about <b>${d.vs_average_person}×</b> that. That figure leaves out phones, apps, maps, YouTube and AI assistants, so real people look things up far more often than it suggests. Noise only hides you if it's at least comparable to your real activity.`;
 }
 $('#wLevel').oninput=()=>rateInfo('wLevel','wLevelInfo');
 $('#sLevel').oninput=()=>{rateInfo('sLevel','sLevelInfo');dirty.set=true;$('#sSaved').textContent='unsaved changes'};
+$('#toolDns').onclick=async()=>{
+  const o=$('#toolDnsOut'); o.textContent='Checking…';
+  try{const d=await api('/api/tools/resolvers');
+    const rows=d.resolvers.length?d.resolvers.map(r=>`<tr><td><code>${esc(r.ip)}</code></td><td>${esc(r.verdict)}</td></tr>`).join(''):'<tr><td colspan=2 class="mute">No resolver found in your system settings.</td></tr>';
+    o.innerHTML=`<table><thead><tr><th>Resolver your computer uses</th><th>What it is</th></tr></thead><tbody>${rows}</tbody></table>`+
+      (d.note?`<div class="note small" style="margin-top:6px">${esc(d.note)}</div>`:'')+
+      `<div style="margin-top:6px">Sample lookup: ${d.sample_lookup.ms} ms, ${esc(d.sample_lookup.result)}</div>`;
+  }catch(e){o.textContent=e.message}
+};
+let speedTimer=null;
+function showSpeed(s){
+  const n=$('#toolSpeedNote'), o=$('#toolSpeedOut');
+  if(s.state==='running'){n.textContent=s.progress||'Running…';return}
+  if(s.state==='done'&&s.result){const r=s.result;
+    o.innerHTML=`Download <b>${r.down_mbps??'—'} Mbit/s</b> · Upload <b>${r.up_mbps??'—'} Mbit/s</b> <span class="mute">(via ${esc(r.via)})</span>`+
+      (r.errors.length?`<div class="warnc">${esc(r.errors.join('; '))}</div>`:'');
+    n.textContent='done'; $('#toolSpeed').disabled=false; clearInterval(speedTimer);}
+}
+$('#toolSpeed').onclick=async()=>{
+  $('#toolSpeed').disabled=true; $('#toolSpeedOut').textContent=''; 
+  try{showSpeed(await api('/api/tools/speed',{}));
+    clearInterval(speedTimer); speedTimer=setInterval(async()=>{try{showSpeed(await api('/api/tools/speed'))}catch(e){}},700);
+  }catch(e){toast(e.message,1);$('#toolSpeed').disabled=false}
+};
+$('#toolClearLog').onclick=()=>act('/api/logs/clear').then(()=>{$('#toolLogNote').textContent='cleared';renderLog(true)});
 $('#fRefresh').onclick=()=>{if(confirm('Download fresh lists now from Google Trends, Wikipedia, BBC, Hugging Face and Tranco? This contacts those sites from your connection.')){act('/api/feeds/refresh');toast('Refreshing sources in the background…')}};
 $('#fAuto').onchange=()=>act('/api/app',{auto_refresh_sources:$('#fAuto').checked});
 $('#sBrowser').oninput=$('#sVisible').oninput=()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'};

@@ -1,13 +1,14 @@
 """Which DNS resolver each noise lookup goes to.
 
-  system  (recommended) your computer's normal resolver: whatever your router, ISP,
+  system  your computer's normal resolver: whatever your router, ISP,
           VPN or OS-level encrypted DNS already uses. Noise then lands exactly where
           your real lookups land, which is the point: whoever can see your real DNS
           sees the noise mixed in. Sending noise to resolvers you never otherwise
           use would only add a distinctive extra pattern.
   secure  OpenNIC servers that anonymize logs, and optionally Quad9, plus any IPs you add.
-  mix     alternates between the two in randomly sized blocks (10-60 min by default),
-          spending `system_share` of the time on your normal DNS.
+  mix     (default) alternates between the two in randomly sized blocks (10-60 min by
+          default), spending `system_share` of the time on your normal DNS. With only
+          OpenNIC ticked, the "secure" blocks use OpenNIC servers.
 """
 from __future__ import annotations
 

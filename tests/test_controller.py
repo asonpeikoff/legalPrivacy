@@ -97,3 +97,23 @@ def test_web_api_requires_token_and_serves_state():
             assert b"noisyCricket" in r.read()
     finally:
         srv.httpd.shutdown()
+
+
+def test_live_log_is_memory_only_and_clearable():
+    import tempfile
+    from pathlib import Path
+    from noisycricket.events import EventLog
+    d = Path(tempfile.mkdtemp())
+    log = EventLog()                       # no file_path: nothing ever touches disk
+    log.info("app", "hello")
+    assert log.last_id() == 1 and not list(d.iterdir())
+    log.clear()
+    assert log.since(0) == [] and log.last_id() == 1
+
+
+def test_network_tools_report_errors_without_crashing_and_leak_check_has_shape():
+    from noisycricket.nettools import dns_leak_check, speed_test
+    res = speed_test(proxy="http://127.0.0.1:9", timeout=5)      # nothing listens there
+    assert res["down_mbps"] is None and res["up_mbps"] is None and len(res["errors"]) == 2
+    leak = dns_leak_check(["9.9.9.9"])
+    assert {"resolvers", "sample_lookup", "external_test"} <= set(leak)

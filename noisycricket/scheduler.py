@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import random
 import sys
 import threading
@@ -12,8 +13,9 @@ from typing import Callable
 
 from .config import Profile
 from .identity import Identity, make_identity
+from .useragents import UaChooser
 from .events import EventLog
-from .pacing import Budget, Pacer
+from .pacing import Budget, Pacer, SessionPacer
 from .transports import ClearnetTransport, HitResult, Target, TorTransport, Transport
 
 
@@ -56,7 +58,8 @@ def build_lanes(profile: Profile, wordlist: list[str],
                 rng: random.Random | None = None,
                 tor_gate: Callable[[], bool] | None = None,
                 tor_endpoint: Callable[[], tuple[str, str | None]] | None = None,
-                clearnet_transport: Transport | None = None) -> list[Lane]:
+                clearnet_transport: Transport | None = None,
+                plain_transport: Transport | None = None) -> list[Lane]:
     """Build the active lanes.
 
     The tor lane exists only when Tor is enabled. It carries the onion engine
@@ -79,6 +82,10 @@ def build_lanes(profile: Profile, wordlist: list[str],
             engines=names,
             budgets={n: _budget(n, share) for n in names},
         ))
+        page_engines = [n for n in names if n != "dns"]   # DNS lookups are not browser work
+        if plain_transport is not None and page_engines:
+            lanes.append(Lane(name="clearnet-plain", transport=plain_transport, engines=page_engines,
+                              budgets={n: _budget(n, share) for n in page_engines}))
 
     if tr.get("tor") and tr["tor"].enabled:
         t = tr["tor"]
@@ -115,6 +122,7 @@ class Runner:
     click_prob: float = 0.6            # chance a search is followed by opening a result
     rate: object | None = None         # RatePlanner: hourly plan (app mode). None = daily budgets (CLI/tests)
     dns_plan: object | None = None     # DnsPlan: which resolver DNS noise uses
+    mix: bool = False                  # app mode: lane shares + pattern from profile.traffic
 
     def __post_init__(self) -> None:
         self.rng = random.Random()
@@ -131,6 +139,16 @@ class Runner:
         self.hour: int | None = None
         self.hour_target = 0.0
         self._pace: tuple[float, float] | None = None   # (min_delay, max_delay) for this hour
+        self._sessions = SessionPacer(self.rng)          # app mode: irregular "sittings"
+        tc = getattr(self.profile, "traffic", None)
+        self._mobile_now = tc.mobile_share if tc else 0.35
+        self._lane_factor: dict[str, float] = {}
+        self._lane_wobble: dict[str, float] = {}
+        self._mobile_wobble = 0.0
+        self._alt_lane, self._alt_left = None, 0
+        self._ua = UaChooser(self.rng, self.profile.identity,
+                             mobile=lambda: (self._mobile_now, tc.device if tc else "iPhone 13"))
+        self._hour_end = 0.0
 
     def _emit(self, level: str, source: str, msg: str, **data) -> None:
         if self.log:
@@ -156,8 +174,58 @@ class Runner:
         return {"lanes": lanes, "paused": self.paused, "uptime": int(time.time() - self.started_at)}
 
     # ── hourly plan (app mode) ──────────────────────────────────────────────
+    def _lane_base(self) -> dict[str, float]:
+        """Relative weight of each lane from Settings → Traffic mix."""
+        tc = self.profile.traffic
+        names = {l.name for l in self.lanes}
+        has_plain = "clearnet-plain" in names
+        main_is_browser = type(next((l.transport for l in self.lanes if l.name == "clearnet"), None)).__name__ \
+            == "BrowserTransport"
+        base = {"clearnet": tc.browser + (0 if has_plain or main_is_browser else tc.plain),
+                "clearnet-plain": tc.plain, "tor": tc.onion}
+        return {n: max(0.0, base.get(n, 1.0)) for n in names}
+
+    def _update_mix(self) -> None:
+        """Once an hour: move the lane shares and the phone share according to the pattern."""
+        tc = self.profile.traffic
+        base = self._lane_base()
+        if tc.pattern == "drift":                         # wander slowly; each hour keeps most of the last
+            for n in base:
+                self._lane_wobble[n] = 0.7 * self._lane_wobble.get(n, 0.0) + self.rng.gauss(0, 0.35)
+                self._lane_factor[n] = math.exp(self._lane_wobble[n])
+            self._mobile_wobble = 0.7 * self._mobile_wobble + self.rng.gauss(0, 0.3)
+            self._mobile_now = min(0.95, max(0.0, tc.mobile_share * math.exp(self._mobile_wobble)))
+        elif tc.pattern == "alternate":                   # one kind at a time, for 1-3 hours
+            if self._alt_left <= 0 or self._alt_lane not in base:
+                live = [n for n, w in base.items() if w > 0] or list(base)
+                self._alt_lane = self.rng.choices(live, weights=[base[n] or 1 for n in live])[0]
+                self._alt_left = self.rng.randint(1, 3)
+                self._mobile_now = 0.9 if self.rng.random() < tc.mobile_share else 0.05
+            self._alt_left -= 1
+            # the active kind gets ~95% of this hour whatever its weight; the rest share ~5%
+            others = sum(w for n, w in base.items() if n != self._alt_lane) or 1.0
+            self._lane_factor = {n: (1.0 / (base[n] or 1.0) if n == self._alt_lane else 0.05 / others)
+                                 for n in base}
+        else:                                             # blend: the same mix every hour
+            self._lane_factor = {n: 1.0 for n in base}
+            self._mobile_now = tc.mobile_share
+
     def engine_shares(self) -> dict[tuple[str, str], float]:
-        """(lane, engine) -> share of all actions, from the engines' relative weights."""
+        """(lane, engine) -> share of all actions.
+
+        App mode (mix): lane shares from Settings → Traffic mix (moved by the pattern), then
+        the engines' relative weights inside each lane. Otherwise: engine weights only."""
+        if self.mix and getattr(self.profile, "traffic", None) is not None:
+            base = self._lane_base()
+            lane_w = {n: base[n] * self._lane_factor.get(n, 1.0) for n in base}
+            tot_l = sum(lane_w.values()) or 1.0
+            out = {}
+            for lane in self.lanes:
+                ew = {e: max(0.0, float(self.profile.engines[e].budget_per_day)) for e in lane.engines}
+                tot_e = sum(ew.values()) or 1.0
+                for e, v in ew.items():
+                    out[(lane.name, e)] = lane_w[lane.name] / tot_l * v / tot_e
+            return out
         w = {}
         for lane in self.lanes:
             for e in lane.engines:
@@ -174,10 +242,14 @@ class Runner:
 
     def plan_hour(self, hour: int) -> float:
         """Set this hour's per-engine allowances and pacing from the RatePlanner."""
+        if self.mix:
+            self._update_mix()
         shares = self.engine_shares()
         search_share = sum(v for (ln, e), v in shares.items() if e == "search") or 0.3
         total = self.rate.actions_for_hour(hour, search_share)
         self.hour, self.hour_target = hour, total
+        now = time.localtime()
+        self._hour_end = self.clock() + (3600 - now.tm_min * 60 - now.tm_sec)
         for lane in self.lanes:
             for e, b in lane.budgets.items():
                 x = total * shares.get((lane.name, e), 0)
@@ -248,7 +320,8 @@ class Runner:
         limit = getattr(lane.transport, "identities_per_circuit", None) or 10
         if lane.identity is None or lane.hits_by_identity >= limit:
             self._ident_counter += 1
-            lane.identity = make_identity(self.rng, self._ident_counter, self.wordlist)
+            lane.identity = make_identity(self.rng, self._ident_counter, self.wordlist,
+                                          entry=self._ua.choose())
             lane.pacer = Pacer(self.rng,
                                pace_multiplier=lane.identity.pace_multiplier,
                                realtime_scale=self.profile.realtime_scale)
@@ -320,7 +393,14 @@ class Runner:
         if result.dim_transport and hasattr(lane.transport, "dimmed"):
             lane.transport.dimmed = True
         if wait:
-            pacer.wait(hour)
+            if self.rate is None or pacer.backoff_pending():
+                pacer.wait(hour)                       # CLI/tests, or honouring a failure backoff
+            else:
+                # app mode: irregular sittings whose hourly total still fits the hour
+                hits_left = sum(b.remaining for ln in self.lanes for b in ln.budgets.values())
+                seconds_left = max(60.0, self._hour_end - self.clock())
+                gap = self._sessions.next_gap(hits_left, seconds_left, self.profile.realtime_scale)
+                pacer.sleep_fn(gap)
         return True
 
     def _record_hit(self, lane: Lane, eng_name: str, identity: Identity,

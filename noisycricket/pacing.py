@@ -7,6 +7,8 @@ import random
 import time
 from dataclasses import dataclass, field
 
+from .humanize import lognormal_clipped
+
 
 @dataclass
 class Pacer:
@@ -50,6 +52,9 @@ class Pacer:
 
         return max(base, self.min_gap) * self.realtime_scale
 
+    def backoff_pending(self) -> float:
+        return self._backoff
+
     def wait(self, now_local_hour: float | None = None) -> float:
         delay = self.next_delay(now_local_hour)
         self.sleep_fn(delay)
@@ -74,6 +79,29 @@ def diurnal_factor(hour: float) -> float:
     combined = 0.5 * wave + 0.5 * eve_boost
     norm = max(0.0, min(1.0, (combined - 0.005) / 0.84))
     return 0.35 + 1.25 * norm
+
+
+@dataclass
+class SessionPacer:
+    """People come in sittings: a few searches close together, then a long gap, then again.
+
+    Inside a sitting the gaps are seconds to a minute (clicking through, next search).
+    Between sittings the gap is sized from the time and the hits left in the hour, so the
+    planned hourly total still fits. The result is irregular: never a steady drip.
+    """
+    rng: random.Random
+    left: int = 0                       # hits left in the current sitting
+
+    def next_gap(self, hits_left: int, seconds_left: float, scale: float = 1.0) -> float:
+        """Wall-clock seconds to wait before the next hit."""
+        if self.left > 0:
+            self.left -= 1
+            return lognormal_clipped(self.rng, 9.0, 0.7, 2.0, 90.0) * scale
+        self.left = max(0, int(round(self.rng.lognormvariate(math.log(3.0), 0.6))) - 1)
+        sittings_left = max(1.0, hits_left / 3.6)                 # ~3.6 hits per sitting
+        mean_idle = max(20.0, seconds_left / sittings_left)
+        idle = lognormal_clipped(self.rng, mean_idle * 0.7, 0.8, 20.0, 7200.0)
+        return min(idle, max(30.0, seconds_left))
 
 
 @dataclass

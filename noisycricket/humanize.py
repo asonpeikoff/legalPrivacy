@@ -39,8 +39,17 @@ def reading_pause(rng: random.Random) -> float:
 
 
 def target_depth(rng: random.Random) -> float:
-    """Fraction of the scrollable page this visit reads: most glance, some read to the end."""
-    return min(1.0, rng.betavariate(1.3, 2.0) + (0.5 if rng.random() < 0.07 else 0.0))
+    """Fraction of the scrollable page this visit reads.
+
+    Three kinds of visit, mixed: a quick skim (a little way down), a partial read
+    (about half the page), and a full read to the end.
+    """
+    roll = rng.random()
+    if roll < 0.35:
+        return rng.uniform(0.05, 0.30)     # skim
+    if roll < 0.80:
+        return rng.uniform(0.30, 0.70)     # partial read
+    return rng.uniform(0.70, 1.00)         # read to the end
 
 
 def scroll_steps(rng: random.Random, distance: float, mobile: bool) -> list[tuple[float, float]]:
@@ -84,7 +93,8 @@ class HumanDriver:
     def __init__(self, rng: random.Random, act: Actuator, scale: float = 1.0):
         self.rng, self.act, self.scale = rng, act, max(0.01, scale)
         self.pos: tuple[float, float] = (rng.uniform(200, 600), rng.uniform(200, 500))
-        self.stats = {"scrolls": 0, "pauses": 0, "back_scrolls": 0, "moves": 0, "depth": 0.0, "seconds": 0.0}
+        self.stats = {"scrolls": 0, "pauses": 0, "back_scrolls": 0, "re_reads": 0, "moves": 0,
+                      "depth": 0.0, "seconds": 0.0}
 
     # -- primitives --------------------------------------------------------
     def pause(self, seconds: float) -> None:
@@ -127,19 +137,26 @@ class HumanDriver:
         self.pause(lognormal_clipped(rng, 1.2, 0.5, 0.4, 4.0))              # page settles / eyes land
         self.move_to(rng.uniform(0.2, 0.8) * w, rng.uniform(0.25, 0.7) * h)
         scrollable = max(0, act.page_height() - h)
-        depth = target_depth(rng) if scrollable > h * 0.3 else 0.0
+        depth = target_depth(rng) if scrollable > 60 else 0.0             # most pages get at least a skim
         goal = depth * scrollable
         spent = 0.0
         while act.scroll_y() < goal and not act.stopped() and spent < max_seconds:
-            burst = h * rng.uniform(0.25, 0.9)
-            self.scroll_burst(burst)
+            burst = h * rng.uniform(0.25, 0.9) if rng.random() < 0.8 else h * rng.uniform(0.08, 0.25)
+            self.scroll_burst(burst)                                       # scroll down…
             rp = reading_pause(rng)
             spent += rp
-            self.pause(rp)
-            if rng.random() < 0.14:                                        # glance back up
+            self.pause(rp)                                                 # …pause and read
+            roll = rng.random()
+            if roll < 0.30:                                                # …then glance back up a little
                 self.scroll_burst(-h * rng.uniform(0.1, 0.4))
                 self.stats["back_scrolls"] += 1
                 self.pause(lognormal_clipped(rng, 1.4, 0.5, 0.4, 5.0))
+            elif roll < 0.40:                                              # …or re-read something higher up
+                self.scroll_burst(-h * rng.uniform(0.5, 1.0))
+                self.stats["re_reads"] += 1
+                rp2 = lognormal_clipped(rng, 4.0, 0.5, 1.5, 12.0)
+                spent += rp2
+                self.pause(rp2)
             if rng.random() < 0.25:                                        # fidget with the mouse
                 self.move_to(rng.uniform(0.1, 0.9) * w, rng.uniform(0.15, 0.85) * h)
             if act.page_height() - h <= 0:

@@ -152,6 +152,14 @@ class UIServer:
                                  f"{e['level'].upper():5s} [{e['source']}] {e['message']}"
                                  for e in ctl.log.since(0, "debug", limit=5000)]
                         return self._send(200, "\n".join(lines).encode(), "text/plain; charset=utf-8")
+                    if u.path == "/api/tools/resolvers":
+                        return self._json(ctl.resolvers_check())
+                    if u.path == "/api/mylist":
+                        return self._json(ctl.mylist_state())
+                    if u.path == "/api/useragents":
+                        return self._json(ctl.ua_state())
+                    if u.path == "/api/tools/speed":
+                        return self._json(ctl.speed_status())
                     if u.path == "/api/doctor":
                         return self._json({"checks": ctl.doctor()})
                 except Exception as exc:
@@ -191,6 +199,23 @@ class UIServer:
                         ctl.update_app(body)
                     elif path == "/api/wizard":
                         return self._json(ctl.wizard(body))
+                    elif path == "/api/mylist":
+                        return self._json(ctl.mylist_save(body))
+                    elif path == "/api/mylist/bookmarks":
+                        return self._json(ctl.mylist_bookmarks(body.get("urls")))
+                    elif path == "/api/mylist/scan":
+                        return self._json(ctl.mylist_scan(body.get("days", 30)))
+                    elif path == "/api/mylist/watch":
+                        return self._json(ctl.mylist_watch(str(body.get("action")), body.get("hours")))
+                    elif path == "/api/useragents":
+                        return self._json(ctl.ua_save(body))
+                    elif path == "/api/useragents/detect":
+                        return self._json(ctl.ua_detect())
+                    elif path == "/api/tools/speed":
+                        return self._json(ctl.speed_start())
+                    elif path == "/api/logs/clear":
+                        ctl.log.clear()
+                        return self._json({"ok": True})
                     elif path == "/api/shutdown":
                         self._json({"ok": True})
                         threading.Thread(target=srv.shutdown, daemon=True).start()
