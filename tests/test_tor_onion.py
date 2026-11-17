@@ -198,3 +198,36 @@ def test_control_cookie_auth():
     with TorControl("127.0.0.1", port):
         pass
     os.unlink(cookie.name)
+
+
+def test_tor_patience_retries_once_then_new_identity_and_routine_circuits():
+    p = Profile(name="t")
+    apply_overrides(p, {"transports": {"clearnet": {"enabled": False}, "tor": {"enabled": True}}})
+    clock = [1000.0]
+    calls = []
+    lanes = build_lanes(p, WORDS, tor_gate=lambda: True)
+    lane = lanes[0]
+    lane.transport.reconnect = lambda: calls.append("newnym") or True
+    lane.transport.renew_circuits = lambda: calls.append("renew") or True
+    seen = []
+
+    def probe(l, ident, target):
+        seen.append(target.url)
+        return HitResult(None, error="0x01: General SOCKS server failure")
+
+    r = Runner(profile=p, lanes=lanes, wordlist=WORDS, clock=lambda: clock[0], local_hour_fn=lambda: 12.0,
+               sleep_fn=lambda s: None, probe_fn=probe)
+    r.run_once(wait=False)
+    first = seen[0]
+    clock[0] += 150                                 # a couple of minutes later
+    r.run_once(wait=False)
+    assert seen[1] == first                          # the failed page is reloaded once
+    r.run_once(wait=False)
+    assert "newnym" in calls                         # three failures in a row: new identity
+    clock[0] += 3000                                 # later on, circuits change by themselves
+    lane.transport.reconnect = lambda: True
+    r._tor_state["streak"] = 0
+    probe_ok = lambda l, i, t: HitResult(200, "<html></html>")
+    r.probe_fn = probe_ok
+    r.run_once(wait=False)
+    assert "renew" in calls

@@ -329,6 +329,31 @@ class Runner:
         member = self._household.pick(self.rng)
         return member["entry"] if member["entry"] is not None else self._ua.choose()
 
+    def _tor_patience(self, lane: Lane, eng_name: str, target: Target, result: HitResult) -> None:
+        """Act like a patient person on Tor: reload a failed page once a minute or so later, get a new
+        identity after a run of failures, and let circuits change every so often on their own."""
+        now = self.clock()
+        st = self.__dict__.setdefault("_tor_state", {"streak": 0, "retried": set(),
+                                                     "next_newnym": now + self.rng.uniform(600, 2400)})
+        if result.ok:
+            st["streak"] = 0
+        else:
+            st["streak"] += 1
+            if eng_name == "onion" and target.url not in st["retried"] and len(st["retried"]) < 500:
+                st["retried"].add(target.url)            # try this page again, once, in a minute or two
+                lane.__dict__["onion_retry"] = (target.url, now + self.rng.uniform(45, 120))
+            if st["streak"] >= 3:
+                st["streak"] = 0
+                ok = getattr(lane.transport, "reconnect", lambda: False)()
+                self._emit("info", "tor", "Several Tor requests failed in a row; asked Tor for a new identity "
+                           f"(fresh circuits){'' if ok else ' — control port unavailable, new circuits only'}.")
+                st["next_newnym"] = now + self.rng.uniform(600, 2400)
+                return
+        if now >= st["next_newnym"]:
+            st["next_newnym"] = now + self.rng.uniform(600, 2400)
+            if getattr(lane.transport, "renew_circuits", lambda: False)():
+                self._emit("info", "tor", "Switched to new Tor circuits (routine, every 10-40 minutes).")
+
     def _onion_seen_dead(self, url: str) -> None:
         import urllib.parse as _up
         host = _up.urlparse(url).hostname or ""
@@ -468,6 +493,8 @@ class Runner:
             result.error = "site offline (common for .onion sites; skipped for a while)"
             result.offline = True
             self._onion_seen_dead(target.url)
+        if lane.name == "tor":
+            self._tor_patience(lane, eng_name, target, result)
         if target.kind != "dns":
             import urllib.parse as _up
             self._host_last[_up.urlparse(target.url).hostname or ""] = self.clock()
@@ -591,6 +618,12 @@ class Runner:
         words = self.wordlist
         if eng_name == "onion":
             from .onion import OnionTargetFactory
+            retry = lane.__dict__.get("onion_retry")
+            if retry and self.clock() >= retry[1]:      # the page that failed a minute ago: try once more
+                lane.__dict__["onion_retry"] = None
+                if not self._onion_is_dead(retry[0]):
+                    from .transports import Target as _T
+                    return _T(url=retry[0], timeout=60.0, note="retry")
             if lane.onion_next is not None:
                 return lane.onion_next
             tor_cfg = self.profile.transports.get("tor")

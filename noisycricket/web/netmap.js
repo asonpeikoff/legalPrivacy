@@ -203,6 +203,28 @@
       (h / 2 - pad) / (this.sy * (1 + half))));
   };
 
+  // Target radius / line width per node from its relative weight (n.t),
+  // shrunk by an area budget so many nodes don't overcrowd the canvas.
+  NetMap.prototype._sizeNodes = function () {
+    var area = 0, w = this.width, h = this.height;
+    this.nodes.forEach(function (n) {
+      if (n.removing) return;
+      var r0 = R_MIN + (R_MAX - R_MIN) * (n.t || 0) + 3;
+      area += Math.PI * r0 * r0;
+    });
+    var budget = 0.18 * w * h;
+    var shrink = area > budget ? Math.sqrt(budget / area) : 1;
+    var rMin = Math.max(2.5, R_MIN * Math.min(1, shrink * 1.4));
+    var rMax = Math.max(rMin + 3, Math.min(R_MAX * shrink, Math.min(w, h) / 15));
+    this.nodes.forEach(function (n) {
+      var t = n.t || 0;
+      n.rt = rMin + (rMax - rMin) * t;
+      n.lwt = W_MIN + (W_MAX - W_MIN) * t;
+    });
+    this.rMax = rMax;
+    this._fitRing();
+  };
+
   NetMap.prototype._bind = function () {
     var self = this;
     if (window.ResizeObserver) {
@@ -212,6 +234,7 @@
         var ox = self.cx, oy = self.cy;
         self.width = w;
         self._layoutStatic();
+        self._sizeNodes();
         // Shift nodes with the center so the map doesn't jump.
         self.nodes.forEach(function (n) { n.x += self.cx - ox; n.y += self.cy - oy; });
         self._kick(0.3);
@@ -368,17 +391,6 @@
     var maxW = 0;
     for (i = 0; i < clean.length; i++) if (clean[i].weight > maxW) maxW = clean[i].weight;
     var sMax = Math.sqrt(maxW) || 1;
-    // Area budget: shrink radii when many nodes would overcrowd the canvas.
-    var area = 0;
-    for (i = 0; i < clean.length; i++) {
-      var r0 = R_MIN + (R_MAX - R_MIN) * Math.sqrt(clean[i].weight) / sMax;
-      area += Math.PI * (r0 + 3) * (r0 + 3);
-    }
-    var budget = 0.18 * this.width * this.height;
-    var shrink = area > budget ? Math.sqrt(budget / area) : 1;
-    var rMin = Math.max(2.5, R_MIN * Math.min(1, shrink * 1.4));
-    var rMax = Math.max(rMin + 3, Math.min(R_MAX * shrink, Math.min(this.width, this.height) / 15));
-
     var keep = Object.create(null), added = 0, self = this;
     for (i = 0; i < clean.length; i++) {
       d = clean[i];
@@ -392,8 +404,7 @@
       n.detail = d.detail;
       n.text = d.label || d.id;
       var t = Math.sqrt(d.weight) / sMax;
-      n.rt = rMin + (rMax - rMin) * t;
-      n.lwt = W_MIN + (W_MAX - W_MIN) * t;
+      n.t = t;
       if (n.active !== d.active) {
         n.active = d.active;
         n.ring.style.display = d.active && !this.reduced ? '' : 'none';
@@ -425,9 +436,8 @@
     this.emptyText.style.display = clean.length ? 'none' : '';
     this.count = clean.length;
 
-    this.rMax = rMax;
     this.spread = Math.min(0.75, 0.1 + clean.length / 140);
-    this._fitRing();
+    this._sizeNodes();
 
     if (this.hoverId !== null && this.nodes.has(this.hoverId)) {
       var hn = this.nodes.get(this.hoverId);
