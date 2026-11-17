@@ -1,4 +1,4 @@
-# noisyCricket v2.5
+# noisyCricket v2.6
 
 Conducts random searches, crawls, and DNS lookups so that mass traffic and
 bulk analysis of any one person's browsing is less useful. Fully automated,
@@ -52,7 +52,7 @@ typo can never be dispatched; add your own seeds on the Tor tab.
 | **🧅 Tor** | status + bootstrap progress, version/ports/PID/traffic, **Start / Stop / Restart / New identity / Install**, live circuits table (onion-service circuits marked `HS_CLIENT_*`), Tor-only log, mode switches, onion seeds, bridges |
 | **Settings** | per-engine budgets & presets, speed, failure cap, proxy, autostart, **Realism** (real browser, show window, query sources + their live status) |
 | **Health** | plain-language self-checks (libs, internet, Tor program/status, seeds, ports) |
-| **My List** | your own sites: page visits and DNS lookups come from them first, with a share of other sites mixed in (30% recommended). Find them by scanning your browsers' history (local only; only site names and counts) or by recording for 12/24/48 hours, which stops counting at the end of the window. You approve every site before it is added. |
+| **My List** | your own sites: page visits and DNS lookups come from them first, with a share of other sites mixed in (30% recommended). Find them by scanning your browsers' history (local only; only site names and counts), importing your bookmarks (from your browsers, or a bookmarks export file), or by recording for 12/24/48 hours, which stops counting at the end of the window. You approve every site, and set how often each is visited (Rarely / Sometimes / Often / Very often). |
 | **Tools** | DNS leak check (which resolvers your computer uses, plus a sample lookup), speed test (10 MB down / 2 MB up over the clearnet, on click only), clear the live log, links to outside checks, config file location |
 
 The dashboard listens only on `127.0.0.1`, requires a token in its link (kept between launches so bookmarks work), and rejects
@@ -170,7 +170,8 @@ isn't a browser's no matter what it claims. With a real browser each visit:
 - **moves the mouse** along curved paths, hovers, then **clicks** (or **taps**) the search result
 - **downloads** a linked document now and then (about 3% of visits), through the browser, then discards it; nothing is saved
 - **User agents (plain-HTTP lane):** built from real release calendars for the last two years: every Chrome, Chromium and Firefox (incl. ESR) major, weighted so the newest two or three dominate. About 51% Chrome, 29% Firefox, 5% Chromium, 15% Android Chrome. Only real browsers: no command-line clients. Edge and Safari are not used. Rebuild the list with `python tools/build_ua_catalog.py`. In **Settings → User agent** you can pick: your own browser's user agent (recommended), random changing every hour (default) or every day, or one library entry (not recommended). The library with every entry and its share is listed there. The onion lane always uses Tor Browser's fixed user agent, and the real-browser lane keeps its own.
-- **Real browser lane:** desktop personas use the installed browser's own, honest User-Agent; about 25% are phone personas with touch input, a phone screen and matching client hints
+- **Real browser lane:** desktop identities present the installed browser as a normal window (headless mode no longer says "HeadlessChrome"). Phone identities (35% by default) get the phone's screen, touch input and its own browser's user agent: an **iPhone 13 with Safari** by default (no Chrome-only client hints), or iPhone 15, iPhone SE, Pixel 7, Galaxy S24, or a mix of phones. It still runs on Chromium underneath, so a site that checks deeply can tell.
+- **Traffic mix (Settings):** relative amounts of real-browser pages, plain-HTTP pages and Tor .onion sites, and how the mix changes over time: **Drift** (default, recommended: shares wander through the day), **Blend** (same every hour) or **Alternate** (one kind at a time for 1–3 hours). Ordinary web noise never goes through Tor in these mixes.
 
 Settings → Realism has the on/off switch and a "show the browser window" option
 so you can watch it work. Activity shows what happened on each visit, for example

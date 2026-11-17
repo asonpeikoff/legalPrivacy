@@ -157,8 +157,9 @@ def test_ua_pool_is_built_from_the_last_two_years_of_releases():
         assert len(table) >= 25
         assert min(d for _, d, _ in table) <= cutoff
     pool = build_pool()
-    assert set(pool) == {"desktop-chrome", "desktop-firefox", "desktop-chromium", "mobile-chrome"}
-    assert not any("Edg/" in e["ua"] or "Safari/604" in e["ua"] for ps in pool.values() for e in ps)
+    assert set(pool) == {"desktop-chrome", "desktop-firefox", "desktop-chromium", "mobile-chrome", "mobile-iphone"}
+    assert not any("Edg/" in e["ua"] for ps in pool.values() for e in ps)
+    assert all("iPhone" in e["ua"] and not e["chromium"] for e in pool["mobile-iphone"])   # Safari: no client hints
     assert all(e["ua"].startswith("Mozilla/5.0 (") for ps in pool.values() for e in ps)   # browsers only
 
 

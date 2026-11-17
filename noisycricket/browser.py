@@ -29,6 +29,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Callable
 
+from .useragents import DEFAULT_DEVICE, MOBILE_DEVICES
 from .humanize import HumanDriver, lognormal_clipped
 from .transports import ClearnetTransport, HitResult, Target, Transport
 
@@ -201,6 +202,29 @@ class BrowserTransport(Transport):
                 pass
         self._browser = self._pw = None
 
+    def _desktop_override(self) -> dict | None:
+        """Headless Chromium says "HeadlessChrome" in its user agent and client hints, which no
+        real person's browser does. Present the same browser and version as a normal window."""
+        if not self.headless:
+            return None
+        exe = Path(self.executable or "").name.lower()
+        brand = ("Microsoft Edge" if "msedge" in exe else "Brave" if "brave" in exe
+                 else None if "chromium" in exe else "Google Chrome")
+        if sys.platform == "win32":
+            os_tok, plat = "Windows NT 10.0; Win64; x64", "Windows"
+        elif sys.platform == "darwin":
+            os_tok, plat = "Macintosh; Intel Mac OS X 10_15_7", "macOS"
+        else:
+            os_tok, plat = "X11; Linux x86_64", "Linux"
+        ua = (f"Mozilla/5.0 ({os_tok}) AppleWebKit/537.36 (KHTML, like Gecko) "
+              f"Chrome/{self._major}.0.0.0 Safari/537.36" + (" Edg/%s.0.0.0" % self._major if brand == "Microsoft Edge" else ""))
+        brands = [{"brand": "Not_A Brand", "version": "8"}, {"brand": "Chromium", "version": self._major}]
+        if brand:
+            brands.append({"brand": brand, "version": self._major})
+        return {"userAgent": ua, "userAgentMetadata": {
+            "brands": brands, "platform": plat, "platformVersion": "", "architecture": "x86",
+            "model": "", "mobile": False}}
+
     def _session(self, identity) -> dict:
         key = getattr(identity, "id", 0)
         s = self._sessions.get(key)
@@ -213,32 +237,52 @@ class BrowserTransport(Transport):
             except Exception:
                 pass
         rng = random.Random(f"{key}-{id(self)}")
-        mobile = rng.random() < MOBILE_SHARE
+        # The identity decides: phone (and which phone) or desktop. Older identities without
+        # that information fall back to a random share.
+        mobile = bool(identity.mobile) if hasattr(identity, "mobile") else rng.random() < MOBILE_SHARE
+        device = MOBILE_DEVICES.get(getattr(identity, "device", "") or "")
+        ios = bool(mobile and "iPhone" in (getattr(identity, "user_agent", "") or ""))
+        if mobile and device is None:
+            device = MOBILE_DEVICES[DEFAULT_DEVICE if ios else "Pixel 7"]
         lang = (getattr(identity, "accept_language", "") or "en-US").split(",")[0]
         if mobile:
-            (w, h), dpr, _ = rng.choices(MOBILE_VIEWPORTS, weights=[m[2] for m in MOBILE_VIEWPORTS])[0]
-            ua = (f"Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) "
-                  f"Chrome/{self._major}.0.0.0 Mobile Safari/537.36")
+            (w, h), dpr = device["viewport"], device["dpr"]
+            # No user_agent here: Playwright's own override keeps "HeadlessChrome" client hints
+            # and a Linux navigator.platform. The DevTools override below sets everything at once.
             ctx = self._browser.new_context(viewport={"width": w, "height": h}, device_scale_factor=dpr,
-                                            is_mobile=True, has_touch=True, user_agent=ua, locale=lang)
+                                            is_mobile=True, has_touch=True, locale=lang)
         else:
             (w, h), _ = rng.choices(DESKTOP_VIEWPORTS, weights=[v[1] for v in DESKTOP_VIEWPORTS])[0]
             vh = h - rng.choice([0, 70, 85, 110])          # browser chrome eats some height
             ctx = self._browser.new_context(viewport={"width": w, "height": vh}, locale=lang)
         page = ctx.new_page()
         cdp = None
-        if mobile:
-            try:
+        try:
+            if ios:
+                # iPhone Safari: its user agent, platform "iPhone", and no client hints at all
+                # (Safari sends none; leaving the metadata out makes Chromium send none either).
+                cdp = ctx.new_cdp_session(page)
+                cdp.send("Emulation.setUserAgentOverride", {
+                    "userAgent": identity.user_agent, "acceptLanguage": lang, "platform": "iPhone"})
+            elif mobile:
+                ua = (f"Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) "
+                      f"Chrome/{self._major}.0.0.0 Mobile Safari/537.36")
                 cdp = ctx.new_cdp_session(page)
                 cdp.send("Emulation.setUserAgentOverride", {
                     "userAgent": ua, "acceptLanguage": lang, "platform": "Linux armv8l",
                     "userAgentMetadata": {
                         "brands": [{"brand": "Chromium", "version": self._major},
+                                   {"brand": "Google Chrome", "version": self._major},
                                    {"brand": "Not-A.Brand", "version": "24"}],
                         "platform": "Android", "platformVersion": "10.0.0", "architecture": "",
                         "model": "K", "mobile": True}})
-            except Exception:
-                cdp = None
+            else:
+                ov = self._desktop_override()
+                if ov:
+                    cdp = ctx.new_cdp_session(page)
+                    cdp.send("Emulation.setUserAgentOverride", {**ov, "acceptLanguage": lang})
+        except Exception:
+            cdp = None
         s = {"ctx": ctx, "page": page, "mobile": mobile, "cdp": cdp, "last_url": None}
         self._sessions[key] = s
         return s

@@ -148,3 +148,67 @@ def top_sites(since: float, until: float | None = None, files: list[dict] | None
     safe = [(d, n) for d, n in counts.most_common() if safe_domain(d, denylist)]
     return {"sites": [list(x) for x in safe[:limit]], "browsers": used, "errors": errors,
             "filtered": len(counts) - len(safe)}
+
+
+# ── bookmarks ───────────────────────────────────────────────────────────────
+def _chromium_bookmark_urls(path: str) -> list[str]:
+    import json
+    with open(path, encoding="utf-8") as fh:
+        data = json.load(fh)
+    out: list[str] = []
+
+    def walk(node):
+        if isinstance(node, dict):
+            if node.get("type") == "url" and node.get("url"):
+                out.append(node["url"])
+            for child in node.get("children", []) or []:
+                walk(child)
+    for root in (data.get("roots") or {}).values():
+        walk(root)
+    return out
+
+
+def bookmark_sites(denylist: set[str] | None = None) -> dict:
+    """Sites in your browsers' bookmarks: {"sites": [[domain, bookmarks], ...], ...}."""
+    counts: Counter[str] = Counter()
+    errors, used = [], []
+    for name, base in _chromium_bases():
+        for path in sorted(glob.glob(os.path.join(base, "*", "Bookmarks"))):
+            prof = os.path.basename(os.path.dirname(path))
+            try:
+                urls = _chromium_bookmark_urls(path)
+            except (OSError, ValueError) as exc:
+                errors.append(f"{name} ({prof}): {exc}")
+                continue
+            used.append(f"{name} ({prof})")
+            counts.update(s for s in map(site_of, urls) if s)
+    for base in _firefox_bases():
+        for path in sorted(glob.glob(os.path.join(base, "*", "places.sqlite"))):
+            prof = os.path.basename(os.path.dirname(path))
+            try:
+                rows = _read_copy(path, "SELECT p.url FROM moz_bookmarks b JOIN moz_places p ON p.id = b.fk "
+                                        "WHERE b.type = 1", ())
+            except (OSError, sqlite3.Error) as exc:
+                errors.append(f"Firefox ({prof}): {exc}")
+                continue
+            used.append(f"Firefox ({prof})")
+            counts.update(s for s in (site_of(r[0]) for r in rows) if s)
+    return _finish(counts, used, errors, denylist)
+
+
+def sites_from_bookmarks_file(text: str, denylist: set[str] | None = None) -> dict:
+    """Sites in a bookmarks export file (the HTML file every browser can export)."""
+    import re
+    return sites_from_urls(re.findall(r'(?i)href\s*=\s*"([^"]+)"', text), denylist)
+
+
+def sites_from_urls(urls: list[str], denylist: set[str] | None = None) -> dict:
+    """Sites in a list of links (e.g. pulled out of a bookmarks export file)."""
+    counts: Counter[str] = Counter(s for s in map(site_of, urls) if s)
+    return _finish(counts, ["bookmarks file"], [], denylist)
+
+
+def _finish(counts: Counter, used: list, errors: list, denylist, limit: int = 300) -> dict:
+    safe = [(d, n) for d, n in counts.most_common() if safe_domain(d, denylist)]
+    return {"sites": [list(x) for x in safe[:limit]], "browsers": used, "errors": errors,
+            "filtered": len(counts) - len(safe)}

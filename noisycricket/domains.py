@@ -42,11 +42,13 @@ def looks_browsable(domain: str) -> bool:
 
 class DomainPool:
     def __init__(self, rng: random.Random, store: FeedStore | None = None,
-                 my_sites: list[str] | None = None, random_share: float = 0.3):
+                 my_sites: list[str] | None = None, random_share: float = 0.3,
+                 my_weights: dict | None = None):
         self.rng = rng
         self.store = store
         self.my_sites = [s for s in (my_sites or []) if safe_domain(s)]   # most-visited first
         self.random_share = random_share
+        self.my_weights = my_weights or {}
         self._recent: deque[str] = deque(maxlen=60)
         self._seen_good: deque[str] = deque(maxlen=300)    # sites reached by clicking search results
 
@@ -59,7 +61,10 @@ class DomainPool:
         """A site from My List, or None when this draw should come from the other sources."""
         if not self.my_sites or self.rng.random() < self.random_share:
             return None
-        weights = [1.0 / (i + 3) for i in range(len(self.my_sites))]    # your top sites most often
+        if self.my_weights:                                              # your own "how often"
+            weights = [float(self.my_weights.get(s, 3.0)) for s in self.my_sites]
+        else:
+            weights = [1.0 / (i + 3) for i in range(len(self.my_sites))]    # your top sites most often
         return self.rng.choices(self.my_sites, weights=weights)[0]
 
     def _ranked(self) -> list[str]:

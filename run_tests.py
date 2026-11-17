@@ -19,6 +19,7 @@ import tests.test_browser
 import tests.test_sources
 import tests.test_rate_dns
 import tests.test_mylist
+import tests.test_mix_mobile
 
 MODULES = [
     tests.test_identity,
@@ -32,6 +33,7 @@ MODULES = [
     tests.test_sources,
     tests.test_rate_dns,
     tests.test_mylist,
+    tests.test_mix_mobile,
 ]
 
 

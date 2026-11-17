@@ -186,14 +186,14 @@ class Controller:
     def _domain_pool(self, _r):
         ml = self.profile.mylist
         return DomainPool(_r.Random(), self.feeds, my_sites=ml.sites if ml.enabled else None,
-                          random_share=ml.random_share)
+                          random_share=ml.random_share, my_weights=ml.weights)
 
     def mylist_state(self) -> dict:
         from .history import history_files
         ml = self.profile.mylist
         now = time.time()
         ends = ml.watch_started + ml.watch_hours * 3600 if ml.watch_started else 0
-        return {"enabled": ml.enabled, "sites": ml.sites, "random_share": ml.random_share,
+        return {"enabled": ml.enabled, "sites": ml.sites, "weights": ml.weights, "random_share": ml.random_share,
                 "watch_hours": ml.watch_hours, "watch_started": ml.watch_started, "watch_ends": ends,
                 "watch_done": bool(ml.watch_started) and now >= ends, "now": now,
                 "browsers": sorted({f"{f['browser']} ({f['profile']})" for f in history_files()}),
@@ -227,8 +227,19 @@ class Controller:
             return res
         raise ConfigError(f"unknown action {action}")
 
+    def mylist_bookmarks(self, urls: list | None = None) -> dict:
+        """Bookmarks from your browsers, or the links from a bookmarks export file (the page
+        extracts just the links and sends those, never titles)."""
+        from .history import bookmark_sites, sites_from_urls
+        if urls is not None:
+            res = sites_from_urls([str(u) for u in urls[:50_000]], self.feeds.denylist())
+        else:
+            res = bookmark_sites(self.feeds.denylist())
+        self.log.info("mylist", f"Read bookmarks: {len(res['sites'])} sites found.")
+        return res
+
     def mylist_save(self, body: dict) -> dict:
-        keep = {k: body[k] for k in ("enabled", "sites", "random_share") if k in body}
+        keep = {k: body[k] for k in ("enabled", "sites", "weights", "random_share") if k in body}
         self.apply_config({"mylist": keep})
         return self.mylist_state()
 
@@ -356,7 +367,13 @@ class Controller:
                         return True
                     return False
             self._start_feed_timer()
-            lanes = build_lanes(prof, words, tor_gate=gate, clearnet_transport=self._clearnet_transport(self._stop))
+            browser_tr = self._clearnet_transport(self._stop)
+            plain_tr = None
+            if browser_tr is not None and prof.traffic.plain > 0:      # both kinds of clearnet noise
+                from .transports import ClearnetTransport
+                plain_tr = ClearnetTransport(proxy=prof.transports["clearnet"].proxy)
+            lanes = build_lanes(prof, words, tor_gate=gate, clearnet_transport=browser_tr,
+                                plain_transport=plain_tr)
             if not lanes:
                 raise ConfigError("Nothing to run: enable clearnet noise or Tor/onion noise in Settings.")
             import random as _r
@@ -364,7 +381,8 @@ class Controller:
                                  stop_event=self._stop, sleep_fn=lambda s: self._stop.wait(s),
                                  queries=self._query_source(words), domains=self._domain_pool(_r),
                                  rate=RatePlanner(_r.Random(), prof.rate),
-                                 dns_plan=DnsPlan(_r.Random(), prof.dns, self.feeds.items("opennic")))
+                                 dns_plan=DnsPlan(_r.Random(), prof.dns, self.feeds.items("opennic")),
+                                 mix=True)
             self._thread = threading.Thread(target=self._run_loop, daemon=True, name="cricket-runner")
             self._thread.start()
             self.log.info("app", "Started: lanes = " + ", ".join(

@@ -18,7 +18,7 @@ import random
 import re
 from dataclasses import dataclass
 
-from .useragents import PERSONA_WEIGHTS, build_pool
+from .useragents import PERSONAS, build_pool, sample_entry
 
 # The pool of user agents (browsers from the last two years, plus a few non-browser
 # clients). Built in useragents.py from ua_catalog.py. See that module for why.
@@ -32,7 +32,7 @@ LANGUAGE_POOL = [
     "de-DE,de;q=0.9,en;q=0.5",
 ]
 
-PERSONA_CLASSES = list(PERSONA_WEIGHTS)
+PERSONA_CLASSES = list(PERSONAS)
 
 # fast / normal / slow pacing multipliers per persona
 PACE_MULTIPLIERS = {"fast": 0.6, "normal": 1.0, "slow": 1.8}
@@ -64,6 +64,7 @@ class Identity:
     mobile: bool = False
     platform: str = "Windows"
     gpc: bool = False         # Sec-GPC opt-in, pinned low-rate like real users
+    device: str = ""          # phone model to emulate (mobile identities), e.g. "iPhone 13"
 
     @property
     def pace_multiplier(self) -> float:
@@ -114,9 +115,7 @@ def make_identity(rng: random.Random, ident_id: int, wordlist: list[str],
     user agent is drawn from the library the same way the chooser does.
     """
     if entry is None:
-        persona = rng.choices(PERSONA_CLASSES, weights=[PERSONA_WEIGHTS[x] for x in PERSONA_CLASSES])[0]
-        pool = UA_POOL[persona]
-        entry = rng.choices(pool, weights=[e["weight"] for e in pool])[0]
+        entry = sample_entry(rng)
     persona = entry.get("persona", "own")
     return Identity(
         id=ident_id,
@@ -129,6 +128,7 @@ def make_identity(rng: random.Random, ident_id: int, wordlist: list[str],
         mobile=entry["mobile"],
         platform=entry["platform"],
         gpc=rng.random() < 0.06,
+        device=entry.get("device", ""),
     )
 
 

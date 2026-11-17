@@ -201,6 +201,8 @@ class UIServer:
                         return self._json(ctl.wizard(body))
                     elif path == "/api/mylist":
                         return self._json(ctl.mylist_save(body))
+                    elif path == "/api/mylist/bookmarks":
+                        return self._json(ctl.mylist_bookmarks(body.get("urls")))
                     elif path == "/api/mylist/scan":
                         return self._json(ctl.mylist_scan(body.get("days", 30)))
                     elif path == "/api/mylist/watch":

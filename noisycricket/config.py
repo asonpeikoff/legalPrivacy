@@ -134,10 +134,37 @@ class IdentityConfig:
 
 
 @dataclass
+class TrafficConfig:
+    """What kinds of noise run, in what proportions, and how the mix changes over time.
+
+    Clearnet noise never goes through Tor in these mixes; .onion noise always does.
+    """
+    pattern: str = "drift"        # drift (default) | blend | alternate
+    browser: float = 100.0        # clearnet pages in a real browser (relative weight)
+    plain: float = 0.0            # clearnet pages over plain HTTP (no JavaScript, no scrolling)
+    onion: float = 15.0           # Tor .onion sites (only when Tor is on)
+    mobile_share: float = 0.35    # share of noise identities that are phones
+    device: str = "iPhone 13"     # phone to emulate, or "mix"
+
+    def validate(self) -> None:
+        from .useragents import MOBILE_DEVICES
+        if self.pattern not in ("drift", "blend", "alternate"):
+            raise ConfigError("traffic.pattern must be drift, blend or alternate")
+        for k in ("browser", "plain", "onion"):
+            if float(getattr(self, k)) < 0:
+                raise ConfigError(f"traffic.{k} must be 0 or more")
+        if not 0 <= self.mobile_share <= 1:
+            raise ConfigError("traffic.mobile_share must be between 0 and 1")
+        if self.device != "mix" and self.device not in MOBILE_DEVICES:
+            raise ConfigError("traffic.device: unknown phone '" + self.device + "'")
+
+
+@dataclass
 class MyListConfig:
     """Your own sites (My List). Page visits and DNS lookups come from here first."""
     enabled: bool = False
     sites: list[str] = field(default_factory=list)   # site names, most-visited first
+    weights: dict = field(default_factory=dict)        # site -> how often, 1 (rarely) .. 10 (very often)
     random_share: float = 0.3     # share of visits/lookups from the other sources instead
     watch_started: float = 0.0    # "recording" window start (unix time); 0 = not recording
     watch_hours: float = 24.0     # recording window length
@@ -182,6 +209,7 @@ class Profile:
     dns: "DnsConfig" = field(default_factory=lambda: DnsConfig())
     identity: "IdentityConfig" = field(default_factory=lambda: IdentityConfig())
     mylist: "MyListConfig" = field(default_factory=lambda: MyListConfig())
+    traffic: "TrafficConfig" = field(default_factory=lambda: TrafficConfig())
 
     def active_engines(self, transport: str) -> list[str]:
         """Engines a lane runs. Onion is Tor-only; clearnet engines run on Tor
@@ -229,6 +257,7 @@ def profile_to_dict(profile: Profile) -> dict[str, Any]:
         "dns": asdict(profile.dns),
         "identity": asdict(profile.identity),
         "mylist": asdict(profile.mylist),
+        "traffic": asdict(profile.traffic),
     }}
 
 
@@ -284,6 +313,12 @@ def apply_overrides(profile: Profile, raw: dict[str, Any]) -> Profile:
         profile.identity = IdentityConfig(**{k: str(v) for k, v in merged.items()
                                              if k in IdentityConfig.__dataclass_fields__})
         profile.identity.validate()
+    if p.get("traffic"):
+        merged = profile.traffic.__dict__ | p["traffic"]
+        profile.traffic = TrafficConfig(
+            pattern=str(merged["pattern"]), browser=float(merged["browser"]), plain=float(merged["plain"]),
+            onion=float(merged["onion"]), mobile_share=float(merged["mobile_share"]), device=str(merged["device"]))
+        profile.traffic.validate()
     if p.get("mylist"):
         merged = profile.mylist.__dict__ | p["mylist"]
         sites = merged.get("sites") or []
@@ -296,8 +331,11 @@ def apply_overrides(profile: Profile, raw: dict[str, Any]) -> Profile:
             if x and x not in clean:
                 clean.append(x)
         merged["sites"] = clean
+        weights = {str(k).lower().removeprefix("www."): float(v)
+                   for k, v in (merged.get("weights") or {}).items()}
         profile.mylist = MyListConfig(
             enabled=bool(merged.get("enabled")), sites=clean,
+            weights={k: min(10.0, max(1.0, v)) for k, v in weights.items() if k in clean},
             random_share=float(merged.get("random_share", 0.3)),
             watch_started=float(merged.get("watch_started") or 0),
             watch_hours=float(merged.get("watch_hours", 24)))
