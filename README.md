@@ -6,7 +6,7 @@ real browser, behaves like a person, follows a daily rhythm, and can make option
 `.onion` noise. Everything it does is visible in a local dashboard, and nothing about your
 activity is stored after it stops.
 
-The name is a homage to the blog *Legalizing Privacy*. This project was called noisyCricket until v2.9;
+The name is a homage to the blog [*Legalizing Privacy*](https://legalizingprivacy.substack.com). This project was called noisyCricket until v2.9;
 existing settings, start-up commands (`cricket`, `cricket-launch`) and `CRICKET_*` environment variables keep working.
 
 <p align="center">
