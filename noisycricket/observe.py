@@ -173,14 +173,18 @@ class TrafficObserver:
         tor = self.tor_pid()
         seen: dict[str, str] = {}
         ports: dict[str, set] = {}
+        total = public = 0
         for item in self.conn_fn():
             ip, pid = item[0], item[1]
+            total += 1
             if not _is_public(ip):
                 continue
+            public += 1
             ports.setdefault(ip, set()).add(item[2] if len(item) > 2 else 0)
             kind = "tor" if (tor and pid == tor) else ("noise" if pid in own else "you")
             if seen.get(ip) != "noise":            # if both, the noise owns the label
                 seen[ip] = kind
+        self.last_sample = {"at": now, "connections": total, "internet": public}
         with self._lock:
             for ip, kind in seen.items():
                 n = self.live.setdefault(ip, {"kind": kind, "first": now, "seen": 0, "ports": set()})
@@ -313,6 +317,7 @@ class TrafficObserver:
 
     def state(self) -> dict:
         return {"available": self.available, "limited": self.limited, "nodes": self.nodes(),
+                "last_sample": getattr(self, "last_sample", None),
                 "timeline": self.timeline(6), "compare": self.compare(), "onoff": self.onoff()}
 
     # ── persistence (counts only) ──────────────────────────────────────────

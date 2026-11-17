@@ -476,6 +476,7 @@ table.dns td{vertical-align:middle}
     <label class="chk"><input type="checkbox" id="pObs"><span>Watch this computer's connections for this tab <span class="mute">(local only; on by default)</span></span></label>
   </div>
   <div class="card"><h3>Live network map <details class="why"><summary>ⓘ</summary><div>Like EtherApe: each bubble is a machine this computer is talking to right now, sized by how long it's been connected. Noise sites are named; your own connections never are.</div></details></h3>
+    <div id="pMapMsg"></div>
     <div id="pMap" style="min-height:420px"></div>
   </div>
   <div class="card"><h3>Last 6 hours, per minute <details class="why"><summary>ⓘ</summary><div>Bars count the different addresses connected in each minute, split by who opened them. Shaded stripes are minutes when the noise was on. Turn the noise off for a while and on again to see the difference, and whether your own pattern and the noise look alike.</div></details></h3>
@@ -577,13 +578,27 @@ async function pollProof(){
   if(!proofOn())return;
   try{const o=await api('/api/observe');renderProof(o)}catch(e){}
 }
+// When the map has nothing to show, say why instead of staying blank.
+function mapWhyEmpty(o){
+  if((o.nodes||[]).length)return '';
+  const ls=o.last_sample;let why;
+  if(!o.available)why='Connection watching isn’t available: the <b>psutil</b> package is missing. Close noisyCricket and start it again with the start script (it installs what’s missing), or run <code>pip install psutil</code>.';
+  else if(!o.enabled)why='Watching is off. Tick “Watch this computer’s connections” above.';
+  else if(!ls)why='Starting to watch… the first look takes about 5 seconds.';
+  else if(!ls.connections)why='No open connections were seen on the last look. Open a website or start the noise, and they’ll appear within seconds.';
+  else if(!ls.internet)why=`${ls.connections} connection${ls.connections>1?'s were':' was'} seen, but all to local or private addresses (this computer, your home network, or a VPN or proxy on it), so there’s nothing on the internet to draw.`;
+  else why=`${ls.internet} internet connection${ls.internet>1?'s':''} seen; they’ll appear on the next refresh.`;
+  return `<div class="note small">${why}</div>`;
+}
 function renderProof(o){
   $('#pObs').checked=o.enabled;
   $('#pHead').innerHTML=!o.available?'<span class="warnc">Connection watching isn\'t available on this computer (the psutil package is missing).</span>':
     `Noise is <b class="${o.running?'ok':''}">${o.running?'ON':'OFF'}</b> right now.`+
     (o.limited?' <span class="warnc">This system only lets noisyCricket see its own connections (on macOS, run it as administrator to see your apps too), so “your apps” stays empty.</span>':'');
-  if(window.NetMap){if(!pMap)pMap=new NetMap($('#pMap'),{height:420});pMap.update(o.nodes||[])}
-  else $('#pMap').innerHTML='<div class="mute small">Map unavailable.</div>';
+  if(window.NetMap){
+    try{if(!pMap)pMap=new NetMap($('#pMap'),{height:420});pMap.update(o.nodes||[]);$('#pMapMsg').innerHTML=mapWhyEmpty(o)}
+    catch(err){$('#pMapMsg').innerHTML=`<div class="note bad small">The map hit an error and couldn't draw: <code>${esc(String(err))}</code>. Please send this to the developer.</div>`}
+  }else $('#pMap').innerHTML='<div class="note bad small">The map’s script isn’t part of this install, so it can’t draw. Reinstall noisyCricket, or start it with the start script.</div>';
   $('#pTime').innerHTML=svgTimeline(o.timeline||[]);
   const oo=o.onoff||{},f=v=>v==null?'—':v;
   $('#pOnOff').innerHTML=`<table><thead><tr><th></th><th>Noise off</th><th>Noise on</th></tr></thead><tbody>
