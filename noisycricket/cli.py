@@ -90,7 +90,8 @@ def _bring_up_tor(profile, verbose: bool = False):
         log.subscribe(lambda e: print(f"  [{e.source}] {e.message}") if e.source == "tor" else None)
     tm = TorManager(log, mode="managed" if cfg.manage else "external", socks=cfg.socks,
                     control=cfg.control, control_password=cfg.control_password,
-                    bridges=cfg.bridges, auto_install=cfg.auto_install)
+                    bridges=cfg.bridges, auto_install=cfg.auto_install,
+                                  bridge_mode=cfg.bridge_mode, bridge_auto=cfg.bridge_auto)
     tm.start()
     deadline = time.time() + 300
     last = -1
@@ -120,7 +121,8 @@ def cmd_tor(args: argparse.Namespace) -> int:
     log.subscribe(lambda e: print(f"  [{e.level}] {e.message}"))
     tm = TorManager(log, mode="managed" if cfg.manage else "external", socks=cfg.socks,
                     control=cfg.control, control_password=cfg.control_password,
-                    bridges=cfg.bridges, auto_install=cfg.auto_install)
+                    bridges=cfg.bridges, auto_install=cfg.auto_install,
+                                  bridge_mode=cfg.bridge_mode, bridge_auto=cfg.bridge_auto)
     if args.tor_command == "status":
         print(f"tor program : {find_tor_binary() or 'not installed'}")
         print(f"enabled     : {cfg.enabled}  (managed={cfg.manage}, onion={cfg.onion}, clearnet_via_tor={cfg.clearnet_via_tor})")

@@ -165,12 +165,14 @@ class Controller:
         cfg = self._tor_cfg()
         mode = "managed" if cfg.manage else "external"
         if self.tor is None or self.tor.mode != mode or self.tor.ext_socks != cfg.socks \
-                or self.tor.bridges != [b.strip() for b in cfg.bridges if b.strip()]:
+                or self.tor.bridges != [b.strip() for b in cfg.bridges if b.strip()] \
+                or self.tor.configured_bridge_mode != cfg.bridge_mode or self.tor.bridge_auto != cfg.bridge_auto:
             if self.tor and self.tor.state not in ("stopped",):
                 self.tor.stop()
             self.tor = TorManager(self.log, mode=mode, socks=cfg.socks, control=cfg.control,
                                   control_password=cfg.control_password,
-                                  bridges=cfg.bridges, auto_install=cfg.auto_install)
+                                  bridges=cfg.bridges, auto_install=cfg.auto_install,
+                                  bridge_mode=cfg.bridge_mode, bridge_auto=cfg.bridge_auto)
         return self.tor
 
     # ── DNS resolver table: health + verification ──────────────────────────
@@ -216,6 +218,19 @@ class Controller:
             plan = self.dns_plan = DnsPlan(random.Random(), self.profile.dns, self.feeds.items("opennic"))
         plan.cfg = self.profile.dns
         return plan.report()
+
+    def get_bridges(self, country: str = "") -> dict:
+        """Ask the Tor Project's bridge service for bridges that work in a country; save them."""
+        from .tormanager import fetch_bridges_for_country
+        sets = fetch_bridges_for_country(country)
+        lines = [ln for s in sets for ln in s["lines"]]
+        if not lines:
+            return {"ok": False, "message": "The Tor Project says no bridges are needed for that country "
+                                            "(or has none to suggest). Try the built-in ones, or request your own."}
+        self.apply_config({"transports": {"tor": {"bridges": lines, "bridge_mode": "custom"}}})
+        self.log.info("tor", f"Got {len(lines)} bridge(s) from bridges.torproject.org "
+                             f"({', '.join(sorted({s['type'] for s in sets}))}); saved as your bridges.")
+        return {"ok": True, "count": len(lines), "types": sorted({s["type"] for s in sets})}
 
     def tor_selftest(self) -> None:
         """User-initiated check: does traffic leave through Tor, and does an onion site load?"""

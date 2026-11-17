@@ -70,12 +70,16 @@ class TransportConfig:
     onion_seeds: list[str] = field(default_factory=list)   # extra seeds; empty = built-ins
     onion_follow_offsite: bool = True
     bridges: list[str] = field(default_factory=list)       # bridge lines for censored networks
+    bridge_mode: str = "off"          # off | obfs4 | snowflake | meek (built into the Tor bundle) | custom (yours)
+    bridge_auto: bool = True          # if Tor can't connect directly, try the built-in bridges by itself
 
     def validate(self, name: str) -> None:
         if self.browser not in ("auto", "on", "off"):
             raise ConfigError(f"transport '{name}': browser must be auto, on or off")
         if self.browser_engine not in ("auto", "chromium", "firefox"):
             raise ConfigError(f"transport '{name}': browser_engine must be auto, chromium or firefox")
+        if self.bridge_mode not in ("off", "obfs4", "snowflake", "meek", "custom"):
+            raise ConfigError("tor bridge_mode must be off, obfs4, snowflake, meek or custom")
         if self.identities_per_circuit < 1:
             raise ConfigError(f"transport '{name}': identities_per_circuit >= 1")
 

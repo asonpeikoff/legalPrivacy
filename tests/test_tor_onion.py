@@ -242,3 +242,35 @@ def test_tor_routine_new_circuits():
     r.probe_fn = lambda l, i, t: HitResult(200, "<html></html>")
     r.run_once(wait=False)
     assert "renew" in calls
+
+
+def test_bridges_from_bundle_pt_config(tmp=None):
+    import json
+    from noisycricket.events import EventLog
+    from noisycricket.tormanager import TorManager
+    d = tempfile.mkdtemp()
+    pt = os.path.join(d, "tor", "pluggable_transports")
+    os.makedirs(pt)
+    open(os.path.join(d, "tor", "tor"), "w").close()
+    json.dump({"pluggableTransports": {"lyrebird": "ClientTransportPlugin meek_lite,obfs4 exec ${pt_path}lyrebird",
+                                       "snowflake": "ClientTransportPlugin snowflake exec ${pt_path}lyrebird"},
+               "bridges": {"obfs4": ["obfs4 1.2.3.4:443 AAAA cert=x iat-mode=0"],
+                           "snowflake": ["snowflake 192.0.2.3:80 BBBB fingerprint=BBBB"]}},
+              open(os.path.join(pt, "pt_config.json"), "w"))
+    tm = TorManager(EventLog(), bridge_mode="snowflake", bridges=["obfs4 9.9.9.9:1 CCCC cert=y iat-mode=0"])
+    tm.binary = os.path.join(d, "tor", "tor")
+    assert tm.effective_bridges() == ["snowflake 192.0.2.3:80 BBBB fingerprint=BBBB"]
+    assert tm._pt_line("snowflake") == f"ClientTransportPlugin snowflake exec {pt}{os.sep}lyrebird"
+    tm.bridge_mode = "custom"
+    assert tm.effective_bridges() == ["obfs4 9.9.9.9:1 CCCC cert=y iat-mode=0"]
+    tm.bridge_mode = "off"
+    assert tm.effective_bridges() == []
+
+
+def test_bridge_mode_validated():
+    from noisycricket.config import ConfigError
+    try:
+        apply_overrides(Profile(name="t"), {"transports": {"tor": {"bridge_mode": "weird"}}})
+        raise AssertionError("accepted a bad bridge mode")
+    except ConfigError:
+        pass
