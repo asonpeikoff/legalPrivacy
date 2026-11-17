@@ -25,6 +25,9 @@ def _index_html() -> bytes:
                      resource_root() / "noisycricket" / "web" / "index.html"):
             if cand.exists():
                 _INDEX = cand.read_bytes()
+                js = cand.parent / "netmap.js"          # inlined: a <script src> can't carry the token
+                if js.exists():
+                    _INDEX = _INDEX.replace(b"<!--NETMAP-->", b"<script>" + js.read_bytes() + b"</script>")
                 break
         else:
             _INDEX = b"<h1>noisyCricket UI files missing</h1>"
@@ -141,6 +144,8 @@ class UIServer:
                     return self._json({"error": "unauthorized"}, 401)
                 ctl = srv.ctl
                 try:
+                    if u.path == "/api/observe":
+                        return self._json(ctl.observe_state())
                     if u.path == "/api/state":
                         return self._json(ctl.state())
                     if u.path == "/api/hits":
@@ -288,7 +293,9 @@ def run_ui(profile_path: str | None = None, port: int | None = None, open_browse
     srv = UIServer(ctl, port or int(ctl.app.get("port", 8765)))
     print_fn(f"\n  🦗 noisyCricket dashboard: {srv.url}\n  (keep this window open; use Quit in the page, or Ctrl+C, to stop)\n")
     ctl.log.info("app", f"Dashboard listening on 127.0.0.1:{srv.port}")
-    ctl._start_feed_timer()            # fetch live query/domain sources in the background right away
+    ctl._start_feed_timer()
+    if ctl.app.get("observe", True):
+        ctl.observer.start()              # Proof tab: local connection counts, never leaves this computer            # fetch live query/domain sources in the background right away
     if ctl.app.get("autostart") and not ctl.first_run:
         try:
             ctl.start()

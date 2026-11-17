@@ -74,6 +74,9 @@ table.dns td{vertical-align:middle}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin:8px 0}
 .kpi{background:var(--code);border-radius:8px;padding:8px 10px}.kpi b{display:block;font-size:20px;color:var(--ink)}.kpi span{font-size:11px;color:var(--mute)}
 .cm{border-collapse:collapse}.cm td,.cm th{border:1px solid var(--line);padding:6px 10px;text-align:center}
+#t-proof{--you:#2a9d8f;--you-map:#2a9d8f}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) #t-proof{--you:#3fb8a9;--you-map:#3fb8a9}}
+:root[data-theme=dark] #t-proof{--you:#3fb8a9;--you-map:#3fb8a9}
 .mlgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
 .lgd{display:inline-flex;align-items:center;gap:6px;margin-right:12px;font-size:12px;color:var(--mute)}.lgd i{width:10px;height:10px;border-radius:2px;display:inline-block}
 .mixbar{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--line);margin:6px 0 10px}
@@ -102,6 +105,7 @@ table.dns td{vertical-align:middle}
   <button data-t="help">Help</button>
   <button data-t="mylist">My List</button>
   <button data-t="ml">ML</button>
+  <button data-t="proof">Proof</button>
   <button data-t="tools">Tools</button>
 </nav>
 <main>
@@ -437,6 +441,28 @@ table.dns td{vertical-align:middle}
   </div>
 </section>
 <!-- TOOLS -->
+<section id="t-proof" class="tab vz">
+  <div class="card"><h3>Is it working? Proof from your own computer <details class="why"><summary>ⓘ</summary><div>
+    Every few seconds noisyCricket looks at which addresses this computer is connected to and which program owns each connection:
+    <b>your apps</b> (your browser, updates, chat…), <b>noisyCricket</b> (its own requests and the browser it drives) or <b>Tor</b>.
+    Nothing is captured or read, no addresses are looked up, and your own traffic is never labelled or saved; only per-minute counts are kept, for 7 days, on this computer.
+    With the noise off you see only your traffic; with it on, the noise should blend in: similar rhythm, similar busyness. That's what this tab shows.</div></details></h3>
+    <div id="pHead" class="small"></div>
+    <label class="chk"><input type="checkbox" id="pObs"><span>Watch this computer's connections for this tab <span class="mute">(local only; on by default)</span></span></label>
+  </div>
+  <div class="card"><h3>Live network map <details class="why"><summary>ⓘ</summary><div>Like EtherApe: each bubble is a machine this computer is talking to right now, sized by how long it's been connected. Noise sites are named; your own connections never are.</div></details></h3>
+    <div id="pMap" style="min-height:420px"></div>
+  </div>
+  <div class="card"><h3>Last 6 hours, per minute <details class="why"><summary>ⓘ</summary><div>Bars count the different addresses connected in each minute, split by who opened them. Shaded stripes are minutes when the noise was on. Turn the noise off for a while and on again to see the difference, and whether your own pattern and the noise look alike.</div></details></h3>
+    <div id="pTime"></div>
+    <div class="small"><span style="color:var(--you)">■</span> your apps &nbsp; <span style="color:var(--noi)">■</span> noisyCricket &nbsp; <span style="color:var(--tor)">■</span> Tor &nbsp; <span class="mute">▒ noise on</span></div>
+  </div>
+  <div class="mlgrid">
+    <div class="card"><h3>Off vs on, last 24 hours</h3><div id="pOnOff"></div></div>
+    <div class="card"><h3>Does the noise look like you? <details class="why"><summary>ⓘ</summary><div>Compares the rhythm of the noise with your own traffic from the minutes when the noise was off: time of day, how long busy bursts last, how long the quiet gaps are, and how busy a busy minute is. 100% means an observer couldn't tell the two apart on that measure (1 − Kolmogorov–Smirnov distance). For a stronger test that uses your browser history, see the ML tab.</div></details></h3><div id="pCmp"></div></div>
+  </div>
+</section>
+
 <section id="t-tools" class="tab">
   <div class="card"><h3>How much data will this use?</h3>
     <p class="small mute">A rough estimate from your current settings (amount, mix, real browser, low-data mode, active hours, cap). Real pages vary a lot.</p>
@@ -494,7 +520,7 @@ const fmtDur=s=>{s=Math.floor(s);const h=Math.floor(s/3600),m=Math.floor(s%3600/
 const fmtB=n=>n>1e9?(n/1e9).toFixed(2)+' GB':n>1e6?(n/1e6).toFixed(1)+' MB':n>1e3?(n/1e3).toFixed(0)+' KB':(n||0)+' B';
 
 // tabs
-$$('#nav button').forEach(b=>b.onclick=()=>{$$('#nav button').forEach(x=>x.classList.toggle('on',x===b));$$('.tab').forEach(t=>t.classList.toggle('on',t.id==='t-'+b.dataset.t));if(b.dataset.t==='log')renderLog(true);if(b.dataset.t==='set')fillSettings(true);if(b.dataset.t==='tor')fillTor(true);if(b.dataset.t==='tools')$('#toolCfg').textContent=S?S.config_path:'';if(b.dataset.t==='mylist')loadML();if(b.dataset.t==='ml')loadMLTab()});
+$$('#nav button').forEach(b=>b.onclick=()=>{$$('#nav button').forEach(x=>x.classList.toggle('on',x===b));$$('.tab').forEach(t=>t.classList.toggle('on',t.id==='t-'+b.dataset.t));if(b.dataset.t==='log')renderLog(true);if(b.dataset.t==='set')fillSettings(true);if(b.dataset.t==='tor')fillTor(true);if(b.dataset.t==='tools')$('#toolCfg').textContent=S?S.config_path:'';if(b.dataset.t==='mylist')loadML();if(b.dataset.t==='ml')loadMLTab();if(b.dataset.t==='proof')pollProof()});
 
 let S=null, hits=[], hitAfter=0, logs=[], logAfter=0, errCount=0, srcOn=new Set(), srcAll=new Set(['app','scheduler','clearnet','browser','tor','onion','tools','mylist']);
 let dirty={set:false,tor:false};
@@ -520,6 +546,57 @@ async function poll(){
   }catch(e){$('#pRun').className='pill bad';$('#pRun').textContent='disconnected'}
 }
 setInterval(poll,1000);
+let pMap=null,pTimer=null;
+function proofOn(){return $('#t-proof').classList.contains('on')}
+async function pollProof(){
+  if(!proofOn())return;
+  try{const o=await api('/api/observe');renderProof(o)}catch(e){}
+}
+function renderProof(o){
+  $('#pObs').checked=o.enabled;
+  $('#pHead').innerHTML=!o.available?'<span class="warnc">Connection watching isn\'t available on this computer (the psutil package is missing).</span>':
+    `Noise is <b class="${o.running?'ok':''}">${o.running?'ON':'OFF'}</b> right now.`+
+    (o.limited?' <span class="warnc">This system only lets noisyCricket see its own connections (on macOS, run it as administrator to see your apps too), so “your apps” stays empty.</span>':'');
+  if(window.NetMap){if(!pMap)pMap=new NetMap($('#pMap'),{height:420});pMap.update(o.nodes||[])}
+  else $('#pMap').innerHTML='<div class="mute small">Map unavailable.</div>';
+  $('#pTime').innerHTML=svgTimeline(o.timeline||[]);
+  const oo=o.onoff||{},f=v=>v==null?'—':v;
+  $('#pOnOff').innerHTML=`<table><thead><tr><th></th><th>Noise off</th><th>Noise on</th></tr></thead><tbody>
+    <tr><td>Minutes observed</td><td>${f(oo.off&&oo.off.minutes)}</td><td>${f(oo.on&&oo.on.minutes)}</td></tr>
+    <tr><td>Your apps: addresses / min</td><td>${f(oo.off&&oo.off.you)}</td><td>${f(oo.on&&oo.on.you)}</td></tr>
+    <tr><td>noisyCricket: addresses / min</td><td>${f(oo.off&&oo.off.noise)}</td><td>${f(oo.on&&oo.on.noise)}</td></tr>
+    <tr><td>noisyCricket: requests / min</td><td>—</td><td>${f(oo.on&&oo.on.req)}</td></tr>
+    <tr><td>All traffic: KB / min</td><td>${oo.off&&oo.off.bytes!=null?Math.round(oo.off.bytes/1024):'—'}</td><td>${oo.on&&oo.on.bytes!=null?Math.round(oo.on.bytes/1024):'—'}</td></tr></tbody></table>
+    <div class="small mute">With the noise on, an observer of your connection sees your traffic <i>plus</i> the noise; the rows above show how much was added.</div>`;
+  const c=o.compare||{};
+  if(c.verdict==='collecting'){
+    $('#pCmp').innerHTML=`<div class="mute">Collecting data. Needs about ${c.needed.baseline_active} more busy minutes of <b>your own</b> traffic with the noise off, and ${c.needed.noise_active} more with it on.</div>
+      <div class="small mute" style="margin-top:6px">Tip: use your computer normally with noisyCricket stopped for an hour or two, then start it.</div>`;
+  }else{
+    const word={similar:'<b class="ok">Looks like you</b>',somewhat:'<b class="warnc">Somewhat like you</b>',different:'<b class="bad">Noticeably different</b>'}[c.verdict]||'';
+    $('#pCmp').innerHTML=`<div class="big">${Math.round((c.score||0)*100)}%</div><div>${word}${c.weakest?` · least similar: ${esc(c.weakest)}`:''}</div>`+
+      (c.metrics||[]).map(m=>`<div class="row" style="margin:4px 0" title="${esc(m.what)}"><span style="width:120px">${esc(m.name)}</span><div class="bar" style="flex:1"><i style="width:${(m.similarity||0)*100}%"></i></div><span style="width:44px;text-align:right" title="${m.similarity==null?'Not enough data yet':''}">${m.similarity==null?'later':Math.round(m.similarity*100)+'%'}</span></div>`).join('')+
+      `<div class="small mute">Based on ${c.baseline_active} busy minutes of yours and ${c.noise_active} with noise.</div>`;
+  }
+}
+function svgTimeline(rows){
+  if(!rows.length)return '<div class="mute">No data yet.</div>';
+  const W=900,H=200,P=30,B=22,n=rows.length,bw=(W-P-6)/n;
+  const tot=r=>r.you+r.noise+(r.tor?1:0),mx=Math.max(3,...rows.map(tot));
+  const y=v=>H-B-(v/mx)*(H-B-10);
+  let g='';
+  rows.forEach((r,i)=>{const x=P+i*bw;
+    if(r.on)g+=`<rect x="${x}" y="8" width="${bw+0.3}" height="${H-B-8}" fill="var(--noi)" opacity=".08"/>`;
+    let base=0;
+    for(const [v,col] of [[r.you,'var(--you)'],[r.noise,'var(--noi)'],[r.tor?1:0,'var(--tor)']]){
+      if(!v)continue;const y0=y(base),y1=y(base+v);g+=`<rect x="${x}" y="${y1}" width="${Math.max(1,bw-0.4)}" height="${y0-y1}" fill="${col}"/>`;base+=v}
+  });
+  let ax='';for(let k=0;k<=mx;k+=Math.max(1,Math.ceil(mx/4)))ax+=`<line class="ax" x1="${P}" x2="${W-4}" y1="${y(k)}" y2="${y(k)}" opacity=".5"/><text x="${P-6}" y="${y(k)+3}" text-anchor="end">${k}</text>`;
+  let tl='';for(let i=0;i<n;i+=60){const d=new Date(rows[i].t*1000);tl+=`<text x="${P+i*bw}" y="${H-6}">${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}</text>`}
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Connections per minute over the last 6 hours">${ax}${g}${tl}</svg>`;
+}
+$('#pObs').onchange=()=>act('/api/app',{observe:$('#pObs').checked});
+setInterval(pollProof,2000);
 
 // ---------- render
 function render(){
@@ -1029,5 +1106,6 @@ $('#wNext').onclick=async()=>{
 };
 poll();
 </script>
+<!--NETMAP-->
 </body>
 </html>

@@ -55,7 +55,8 @@ class TransportConfig:
     proxy: str | None = None          # clearnet: http:// or socks5:// URL
     browser: str = "auto"             # clearnet: auto | on | off — drive a real browser like a person
     browser_visible: bool = False     # clearnet: show the browser window instead of running headless
-    browser_offscreen: bool = False   # clearnet: a real window, but parked off-screen (real graphics, not seen)
+    browser_offscreen: bool = True    # clearnet: a real window parked off-screen (harder to flag than headless);
+                                      # falls back to headless where there is no display
     browser_engine: str = "auto"      # clearnet: auto (match your browser) | chromium | firefox
     # --- tor lane only ---
     socks: str = DEFAULT_TOR_SOCKS

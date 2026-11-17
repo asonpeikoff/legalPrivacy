@@ -11,6 +11,7 @@ dependencies = [
   "requests[socks]>=2.31",
   "PyYAML>=6.0",
   "playwright>=1.45",   # real-browser mode; uses the Chrome/Edge/Chromium already installed
+  "psutil>=5.9",        # Proof tab: which program owns each connection (local only)
 ]
 
 [project.scripts]

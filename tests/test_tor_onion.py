@@ -1,5 +1,6 @@
 """Tor/onion tests — all offline (fake control server, injected probes)."""
 import os
+import random
 import socket
 import sys
 import tempfile
@@ -198,3 +199,46 @@ def test_control_cookie_auth():
     with TorControl("127.0.0.1", port):
         pass
     os.unlink(cookie.name)
+
+
+def _patience_run(seed):
+    p = Profile(name="t")
+    apply_overrides(p, {"transports": {"clearnet": {"enabled": False}, "tor": {"enabled": True}}})
+    clock = [1000.0]
+    calls, seen = [], []
+    lanes = build_lanes(p, WORDS, tor_gate=lambda: True)
+    lanes[0].transport.reconnect = lambda: calls.append("newnym") or True
+    lanes[0].transport.renew_circuits = lambda: calls.append("renew") or True
+
+    def probe(l, ident, target):
+        seen.append(target.url)
+        return HitResult(None, error="0x01: General SOCKS server failure")
+
+    r = Runner(profile=p, lanes=lanes, wordlist=WORDS, clock=lambda: clock[0], local_hour_fn=lambda: 12.0,
+               sleep_fn=lambda s: None, probe_fn=probe)
+    r.rng = random.Random(seed)
+    for _ in range(6):
+        r.run_once(wait=False)
+        clock[0] += 200
+    return r, seen, calls, clock, lanes
+
+
+def test_tor_patience_varies_like_a_person_and_gets_new_identities():
+    retried = moved_on = 0
+    for seed in range(40):
+        r, seen, calls, clock, lanes = _patience_run(seed)
+        assert "newnym" in calls                          # a run of failures always ends in a new identity
+        if seen[1] == seen[0]:
+            retried += 1
+        else:
+            moved_on += 1
+    assert retried > 5 and moved_on > 5                   # not one fixed reaction
+
+
+def test_tor_routine_new_circuits():
+    r, seen, calls, clock, lanes = _patience_run(1)
+    calls.clear()
+    clock[0] += 3000
+    r.probe_fn = lambda l, i, t: HitResult(200, "<html></html>")
+    r.run_once(wait=False)
+    assert "renew" in calls
