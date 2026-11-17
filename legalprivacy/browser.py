@@ -482,17 +482,32 @@ class BrowserTransport(Transport):
                                                 "access denied", "attention required"))
                     or (status == 202 and "duckduckgo" in page.url)):
                 status = 429          # a bot check: back off instead of counting it as a visit
-            stats = driver.serp() if target.role == "search" else driver.browse()
-            downloaded = self._maybe_download(page) or self._maybe_save_image(page)
+            walled = False
+            if status < 400 and target.role != "search":
+                from .loginwall import looks_like_login_wall
+                try:
+                    probe = page.evaluate(
+                        "() => [[...document.querySelectorAll('input[type=password]')].filter(e => e.offsetParent).length,"
+                        " (document.body ? document.body.innerText : '').slice(0, 3000)]")
+                except Exception:
+                    probe = [0, ""]
+                walled = looks_like_login_wall(page.url, title, probe[1], password_fields=probe[0])
+            if walled:                # needs an account: a logged-out person glances and goes elsewhere
+                stats = driver.browse(dwell=self.rng.uniform(2, 6))
+            else:
+                stats = driver.serp() if target.role == "search" else driver.browse()
+            downloaded = None if walled else (self._maybe_download(page) or self._maybe_save_image(page))
             s["last_url"] = page.url
             s["on_serp"] = target.role == "search"
             if target.role == "search":
                 s["serp_ref"] = target.url
-            html = page.content()[:2_000_000]
+            html = "" if walled else page.content()[:2_000_000]      # never follow links off a login page
             parts = [f"{how} {'📱' if mobile else '🖥'}", f"{stats['scrolls']} scrolls",
                      f"{int(stats['depth'] * 100)}% depth", f"{stats['seconds']:.0f}s on page"]
             if stats.get("serp"):
                 parts.insert(1, f"results: {stats['serp']}")
+            if walled:
+                parts.insert(1, "login required: moved on")
             if stats["back_scrolls"]:
                 parts.append(f"{stats['back_scrolls']} scroll-back")
             if stats.get("selections"):
@@ -503,6 +518,8 @@ class BrowserTransport(Transport):
             res = HitResult(status, html)
             res.detail = ", ".join(parts)
             res.load_ms = load_ms
+            res.login_wall = walled
+            res.final_url = page.url
             res.on_page_s = stats["seconds"]
             # content-length is missing for some compressed responses, so this is a floor
             res.bytes = max(len(html), s.get("counter", {}).get("bytes", 0) - bytes_before)

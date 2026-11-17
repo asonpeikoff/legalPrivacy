@@ -276,3 +276,37 @@ def test_offline_onion_sites_are_quiet_and_rested():
     assert not r._onion_is_dead(url)                           # one miss: try again later
     r._onion_seen_dead(url)
     assert r._onion_is_dead(url)                               # two misses: rest it for hours
+
+
+def test_login_walls_are_recognised_but_public_pages_are_not():
+    from legalprivacy.loginwall import looks_like_login_wall as w
+    assert w("https://www.facebook.com/login/?next=https%3A%2F%2Fwww.facebook.com%2Fgroups%2F1")
+    assert w("https://www.instagram.com/accounts/login/?next=/someone/")
+    assert w("https://www.linkedin.com/authwall?trk=bf")
+    assert w("https://x.com/i/flow/login")
+    assert w("https://www.facebook.com/somepage", "Facebook", "See more on Facebook. Log in to continue")
+    assert w("https://example.com/members", html='<form><input name=u><input type="password" name=p></form>')
+    article = "<a href='/login'>Log in</a><p>" + "words " * 2000 + "</p>"
+    assert not w("https://news.example.com/story", html=article)           # a login link isn't a wall
+    assert not w("https://www.facebook.com/somepublicpage", "Public Page | Facebook",
+                 "About · Photos · Posts · 12,000 people like this")
+
+
+def test_a_login_wall_is_not_a_failure_and_the_site_rests():
+    from legalprivacy.transports import Target
+    seen = []
+    wall = '<html><title>Log in</title><form><input type="password"></form></html>'
+    r = _runner({}, lambda lane, ident, target: (seen.append(target.url),
+                HitResult(200, wall if "walled" in target.url else "<p>" + "ok " * 900 + "</p>"))[1])
+    r.plan_hour(12)
+    queue = [Target(url="https://walled.example.com/a"), Target(url="https://walled.example.com/b"),
+             Target(url="https://open.example.org/c")]
+    r._make_target = lambda lane, eng, ident: queue.pop(0) if queue else Target(url="https://x.example.net/")
+    for lane in r.lanes:
+        lane.engines = [e for e in lane.engines if e == "crawl"] or lane.engines
+    r.run_once(wait=False)
+    assert seen == ["https://walled.example.com/a"] and r.day_failures == 0
+    assert r._host_rested("https://walled.example.com/anything")
+    r.run_once(wait=False)
+    assert seen[-1] == "https://open.example.org/c"                       # skipped the rested site
+    assert r.hit_log[0]["ok"] and "login required" in (r.hit_log[0]["detail"] or "")

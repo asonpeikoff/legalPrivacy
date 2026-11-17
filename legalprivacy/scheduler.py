@@ -361,6 +361,14 @@ class Runner:
             if getattr(lane.transport, "renew_circuits", lambda: False)():
                 self._emit("info", "tor", "Switched to new Tor circuits (routine, every 10-40 minutes).")
 
+    def _rest_host(self, host: str, seconds: float) -> None:
+        self.__dict__.setdefault("_rested", {})[host] = time.time() + seconds
+
+    def _host_rested(self, url: str) -> bool:
+        import urllib.parse as _up
+        h = (_up.urlparse(url).hostname or "").removeprefix("www.")
+        return time.time() < self.__dict__.get("_rested", {}).get(h, 0.0)
+
     def _onion_seen_dead(self, url: str) -> None:
         import urllib.parse as _up
         host = _up.urlparse(url).hostname or ""
@@ -490,12 +498,29 @@ class Runner:
                 if self.clock() - self._host_last.get(host, -1e9) >= 60:
                     break
                 target = self._make_target(lane, eng_name, identity)
+        if target.kind == "html" and target.role != "search" and self._host_rested(target.url):
+            for _ in range(4):                     # that site asked for a login recently: go elsewhere
+                target = self._make_target(lane, eng_name, identity)
+                if target.kind != "html" or target.role == "search" or not self._host_rested(target.url):
+                    break
         self.current = {"lane": lane.name, "engine": eng_name, "url": target.url, "started": time.time(),
                         "role": target.role}
         try:
             result = self._probe(lane, identity, target)
         finally:
             self.current = None
+        if target.kind == "html" and target.role != "search" and result.ok:
+            if not getattr(result, "login_wall", False) and not getattr(lane.transport, "is_browser", False):
+                from .loginwall import looks_like_login_wall
+                if looks_like_login_wall(target.url, html=result.html or ""):
+                    result.login_wall, result.html = True, ""
+                    result.detail = "login required: moved on"
+            if getattr(result, "login_wall", False):
+                import urllib.parse as _up
+                for u in (target.url, getattr(result, "final_url", "") or ""):
+                    h = (_up.urlparse(u).hostname or "").removeprefix("www.")
+                    if h and not any(x in h for x in ("accounts.", "login.", "auth.")):
+                        self._rest_host(h, self.rng.uniform(3, 8) * 3600)    # rest the site for a few hours
         if eng_name == "onion" and not result.ok and _onion_offline(result):
             result.error = "site offline (common for .onion sites; skipped for a while)"
             result.offline = True
