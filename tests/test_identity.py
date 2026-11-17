@@ -150,16 +150,16 @@ profile:
 def test_ua_pool_is_built_from_the_last_two_years_of_releases():
     import datetime as dt
     from noisycricket import ua_catalog
-    from noisycricket.useragents import build_pool, TOOL_AGENTS
+    from noisycricket.useragents import build_pool
     # at least two years back (the builder keeps a 60-day margin on top)
     cutoff = (dt.date.today() - dt.timedelta(days=730)).isoformat()
     for table in (ua_catalog.CHROME, ua_catalog.CHROMIUM, ua_catalog.FIREFOX):
         assert len(table) >= 25
         assert min(d for _, d, _ in table) <= cutoff
     pool = build_pool()
-    assert set(pool) == {"desktop-chrome", "desktop-firefox", "desktop-chromium", "mobile-chrome", "tool"}
+    assert set(pool) == {"desktop-chrome", "desktop-firefox", "desktop-chromium", "mobile-chrome"}
     assert not any("Edg/" in e["ua"] or "Safari/604" in e["ua"] for ps in pool.values() for e in ps)
-    assert {e["ua"] for e in pool["tool"]} == {ua for ua, _ in TOOL_AGENTS}
+    assert all(e["ua"].startswith("Mozilla/5.0 (") for ps in pool.values() for e in ps)   # browsers only
 
 
 def test_most_common_versions_dominate_but_old_ones_stay_possible():

@@ -6,8 +6,7 @@ ua_catalog.py, which tools/build_ua_catalog.py regenerates from the official rel
 calendars). Commonness is modelled from release age, so the newest two or three
 majors of each browser are the ones most often chosen.
 
-Non-browser clients are included on purpose, at low weight, so the traffic is not
-only browsers. They are only used on the plain-HTTP lane, never with a real browser.
+Only real browsers are listed: no command-line or library clients.
 """
 from __future__ import annotations
 
@@ -20,25 +19,15 @@ from . import ua_catalog
 
 # How often each persona is picked (sums to 1).
 PERSONA_WEIGHTS = {
-    "desktop-chrome": 0.50,
-    "desktop-firefox": 0.28,
+    "desktop-chrome": 0.51,
+    "desktop-firefox": 0.29,
     "desktop-chromium": 0.05,
     "mobile-chrome": 0.15,
-    "tool": 0.02,
 }
 
 _WIN = "Windows NT 10.0; Win64; x64"
 _MAC = "Macintosh; Intel Mac OS X 10_15_7"
 _LINUX = "X11; Linux x86_64"
-
-# Non-browser clients. These are real, default User-Agent strings of command-line
-# tools. Their versions are pinned here; refresh them with the catalog if they age.
-TOOL_AGENTS = [
-    ("curl/8.7.1", "curl"),
-    ("Wget/1.21.4", "curl"),
-    ("Go-http-client/1.1", "curl"),
-]
-
 
 def _entry(ua: str, platform: str, *, persona: str, chromium: bool = False, mobile: bool = False,
            weight: float = 1.0, release: str = "") -> dict:
@@ -85,8 +74,6 @@ def build_pool() -> dict[str, list[dict]]:
                 f"Mozilla/5.0 ({os_tok}; rv:{major}.0) Gecko/20100101 Firefox/{major}.0",
                 plat, persona="desktop-firefox", weight=w / 3, release=released))
 
-    for ua, plat in TOOL_AGENTS:
-        pool["tool"].append(_entry(ua, plat, persona="tool", weight=1.0))
     return pool
 
 
@@ -99,7 +86,7 @@ def latest_firefox() -> int:
 
 
 def library() -> list[dict]:
-    """Every browser and tool user agent, flattened, with its share of picks (percent)."""
+    """Every browser user agent, flattened, with its share of picks (percent)."""
     pool = build_pool()
     total = sum(PERSONA_WEIGHTS[p] for p in pool)
     rows = []

@@ -514,7 +514,7 @@ $('#sSave').onclick=async()=>{
 $('#sWiz').onclick=()=>showWiz();
 function rateInfo(sl,out){
   if(!S||!S.rate_info)return;const d=S.rate_info[parseInt($('#'+sl).value)-1];
-  $('#'+out).innerHTML=`<b>Level ${d.level} — ${esc(d.name)}.</b> About <b>${d.searches_per_hour} searches an hour</b> (≈${d.actions_per_hour} actions an hour counting page visits and DNS lookups). Over a 15-hour waking day that's ≈${d.searches_per_day_awake} searches. For comparison, an average active US desktop user does about 4 Google searches a day (SparkToro/Datos, 2024; desktop only, and the typical median user does about 2), so this is about <b>${d.vs_average_person}×</b> that average. Noise only hides you if it's at least comparable to your real activity.`;
+  $('#'+out).innerHTML=`<b>Level ${d.level} — ${esc(d.name)}.</b> About <b>${d.searches_per_hour} searches an hour</b> (≈${d.actions_per_hour} actions an hour counting page visits and DNS lookups). Over a 15-hour waking day that's ≈${d.searches_per_day_awake} searches. For comparison, studies of typed Google searches find about 4 a day for an active US desktop user (SparkToro/Datos, 2024; the median is about 2), so this is about <b>${d.vs_average_person}×</b> that. That figure leaves out phones, apps, maps, YouTube and AI assistants, so real people look things up far more often than it suggests. Noise only hides you if it's at least comparable to your real activity.`;
 }
 $('#wLevel').oninput=()=>rateInfo('wLevel','wLevelInfo');
 $('#sLevel').oninput=()=>{rateInfo('sLevel','sLevelInfo');dirty.set=true;$('#sSaved').textContent='unsaved changes'};
