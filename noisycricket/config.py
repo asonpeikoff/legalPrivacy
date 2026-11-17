@@ -100,7 +100,7 @@ class DnsConfig:
     opennic: bool = True          # include OpenNIC no-log servers in the "secure" set
     quad9: bool = False           # include Quad9 (9.9.9.9 / 149.112.112.112) in the "secure" set
     custom: list[str] = field(default_factory=list)   # extra resolver IPs, your choice
-    system_share: float = 0.7     # mix mode: share of time on your normal DNS
+    system_share: float = 0.5     # mix mode: share of time on your normal DNS
     block_minutes: list[int] = field(default_factory=lambda: [10, 60])   # mix mode: switch every 10-60 min
 
     def validate(self) -> None:
@@ -119,9 +119,9 @@ class DnsConfig:
 @dataclass
 class IdentityConfig:
     """Which user agent the plain-HTTP noise sends. See noisycricket/useragents.py."""
-    ua_mode: str = "rotate"       # rotate (default) | pin
+    ua_mode: str = "pin"          # pin (default: your own browser's, recommended) | rotate
     rotate_every: str = "hour"    # hour | day   (rotate mode: how often the choice changes)
-    ua_pin: str = ""              # pin mode: "own" or a library id
+    ua_pin: str = "own"           # pin mode: "own" or a library id. "own" with no UA yet = rotate until known
     own_ua: str = ""              # your browser's user agent (stored only on this computer)
 
     def validate(self) -> None:
@@ -195,7 +195,7 @@ class TrafficConfig:
     browser: float = 100.0        # clearnet pages in a real browser (relative weight)
     plain: float = 0.0            # clearnet pages over plain HTTP (no JavaScript, no scrolling)
     onion: float = 15.0           # Tor .onion sites (only when Tor is on)
-    mobile_share: float = 0.35    # share of noise identities that are phones
+    mobile_share: float = 0.55    # share of noise identities that are phones (most browsing is on phones)
     device: str = "iPhone 13"     # phone to emulate, or "mix"
 
     def validate(self) -> None:

@@ -144,7 +144,7 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
     <label class="chk"><input type="checkbox" id="tEnable"><span><b>Use Tor</b> — turn the Tor lane on. Starting noise will automatically start (and if needed, install) Tor.</span></label>
     <label class="chk"><input type="checkbox" id="tOnion"><span><b>🧅 Visit onion sites</b> (darknet noise) — only .onion addresses, never leaves the Tor network.</span></label>
     <label class="chk"><input type="checkbox" id="tClear"><span><b>Also route clearnet noise through Tor</b> — <span class="warnc">not recommended</span>: exit relays carry the load and Tor-to-clearnet search patterns are distinctive. Leave off unless you know why you want it.</span></label>
-    <label class="chk"><input type="checkbox" id="tManage"><span><b>Let noisyCricket manage Tor</b> (recommended). Untick to use an existing Tor at the address below instead.</span></label>
+    <label class="chk"><input type="checkbox" id="tManage"><span><b>Let noisyCricket manage Tor</b> (recommended, default). Untick to use an existing Tor at the address below instead.</span></label>
     <div class="row" id="tExt" style="display:none">SOCKS <input type="text" id="tSocks" size="16"> Control <input type="text" id="tCtl" size="16"></div>
     <div class="row"><button id="tSave" class="pri">Save Tor settings</button><span class="small mute" id="tSaved"></span></div>
   </div>
@@ -181,9 +181,9 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
   </div>
   <div class="card"><h3>DNS lookups</h3>
     <div class="small mute">In Activity and the Live Log each lookup shows the site looked up and which resolver answered, e.g. <code>www.reddit.com [via your normal DNS]</code>.</div>
-    <label class="opt"><input type="radio" name="dnsm" value="system"> <b>Your normal DNS</b> <span class="mute">(recommended) — whatever your router, ISP, VPN or system already uses, so the noise lands exactly where your real lookups do</span></label>
+    <label class="opt"><input type="radio" name="dnsm" value="system"> <b>Your normal DNS</b> <span class="mute">— whatever your router, ISP, VPN or system already uses, so the noise lands exactly where your real lookups do</span></label>
     <label class="opt"><input type="radio" name="dnsm" value="secure"> <b>Secure resolvers only</b> <span class="mute">— the servers ticked below</span></label>
-    <label class="opt"><input type="radio" name="dnsm" value="mix"> <b>Mix</b> <span class="mute">— switch between the two in random 10–60 minute blocks, spending</span> <input type="number" id="dShare" min="0" max="100" style="width:64px"> <span class="mute">% of the time on your normal DNS</span></label>
+    <label class="opt"><input type="radio" name="dnsm" value="mix"> <b>Mix</b> <span class="mute">(recommended, default) — switch between the two in random 10–60 minute blocks, spending</span> <input type="number" id="dShare" min="0" max="100" style="width:64px"> <span class="mute">% of the time on your normal DNS</span></label>
     <label class="chk"><input type="checkbox" id="dOpen"><span><b>OpenNIC</b> servers that pass OpenNIC's checks, keep no logs (preferred) or anonymized logs, and offer DNSCrypt, DoH or DoT (<span id="dOpenN">0</span>) <details style="display:inline"><summary class="small">list</summary><div class="small mute" id="dOpenList"></div></details></span></label>
     <label class="chk"><input type="checkbox" id="dQuad9"><span><b>Quad9</b> 9.9.9.9 and 149.112.112.112 <span class="mute">(blocks malware domains, DNSSEC)</span></span></label>
     <div class="row">Your own resolvers <input type="text" id="dCustom" placeholder="optional, e.g. 1.2.3.4, 5.6.7.8" style="flex:1;min-width:220px"></div>
@@ -200,7 +200,7 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
     <div class="row" id="xOnionRow">Tor .onion sites <input type="range" id="xOnion" min="0" max="10" step="1" style="flex:1;max-width:220px"> <b class="small" id="xOnionP"></b> <span class="small mute">(about 1–2 recommended)</span></div>
     <div class="small mute" id="xOnionOff">Onion sites join this mix automatically when Tor is on (🧅 Tor tab).</div>
     <div style="margin-top:8px"><b>Phones</b></div>
-    <div class="row">Share of noise that is a phone <input type="number" id="xMobile" min="0" max="100" style="width:70px">% <span class="small mute">(35% recommended)</span></div>
+    <div class="row">Share of noise that is a phone <input type="number" id="xMobile" min="0" max="100" style="width:70px">% <span class="small mute">(55% recommended, default — most browsing happens on phones)</span></div>
     <div class="row">Phone to emulate <select id="xDevice">
       <option value="iPhone 13">iPhone 13 (default, recommended)</option>
       <option value="iPhone 15">iPhone 15</option>
@@ -218,8 +218,8 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
         <li><b>Random</b> changes the browser the noise claims to be every hour or day, drawn from the library below. Good if you want noise to look like a mix of visitors; it adds a second browser on your connection.</li>
         <li><b>One library entry</b> is a single fixed browser. Only pick this for a specific reason, since one fixed browser is an easy pattern.</li>
       </ul></div>
-    <label class="opt"><input type="radio" name="uamode" value="own"> <b>Pin to my own browser's user agent</b> <span class="mute">(recommended)</span></label>
-    <label class="opt"><input type="radio" name="uamode" value="rotate-hour"> <b>Random, changing every hour</b> <span class="mute">(default)</span></label>
+    <label class="opt"><input type="radio" name="uamode" value="own"> <b>Pin to my own browser's user agent</b> <span class="mute">(recommended, default) — until it's known, the noise rotates</span></label>
+    <label class="opt"><input type="radio" name="uamode" value="rotate-hour"> <b>Random, changing every hour</b></label>
     <label class="opt"><input type="radio" name="uamode" value="rotate-day"> <b>Random, changing every day</b></label>
     <label class="opt"><input type="radio" name="uamode" value="lib"> <b>Pin to one library entry</b> <span class="mute">(not recommended; pick one below)</span></label>
     <div class="row" style="margin-top:6px">Your browser's user agent <input type="text" id="uOwn" placeholder="paste it, or press Detect" style="flex:1;min-width:260px"></div>
@@ -265,7 +265,7 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
   </div>
   <div class="card"><h3>Realism</h3>
     <div class="row">Browse with a real browser
-      <select id="sBrowser"><option value="auto">Auto (recommended)</option><option value="on">Always</option><option value="off">Off — plain HTTP</option></select>
+      <select id="sBrowser"><option value="auto">Auto (recommended, default)</option><option value="on">Always</option><option value="off">Off — plain HTTP</option></select>
       <span class="small" id="sBrowserInfo"></span></div>
     <div class="small mute">A real Chrome/Edge/Chromium scrolls, pauses to read, moves the mouse, clicks or taps search results and now and then downloads a file (discarded). Plain HTTP can't do any of that and is easier to spot.</div>
     <label class="chk"><input type="checkbox" id="sVisible"><span>Show the browser window (watch it work)</span></label>
@@ -305,7 +305,7 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
   <div class="steps"><i class="on" id="ws1"></i><i id="ws2"></i><i id="ws3"></i></div>
   <div id="w1">
     <h2 style="margin-top:0">🦗 Welcome! 1 of 3</h2><p><b>How much background noise?</b></p>
-    <label class="opt"><input type="radio" name="rmode" value="random" checked> <b>Randomized</b> <span class="mute">(recommended) — changes every hour, busier in the evening, some hours nearly silent, like a real person</span></label>
+    <label class="opt"><input type="radio" name="rmode" value="random" checked> <b>Randomized</b> <span class="mute">(recommended, default) — changes every hour, busier in the evening, some hours nearly silent, like a real person</span></label>
     <label class="opt"><input type="radio" name="rmode" value="steady"> <b>Steady</b> <span class="mute">— about the same amount every hour</span></label>
     <div class="row" style="margin-top:10px"><span>Less</span><input type="range" id="wLevel" min="1" max="10" step="1" value="5" style="flex:1"><span>More</span></div>
     <div class="note small" id="wLevelInfo"></div>
@@ -599,7 +599,7 @@ $('#mSave').onclick=async()=>{try{ML=await api('/api/mylist',{enabled:$('#mEnabl
 
 // user agents
 let UA=null;
-function uaRadioValue(){return document.querySelector('input[name=uamode]:checked')?.value||'rotate-hour'}
+function uaRadioValue(){return document.querySelector('input[name=uamode]:checked')?.value||'own'}
 function fillUA(){
   if(!UA)return; const m=UA.mode, ev=UA.rotate_every;
   const v= m==='pin'?(UA.pin==='own'?'own':'lib'):(ev==='day'?'rotate-day':'rotate-hour');
@@ -642,7 +642,7 @@ function fillSettings(force){
   const r=p.rate||{mode:'random',level:5,randomness:1};$('#sLevel').value=r.level;rateInfo('sLevel','sLevelInfo');
   $('#sRand').value=r.mode==='steady'?0:Math.round((r.randomness??1)*100);randInfo();
   const d=p.dns||{};(document.querySelector(`input[name=dnsm][value=${d.mode||'mix'}]`)||{}).checked=true;
-  $('#dShare').value=Math.round((d.system_share??0.7)*100);$('#dOpen').checked=d.opennic!==false;$('#dQuad9').checked=!!d.quad9;$('#dCustom').value=(d.custom||[]).join(', ');
+  $('#dShare').value=Math.round((d.system_share??0.5)*100);$('#dOpen').checked=d.opennic!==false;$('#dQuad9').checked=!!d.quad9;$('#dCustom').value=(d.custom||[]).join(', ');
   $('#dOpenN').textContent=(S.opennic||[]).length;$('#dOpenList').innerHTML=(S.opennic||[]).map(o=>esc(o[1]+' '+o[0]+' ('+(o[2]||'?')+')'+(o[3]?' · '+(o[3]==='none'?'no logs':'anonymized logs')+' · '+(o[4]||''):''))).join('<br>')+'<div style="margin-top:4px">Noise lookups to these servers are ordinary (unencrypted) DNS, like most lookups; the encryption requirement is a quality bar for the servers.</div>';
   $('#sScale').value=p.realtime_scale;$('#sMaxF').value=p.daily_max_failures;$('#sProxy').value=p.transports.clearnet.proxy||'';
   $('#sClear').checked=p.transports.clearnet.enabled;loadUA();
@@ -672,7 +672,7 @@ function fillSettings(force){
   const updMix=()=>{const on=torOn2?+$('#xOnion').value:0, b=+$('#xBrowser').value, pl=+$('#xPlain').value, t=(b+pl+on)||1;
     $('#xBrowserP').textContent=Math.round(100*b/t)+'%';$('#xPlainP').textContent=Math.round(100*pl/t)+'%';$('#xOnionP').textContent=Math.round(100*on/t)+'%';};
   ['#xBrowser','#xPlain','#xOnion'].forEach(id=>$(id).addEventListener('input',updMix));updMix();
-  $('#xMobile').value=Math.round((tr.mobile_share??0.35)*100);$('#xDevice').value=tr.device||'iPhone 13';
+  $('#xMobile').value=Math.round((tr.mobile_share??0.55)*100);$('#xDevice').value=tr.device||'iPhone 13';
   $('#xDevice').onchange=()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'};
   $('#sBrowser').value=p.transports.clearnet.browser||'auto';$('#sVisible').checked=!!p.transports.clearnet.browser_visible;
   const q=p.queries||{};$('#qLive').checked=q.live!==false;$('#qData').checked=q.dataset!==false;$('#qBuiltin').checked=q.builtin!==false;$('#qWords').checked=q.words!==false;$('#sAuto').checked=!!S.app.autostart;$('#sPath').textContent=S.config_path;dirty.set=false;
@@ -682,7 +682,7 @@ $('#sSave').onclick=async()=>{
   const engines={};$$('[data-en]').forEach(i=>engines[i.dataset.en]={enabled:i.checked});$$('[data-bud]').forEach(i=>engines[i.dataset.bud].budget_per_day=parseInt(i.value||0)*20);
   const rnd=parseInt($('#sRand').value||0)/100;
   try{await api('/api/config',{realtime_scale:parseFloat($('#sScale').value),daily_max_failures:parseInt($('#sMaxF').value),engines,rate:{mode:rnd>0?'random':'steady',level:parseFloat($('#sLevel').value),randomness:rnd},
-      dns:{mode:document.querySelector('input[name=dnsm]:checked').value,system_share:parseInt($('#dShare').value||70)/100,opennic:$('#dOpen').checked,quad9:$('#dQuad9').checked,custom:$('#dCustom').value},
+      dns:{mode:document.querySelector('input[name=dnsm]:checked').value,system_share:parseInt($('#dShare').value||50)/100,opennic:$('#dOpen').checked,quad9:$('#dQuad9').checked,custom:$('#dCustom').value},
       transports:{clearnet:{enabled:$('#sClear').checked,proxy:$('#sProxy').value||null,browser:$('#sBrowser').value,browser_visible:$('#sVisible').checked}},
       queries:{live:$('#qLive').checked,dataset:$('#qData').checked,builtin:$('#qBuiltin').checked,words:$('#qWords').checked},
       traffic:{pattern:(document.querySelector('input[name=xpat]:checked')||{}).value||'drift',browser:parseFloat($('#xBrowser').value||0)*10,
@@ -716,7 +716,7 @@ function dlAct(kind){fetch('/api/hits.'+kind,{headers:{'X-Token':TOKEN}}).then(r
 function randInfo(){
   const v=parseInt($('#sRand').value||0);
   $('#sRandInfo').innerHTML=v===0?'<b>Steady</b>: about the same amount every hour.':
-    v===100?'<b>Fully random</b> (recommended): each hour varies like a person — busier evenings, quiet spells, some days heavier than others.':
+    v===100?'<b>Fully random</b> (recommended, default): each hour varies like a person — busier evenings, quiet spells, some days heavier than others.':
     `<b>${v}% random</b>: each hour is ${100-v}% steady and ${v}% random — the swings are gentler than fully random.`;
 }
 $('#sRand').addEventListener('input',()=>{randInfo();dirty.set=true;$('#sSaved').textContent='unsaved changes'});

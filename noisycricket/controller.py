@@ -303,6 +303,20 @@ class Controller:
         self.apply_config({"identity": allowed})
         return self.ua_state()
 
+    def _learn_own_ua(self) -> None:
+        """Default is your own browser's user agent. If it isn't known yet, read it once from the
+        installed browser; if that isn't possible, say so (noise rotates until it's pasted)."""
+        ident = self.profile.identity
+        if ident.ua_mode != "pin" or ident.ua_pin != "own" or ident.own_ua.strip():
+            return
+        res = self.ua_detect() if self.browser_info()["available"] else {"error": "no browser to read it from"}
+        if res.get("ua"):
+            self.apply_config({"identity": {"own_ua": res["ua"]}})
+            self.log.info("app", "Learned your browser's user agent; noise now looks like your browser.")
+        else:
+            self.log.warn("app", "Couldn't read your browser's user agent (" + res.get("error", "?") + "). "
+                                 "Noise rotates browsers until you paste it in Settings → User agent.")
+
     def ua_detect(self) -> dict:
         from .useragents import detect_own_ua
         return detect_own_ua()
@@ -414,6 +428,7 @@ class Controller:
                         return True
                     return False
             self._start_feed_timer()
+            self._learn_own_ua()
             browser_tr = self._clearnet_transport(self._stop)
             plain_tr = None
             if browser_tr is not None and prof.traffic.plain > 0:      # both kinds of clearnet noise
