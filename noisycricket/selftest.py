@@ -119,25 +119,111 @@ def cross_val_auc(rows, feats, folds: int = 5, seed: int = 1) -> float:
     return auc(scores)
 
 
+def _sigmoid(x: float) -> float:
+    return 1 / (1 + math.exp(-max(-30.0, min(30.0, x))))
+
+
+def roc_points(scores: list[tuple[float, int]], max_points: int = 60) -> list[list[float]]:
+    pos = sum(1 for _, y in scores if y == 1) or 1
+    neg = sum(1 for _, y in scores if y == 0) or 1
+    pts, tp, fp = [[0.0, 0.0]], 0, 0
+    for s, y in sorted(scores, key=lambda t: -t[0]):
+        tp, fp = tp + (y == 1), fp + (y == 0)
+        pts.append([fp / neg, tp / pos])
+    step = max(1, len(pts) // max_points)
+    out = pts[::step]
+    if out[-1] != pts[-1]:
+        out.append(pts[-1])
+    return [[round(a, 4), round(b, 4)] for a, b in out]
+
+
 def evaluate(real: list[tuple[float, str]], noise: list[tuple[float, str]], ranks: dict[str, int],
-             cap: int = 3000, seed: int = 1) -> dict:
+             cap: int = 3000, seed: int = 1, folds: int = 5) -> dict:
     rng = random.Random(seed)
+    warnings = []
     if len(real) < 50 or len(noise) < 50:
         return {"error": f"Not enough to compare ({len(real)} of your visits, {len(noise)} noise events; "
                          "at least 50 of each are needed)."}
     n = min(len(real), len(noise), cap)
+    if n < 200:
+        warnings.append(f"Small sample ({n} of each): the score can move by several points between runs.")
+    if max(len(real), len(noise)) > n:
+        warnings.append(f"Balanced by sampling {n} of each (from {len(real)} visits and {len(noise)} noise events).")
     real_s, noise_s = rng.sample(real, n), rng.sample(noise, n)
     merged = sorted([(t, s, 0) for t, s in real_s] + [(t, s, 1) for t, s in noise_s])
     rows = featurize(merged, ranks)
-    overall = cross_val_auc(rows, FEATURES)
+
+    # cross-validated scores, fold by fold
+    idx = list(range(len(rows)))
+    rng.shuffle(idx)
+    pooled, fold_aucs = [], []
+    for k in range(folds):
+        test = set(idx[k::folds])
+        model = _train([rows[i] for i in idx if i not in test], FEATURES)
+        sc = [(_score(model, rows[i][0], FEATURES), rows[i][1]) for i in test]
+        fold_aucs.append(round(auc(sc) * 100, 1))
+        pooled += sc
+    overall = auc(pooled)
+    flip = overall < 0.5                              # direction doesn't matter: separable is separable
+    a = max(overall, 1 - overall)
+    boot = []
+    for _ in range(200):                              # 95% interval by bootstrap over events
+        smp = [pooled[rng.randrange(len(pooled))] for _ in range(len(pooled))]
+        v = auc(smp)
+        boot.append(max(v, 1 - v))
+    boot.sort()
+    tp = sum(1 for s, y in pooled if y == 1 and s > 0)
+    fp = sum(1 for s, y in pooled if y == 0 and s > 0)
+    tn = sum(1 for s, y in pooled if y == 0 and s <= 0)
+    fn = sum(1 for s, y in pooled if y == 1 and s <= 0)
+    prec = tp / (tp + fp) if tp + fp else 0.0
+    rec = tp / (tp + fn) if tp + fn else 0.0
+    logloss = -sum(math.log(max(1e-12, _sigmoid(s) if y == 1 else 1 - _sigmoid(s))) for s, y in pooled) / len(pooled)
+
     per = sorted(((f, cross_val_auc(rows, [f])) for f in FEATURES), key=lambda x: -x[1])
-    a = max(overall, 1 - overall)                  # direction doesn't matter: separable is separable
     verdict = ("hard to tell apart" if a < 0.6 else "somewhat easy to tell apart" if a < 0.75
                else "easy to tell apart" if a < 0.9 else "very easy to tell apart")
     tells = [{"feature": f, "auc": round(max(v, 1 - v) * 100), "advice": ADVICE[f]}
              for f, v in per if max(v, 1 - v) >= 0.6][:3]
+
+    full = _train(rows, FEATURES)                      # the model kept for predictions
+    counts, ncls, _ = full
+    giveaways = []
+    for f in FEATURES:
+        for val in set(counts[0][f]) | set(counts[1][f]):
+            c1, c0 = counts[1][f][val], counts[0][f][val]
+            if c1 + c0 < 10:
+                continue
+            ratio = ((c1 + 1) / (ncls[1] + 2)) / ((c0 + 1) / (ncls[0] + 2))
+            giveaways.append({"feature": f, "value": str(val), "noise": c1, "you": c0,
+                              "ratio": round(ratio, 2), "strength": abs(math.log(ratio)),
+                              "leans": "noise" if ratio > 1 else "you"})
+    giveaways.sort(key=lambda g: -g["strength"])
+    for g in giveaways:
+        g["strength"] = round(g["strength"], 2)
+    hours = [[0] * 24, [0] * 24]
+    for t, _, y in merged:
+        hours[y][time.localtime(t).tm_hour] += 1
+    roc = roc_points([(-s if flip else s, y) for s, y in pooled])
     return {"score": round(a * 100), "verdict": verdict, "compared": n, "tells": tells,
-            "per_feature": {f: round(max(v, 1 - v) * 100) for f, v in per}}
+            "per_feature": {f: round(max(v, 1 - v) * 100) for f, v in per},
+            "auc": round(a * 100, 1), "ci95": [round(boot[4] * 100, 1), round(boot[194] * 100, 1)],
+            "folds": fold_aucs, "roc": roc,
+            "confusion": {"tp": tp, "fp": fp, "tn": tn, "fn": fn},
+            "accuracy": round((tp + tn) / len(pooled) * 100, 1), "precision": round(prec * 100, 1),
+            "recall": round(rec * 100, 1), "f1": round(2 * prec * rec / (prec + rec) * 100, 1) if prec + rec else 0.0,
+            "log_loss": round(logloss, 3), "giveaways": giveaways[:8], "hours": {"you": hours[0], "noise": hours[1]},
+            "warnings": warnings, "_model": full}
+
+
+def predict(model, site: str, hour: int, weekday: int, ranks: dict[str, int]) -> float:
+    """Probability that one request (site at that hour and weekday) is noise, per the last model."""
+    counts = model[0]
+    common = {f: (counts[0][f] + counts[1][f]).most_common(1)[0][0] for f in ("gap", "revisit")}
+    t = time.mktime((2026, 1, 5 + weekday, hour, 30, 0, 0, 0, -1))
+    x = featurize([(t, site, 0)], ranks)[0][0]
+    x.update(common)
+    return round(_sigmoid(_score(model, x, FEATURES)) * 100, 1)
 
 
 # ── noise: simulate from settings ───────────────────────────────────────────

@@ -36,7 +36,7 @@ th{color:var(--mute);font-weight:600;position:sticky;top:0;background:var(--pane
 td.url{font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
 #actTable{table-layout:fixed;width:100%}#actTable td{overflow:hidden}
 #actTable tr.open td.url{white-space:normal;word-break:break-all}
-@media (max-width:700px){#actTable col.opt{width:0}#actTable .opt{display:none}}
+@media (max-width:700px){#actTable .acol{display:none}}
 .scroll{max-height:62vh;overflow:auto;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
 .logbox{font:12px/1.5 ui-monospace,Consolas,monospace;padding:8px;white-space:pre-wrap;word-break:break-word}
 .logbox div{padding:1px 4px;border-radius:3px}.logbox .warn{background:var(--warn2)}.logbox .error{background:var(--bad2)}.logbox .debug{color:var(--mute)}
@@ -61,6 +61,15 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
 .steps{display:flex;gap:6px;margin-bottom:14px}.steps i{flex:1;height:5px;border-radius:3px;background:var(--line)}.steps i.on{background:var(--acc)}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 16px;border-radius:8px;display:none;z-index:30}
 @media(max-width:600px){main{padding:10px}.big{font-size:22px}}
+.vz{--you:#2a78d6;--noi:#eb6834}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) .vz{--you:#3987e5;--noi:#d95926}}
+:root[data-theme=dark] .vz{--you:#3987e5;--noi:#d95926}
+.vz svg{width:100%;height:auto;display:block}.vz .ax{stroke:var(--line);stroke-width:1}.vz text{fill:var(--mute);font-size:10px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin:8px 0}
+.kpi{background:var(--code);border-radius:8px;padding:8px 10px}.kpi b{display:block;font-size:20px;color:var(--ink)}.kpi span{font-size:11px;color:var(--mute)}
+.cm{border-collapse:collapse}.cm td,.cm th{border:1px solid var(--line);padding:6px 10px;text-align:center}
+.mlgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.lgd{display:inline-flex;align-items:center;gap:6px;margin-right:12px;font-size:12px;color:var(--mute)}.lgd i{width:10px;height:10px;border-radius:2px;display:inline-block}
 .mixbar{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--line);margin:6px 0 10px}
 .mixbar span{display:block;height:100%;transition:width .15s}
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
@@ -86,6 +95,7 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
   <button data-t="health">Health</button>
   <button data-t="help">Help</button>
   <button data-t="mylist">My List</button>
+  <button data-t="ml">ML</button>
   <button data-t="tools">Tools</button>
 </nav>
 <main>
@@ -116,8 +126,8 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
     <button id="aCsv" title="Download this session's activity">⬇ CSV</button><button id="aJson" title="Download this session's activity">⬇ JSON</button>
   </div>
   <div class="note small" id="aNow" style="display:none"></div>
-  <div class="scroll"><table id="actTable"><colgroup><col style="width:70px"><col class="opt" style="width:78px"><col class="opt" style="width:64px"><col style="width:34%"><col><col style="width:110px"><col class="opt" style="width:62px"><col class="opt" style="width:66px"></colgroup>
-    <thead><tr><th>Time</th><th class="opt">Lane</th><th class="opt">Engine</th><th>URL <span class="mute small">(click a row for the full address)</span></th><th>Via / behaviour</th><th>Result</th><th class="opt" title="How long the page took to load">Load</th><th class="opt" title="How long the visit stayed on the page">On page</th></tr></thead><tbody id="aBody"></tbody></table></div>
+  <div class="scroll"><table id="actTable"><colgroup><col style="width:70px"><col class="acol" style="width:78px"><col class="acol" style="width:64px"><col style="width:34%"><col><col style="width:110px"><col class="acol" style="width:62px"><col class="acol" style="width:66px"></colgroup>
+    <thead><tr><th>Time</th><th class="acol">Lane</th><th class="acol">Engine</th><th>URL <span class="mute small">(click a row for the full address)</span></th><th>Via / behaviour</th><th>Result</th><th class="acol" title="How long the page took to load">Load</th><th class="acol" title="How long the visit stayed on the page">On page</th></tr></thead><tbody id="aBody"></tbody></table></div>
 </section>
 
 <!-- LOG -->
@@ -373,13 +383,41 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
     <div id="mFound" style="margin-top:8px"></div>
   </div>
 </section>
+<!-- ML -->
+<section id="t-ml" class="tab vz">
+  <div class="card"><h3>Can your traffic be told apart from the noise?</h3>
+    <p class="small mute">A classifier tries to separate your real browsing (your browsers' history, read on this computer only) from the noise, using only what your ISP or DNS provider could see: the hour, weekday, rhythm, how popular each site is, revisits and domain endings. Its ROC AUC is the score: <b>50%</b> means it can't tell them apart, <b>100%</b> means it's trivial. Nothing is sent anywhere; only the scores are kept.</p>
+    <div class="row">Look at the last <input type="number" id="stDays" value="14" min="2" max="60" style="width:70px"> days <span class="small mute">(14 recommended, default)</span> <button id="stRun" class="pri">Run test</button>
+      <label class="chk" style="margin:0 0 0 10px"><input type="checkbox" id="mlAuto"><span>Run automatically once a day <span class="mute">(off by default)</span></span></label></div>
+    <div id="mlWarn"></div>
+    <div id="mlHead"></div>
+  </div>
+  <div id="mlBody" style="display:none">
+    <div class="mlgrid">
+      <div class="card"><h3>ROC curve</h3><div id="mlRoc"></div><div class="small mute">Cross-validated (5 folds). The dashed line is guessing.</div></div>
+      <div class="card"><h3>Which signals give it away</h3><div id="mlFeat"></div><div class="small mute">Each signal's AUC on its own. 50% = no help to an observer.</div></div>
+    </div>
+    <div class="card"><h3>When you browse vs when the noise runs</h3>
+      <div><span class="lgd"><i style="background:var(--you)"></i>you</span><span class="lgd"><i style="background:var(--noi)"></i>noise</span></div>
+      <div id="mlHours"></div></div>
+    <div class="mlgrid">
+      <div class="card"><h3>Confusion matrix</h3><div id="mlCm"></div><div class="small mute">Noise is the positive class; threshold at even odds.</div></div>
+      <div class="card"><h3>Biggest giveaways, and what to change</h3><div id="mlTells"></div></div>
+    </div>
+    <div class="card"><h3>Specific values that give it away</h3><div class="small mute">Values seen far more often in one stream than the other.</div><div id="mlVals"></div></div>
+  </div>
+  <div class="mlgrid">
+    <div class="card"><h3>Score over time</h3><div id="mlTrend" class="small mute">No runs yet.</div></div>
+    <div class="card"><h3>Would this look like noise?</h3>
+      <div class="small mute">Uses the last test's model. Enter a site and a time.</div>
+      <div class="row"><input type="text" id="mlSite" placeholder="example.com" style="flex:1;min-width:140px">
+        <select id="mlDay"><option value="0">Mon</option><option value="1">Tue</option><option value="2" selected>Wed</option><option value="3">Thu</option><option value="4">Fri</option><option value="5">Sat</option><option value="6">Sun</option></select>
+        <select id="mlHour"></select><button id="mlPred">Predict</button></div>
+      <div id="mlPredOut" class="small"></div></div>
+  </div>
+</section>
 <!-- TOOLS -->
 <section id="t-tools" class="tab">
-  <div class="card"><h3>Can the noise be told apart from you?</h3>
-    <p class="small mute">Compares your real browsing (your browsers' history, read on this computer only) with the noise, using only what your ISP or DNS provider could see: the hour, weekday, rhythm, how popular each site is, revisits and domain endings. 50% means it can't tell them apart; 100% means it's trivial. Nothing is sent or saved.</p>
-    <div class="row">Look at the last <input type="number" id="stDays" value="14" min="2" max="60" style="width:70px"> days <span class="small mute">(14 recommended, default)</span> <button id="stRun">Run self-test</button></div>
-    <div id="stOut" class="small" style="margin-top:8px"></div>
-  </div>
   <div class="card"><h3>How much data will this use?</h3>
     <p class="small mute">A rough estimate from your current settings (amount, mix, real browser, low-data mode, active hours, cap). Real pages vary a lot.</p>
     <div class="row"><button id="toolEst">Estimate</button></div>
@@ -436,7 +474,7 @@ const fmtDur=s=>{s=Math.floor(s);const h=Math.floor(s/3600),m=Math.floor(s%3600/
 const fmtB=n=>n>1e9?(n/1e9).toFixed(2)+' GB':n>1e6?(n/1e6).toFixed(1)+' MB':n>1e3?(n/1e3).toFixed(0)+' KB':(n||0)+' B';
 
 // tabs
-$$('#nav button').forEach(b=>b.onclick=()=>{$$('#nav button').forEach(x=>x.classList.toggle('on',x===b));$$('.tab').forEach(t=>t.classList.toggle('on',t.id==='t-'+b.dataset.t));if(b.dataset.t==='log')renderLog(true);if(b.dataset.t==='set')fillSettings(true);if(b.dataset.t==='tor')fillTor(true);if(b.dataset.t==='tools')$('#toolCfg').textContent=S?S.config_path:'';if(b.dataset.t==='mylist')loadML()});
+$$('#nav button').forEach(b=>b.onclick=()=>{$$('#nav button').forEach(x=>x.classList.toggle('on',x===b));$$('.tab').forEach(t=>t.classList.toggle('on',t.id==='t-'+b.dataset.t));if(b.dataset.t==='log')renderLog(true);if(b.dataset.t==='set')fillSettings(true);if(b.dataset.t==='tor')fillTor(true);if(b.dataset.t==='tools')$('#toolCfg').textContent=S?S.config_path:'';if(b.dataset.t==='mylist')loadML();if(b.dataset.t==='ml')loadMLTab()});
 
 let S=null, hits=[], hitAfter=0, logs=[], logAfter=0, errCount=0, srcOn=new Set(), srcAll=new Set(['app','scheduler','clearnet','browser','tor','onion','tools','mylist']);
 let dirty={set:false,tor:false};
@@ -522,7 +560,7 @@ function renderAct(){
   $('#aCount').textContent=rows.length+' shown / '+hits.length;
   const lane=l=>l==='tor'?'🧅 tor':l==='clearnet-plain'?'plain HTTP':'clearnet';
   const onP=s=>!s?'':s<60?Math.round(s)+' s':s<3600?Math.floor(s/60)+' m '+Math.round(s%60)+' s':'1 h+';
-  $('#aBody').innerHTML=rows.map(h=>`<tr><td>${fmtT(h.ts)}</td><td class="opt">${lane(h.lane)}</td><td class="opt">${esc(h.engine)}</td><td class="url" title="${esc(h.url)}">${esc(shortUrl(h.url))}</td><td class="small">${esc([h.role==='result'?'clicked result':'',h.note,h.detail].filter(Boolean).join(' · '))}</td><td class="${h.ok?'ok':(/offline/.test(h.error||'')?'mute':'bad')}">${esc(h.status?('HTTP '+h.status):/offline/.test(h.error||'')?'site offline':(h.error||'error'))}</td><td class="opt">${h.latency_ms?Math.round(h.latency_ms)+' ms':''}</td><td class="opt">${onP(h.on_page_s)}</td></tr>`).join('');
+  $('#aBody').innerHTML=rows.map(h=>`<tr><td>${fmtT(h.ts)}</td><td class="acol">${lane(h.lane)}</td><td class="acol">${esc(h.engine)}</td><td class="url" title="${esc(h.url)}">${esc(shortUrl(h.url))}</td><td class="small">${esc([h.role==='result'?'clicked result':'',h.note,h.detail].filter(Boolean).join(' · '))}</td><td class="${h.ok?'ok':(/offline/.test(h.error||'')?'mute':'bad')}">${esc(h.status?('HTTP '+h.status):/offline/.test(h.error||'')?'site offline':(h.error||'error'))}</td><td class="acol">${h.latency_ms?Math.round(h.latency_ms)+' ms':''}</td><td class="acol">${onP(h.on_page_s)}</td></tr>`).join('');
   $$('#aBody tr').forEach(tr=>tr.onclick=()=>tr.classList.toggle('open'));
 }
 // log
@@ -850,15 +888,54 @@ $('#toolSpeed').onclick=async()=>{
     clearInterval(speedTimer); speedTimer=setInterval(async()=>{try{showSpeed(await api('/api/tools/speed'))}catch(e){}},700);
   }catch(e){toast(e.message,1);$('#toolSpeed').disabled=false}
 };
-$('#stRun').onclick=async()=>{const o=$('#stOut');o.textContent='Comparing… (reading history and simulating the noise takes a few seconds)';
-  try{const d=await api('/api/tools/selftest?days='+encodeURIComponent($('#stDays').value||14));
-    if(d.error){o.innerHTML=`${esc(d.error)}<div class="mute">${d.real_visits??0} of your visits found${(d.errors||[]).length?' — '+esc(d.errors.join('; ')):''}.</div>`;return}
-    const col=d.score<60?'var(--acc)':d.score<75?'var(--warn)':'var(--bad)';
-    const names={hour:'Hour of day',weekday:'Weekday',gap:'Rhythm (time between requests)',popularity:'How popular the sites are',revisit:'Revisiting the same sites',ending:'Domain endings'};
-    o.innerHTML=`<div style="font-size:28px;font-weight:700;color:${col}">${d.score}%</div><div><b>${esc(d.verdict)}</b> — compared ${d.compared} of your visits with ${d.compared} events of ${esc(d.noise_source)} over ${d.days} days.</div>`+
-      (d.tells.length?'<div style="margin-top:8px"><b>Biggest giveaways</b></div><table><tbody>'+d.tells.map(t=>`<tr><td>${esc(names[t.feature]||t.feature)} <span class="mute">(${t.auc}% alone)</span></td><td>${esc(t.advice)}</td></tr>`).join('')+'</tbody></table>':'<div style="margin-top:6px">No single giveaway stands out.</div>')+
-      `<details style="margin-top:6px"><summary class="mute">Each signal on its own</summary>${Object.entries(d.per_feature).map(([k,v])=>`${esc(names[k]||k)}: ${v}%`).join('<br>')}</details>`}
-  catch(e){o.textContent=e.message}};
+// ML tab
+const FNAME={hour:'Hour of day',weekday:'Weekday',gap:'Rhythm (time between requests)',popularity:'How popular the sites are',revisit:'Revisiting the same sites',ending:'Domain endings'};
+const DAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+function valName(f,v){if(f==='hour')return String(v).padStart(2,'0')+':00';if(f==='weekday')return DAYS[+v]||v;
+  if(f==='gap')return '≈'+(2**(+v)<60?2**(+v)+' s':2**(+v)<3600?Math.round(2**(+v)/60)+' min':Math.round(2**(+v)/3600)+' h')+' since the last request';
+  if(f==='revisit')return v==='0'?'first visit that day':v+' earlier visits that day';if(f==='popularity')return {top100:'top 100 site',top1k:'top 1,000 site',top10k:'top 10,000 site',ranked:'ranked site',unranked:'unranked site'}[v]||v;
+  if(f==='ending')return '.'+v;return v}
+function svgRoc(pts){const W=340,H=250,P=46,R=22,B=38,x=v=>P+v*(W-P-R),y=v=>H-B-v*(H-B-10);
+  const d=pts.map((p,i)=>(i?'L':'M')+x(p[0]).toFixed(1)+','+y(p[1]).toFixed(1)).join('');
+  const ticks=[0,.5,1].map(t=>`<text x="${x(t)}" y="${H-B+14}" text-anchor="middle">${t*100}%</text><text x="${P-6}" y="${y(t)+3}" text-anchor="end">${t*100}%</text>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" style="max-width:440px" role="img" aria-label="ROC curve"><line class="ax" x1="${P}" y1="${H-B}" x2="${W-R}" y2="${H-B}"/><line class="ax" x1="${P}" y1="${H-B}" x2="${P}" y2="10"/>
+    <line x1="${x(0)}" y1="${y(0)}" x2="${x(1)}" y2="${y(1)}" stroke="var(--mute)" stroke-dasharray="4 4" stroke-width="1"/>
+    <path d="${d}" fill="none" stroke="var(--noi)" stroke-width="2"/>${ticks}
+    <text x="${(W+P-R)/2+R/2}" y="${H-6}" text-anchor="middle">false positive rate</text><text x="11" y="${(H-B)/2}" transform="rotate(-90 11 ${(H-B)/2})" text-anchor="middle">true positive rate</text></svg>`}
+function barsFeat(per){const e=Object.entries(per);return e.map(([f,v])=>`<div class="row" style="margin:3px 0" title="${esc(FNAME[f]||f)}: ${v}%"><span style="width:200px">${esc(FNAME[f]||f)}</span>
+  <div style="flex:1;max-width:260px;background:var(--line);height:10px;border-radius:5px;position:relative"><div style="position:absolute;left:0;top:0;bottom:0;width:${Math.max(0,(v-50)*2)}%;background:var(--noi);border-radius:0 4px 4px 0"></div></div><b class="small" style="min-width:40px">${v}%</b></div>`).join('')}
+function svgHours(you,noi){const W=600,H=170,P=26,mx=Math.max(1,...you,...noi),bw=(W-P-8)/24,x=i=>P+i*bw,y=v=>H-P-(v/mx)*(H-P-10);
+  let g='';for(let i=0;i<24;i++){const hy=(H-P)-y(you[i]),hn=(H-P)-y(noi[i]);
+    g+=`<rect x="${(x(i)+1).toFixed(1)}" y="${y(you[i]).toFixed(1)}" width="${(bw/2-2).toFixed(1)}" height="${Math.max(0,hy).toFixed(1)}" rx="2" fill="var(--you)"><title>${String(i).padStart(2,'0')}:00 — you: ${you[i]}</title></rect>
+        <rect x="${(x(i)+bw/2).toFixed(1)}" y="${y(noi[i]).toFixed(1)}" width="${(bw/2-2).toFixed(1)}" height="${Math.max(0,hn).toFixed(1)}" rx="2" fill="var(--noi)"><title>${String(i).padStart(2,'0')}:00 — noise: ${noi[i]}</title></rect>`;
+    if(i%3===0)g+=`<text x="${x(i)+bw/2}" y="${H-P+13}" text-anchor="middle">${String(i).padStart(2,'0')}</text>`}
+  return `<svg viewBox="0 0 ${W} ${H}" style="max-width:900px" role="img" aria-label="Requests by hour"><line class="ax" x1="${P}" y1="${H-P}" x2="${W-8}" y2="${H-P}"/>${g}<text x="${(W+P)/2}" y="${H-2}" text-anchor="middle">hour of day (local)</text></svg>`}
+function svgTrend(h){if(!h.length)return 'No runs yet.';const W=300,H=90,P=24,xs=h.map((_,i)=>P+(h.length<2?0:i*(W-P-8)/(h.length-1))),y=v=>H-14-((v-50)/50)*(H-24);
+  const d=h.map((r,i)=>(i?'L':'M')+xs[i].toFixed(1)+','+y(r[1]).toFixed(1)).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" style="max-width:420px" role="img" aria-label="Score over time"><line class="ax" x1="${P}" y1="${y(50)}" x2="${W-8}" y2="${y(50)}"/><text x="${P-4}" y="${y(50)+3}" text-anchor="end">50</text><text x="${P-4}" y="${y(100)+3}" text-anchor="end">100</text>
+    <path d="${d}" fill="none" stroke="var(--noi)" stroke-width="2"/>${h.map((r,i)=>`<circle cx="${xs[i]}" cy="${y(r[1])}" r="4" fill="var(--noi)" stroke="var(--panel)" stroke-width="2"><title>${new Date(r[0]*1000).toLocaleString()}: ${r[1]}%</title></circle>`).join('')}</svg>
+    <div class="small mute">Last: ${h[h.length-1][1]}% · lower is better</div>`}
+function renderML(d){
+  const warn=[...(d.warnings||[]),...(d.errors||[]).map(e=>'Could not read: '+e)];
+  $('#mlWarn').innerHTML=warn.map(w=>`<div class="note small">⚠️ ${esc(w)}</div>`).join('');
+  if(d.error){$('#mlHead').innerHTML=`<div class="note bad small">${esc(d.error)} (${d.real_visits??0} of your visits found)</div>`;$('#mlBody').style.display='none';return}
+  const col=d.score<60?'var(--acc)':d.score<75?'var(--warn)':'var(--bad)';
+  $('#mlHead').innerHTML=`<div class="row" style="align-items:baseline;gap:12px"><div style="font-size:40px;font-weight:700;color:${col}">${d.auc}%</div><div><b>${esc(d.verdict)}</b><div class="small mute">ROC AUC · 95% interval ${d.ci95[0]}–${d.ci95[1]}% · ${d.compared} of your visits vs ${d.compared} noise events (${esc(d.noise_source)}) · last ${d.days} days · run ${new Date(d.ran_at*1000).toLocaleString()}</div></div></div>
+    <div class="kpis">${[['Accuracy',d.accuracy+'%'],['Precision',d.precision+'%'],['Recall',d.recall+'%'],['F1',d.f1+'%'],['Log loss',d.log_loss],['Fold AUCs',d.folds.join(' · ')]].map(([k,v])=>`<div class="kpi"><b>${esc(String(v))}</b><span>${k}</span></div>`).join('')}</div>`;
+  $('#mlBody').style.display='';
+  $('#mlRoc').innerHTML=svgRoc(d.roc);$('#mlFeat').innerHTML=barsFeat(d.per_feature);$('#mlHours').innerHTML=svgHours(d.hours.you,d.hours.noise);
+  const c=d.confusion;$('#mlCm').innerHTML=`<table class="cm"><tr><th></th><th>predicted you</th><th>predicted noise</th></tr><tr><th>really you</th><td>${c.tn}</td><td>${c.fp}</td></tr><tr><th>really noise</th><td>${c.fn}</td><td>${c.tp}</td></tr></table>`;
+  $('#mlTells').innerHTML=d.tells.length?'<table><tbody>'+d.tells.map(t=>`<tr><td><b>${esc(FNAME[t.feature]||t.feature)}</b> <span class="mute">(${t.auc}%)</span></td><td>${esc(t.advice)}</td></tr>`).join('')+'</tbody></table>':'No single signal stands out.';
+  $('#mlVals').innerHTML='<table><thead><tr><th>Signal</th><th>Value</th><th>You</th><th>Noise</th><th>Leans</th></tr></thead><tbody>'+d.giveaways.map(g=>`<tr><td>${esc(FNAME[g.feature]||g.feature)}</td><td>${esc(valName(g.feature,g.value))}</td><td>${g.you}</td><td>${g.noise}</td><td><i class="dot" style="background:var(--${g.leans==='noise'?'noi':'you'})"></i>${g.leans} (${g.ratio>=1?g.ratio+'×':(1/g.ratio).toFixed(1)+'×'})</td></tr>`).join('')+'</tbody></table>';
+}
+async function loadMLTab(){try{const m=await api('/api/ml');$('#mlAuto').checked=m.auto;$('#mlTrend').innerHTML=svgTrend(m.history);if(m.last)renderML(m.last)}catch(e){}}
+$('#mlHour').innerHTML=[...Array(24).keys()].map(h=>`<option value="${h}" ${h===21?'selected':''}>${String(h).padStart(2,'0')}:00</option>`).join('');
+$('#stRun').onclick=async()=>{$('#mlHead').innerHTML='<div class="small mute">Reading your history and simulating the noise… a few seconds.</div>';$('#stRun').disabled=true;
+  try{renderML(await api('/api/tools/selftest?days='+encodeURIComponent($('#stDays').value||14)));const m=await api('/api/ml');$('#mlTrend').innerHTML=svgTrend(m.history)}
+  catch(e){$('#mlHead').innerHTML=`<div class="note bad small">${esc(e.message)}</div>`}finally{$('#stRun').disabled=false}};
+$('#mlAuto').onchange=()=>act('/api/app',{ml_auto:$('#mlAuto').checked});
+$('#mlPred').onclick=async()=>{try{const d=await api('/api/ml/predict?site='+encodeURIComponent($('#mlSite').value)+'&hour='+$('#mlHour').value+'&weekday='+$('#mlDay').value);
+  $('#mlPredOut').innerHTML=`<b>${d.noise_probability}%</b> likely to be noise — <code>${esc(d.site)}</code> on ${DAYS[d.weekday]} at ${String(d.hour).padStart(2,'0')}:00`}catch(e){$('#mlPredOut').textContent=e.message}};
 $('#toolEst').onclick=async()=>{try{const d=await api('/api/tools/estimate');
   $('#toolEstOut').innerHTML=`About <b>${d.mb_per_day} MB a day</b> (≈${d.gb_per_month} GB a month): ≈${d.actions_per_hour} actions an hour for ${d.hours_per_day} hours${d.real_browser?(d.low_data?', real browser without images':', real browser with images'):', plain HTTP'}${d.cap_mb?`, capped at ${d.cap_mb} MB a day`:''}.`}catch(e){$('#toolEstOut').textContent=e.message}};
 $('#toolPriv').onclick=async()=>{try{const d=await api('/api/tools/privacy');const ic={ok:'✅',warn:'⚠️',info:'ℹ️'};

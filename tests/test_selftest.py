@@ -57,3 +57,22 @@ def test_simulation_respects_active_hours_and_window():
     ev = simulate_noise(p, DomainPool(random.Random(1), None), since, since + 3 * 86400)
     assert len(ev) > 50 and all(since <= t < since + 3 * 86400 for t, _ in ev)
     assert all(9 <= time.localtime(t).tm_hour < 17 for t, _ in ev)
+
+
+def test_ml_report_has_the_numbers_a_data_scientist_expects_and_predicts():
+    from noisycricket.selftest import predict
+    rng = random.Random(3)
+    real = _person(rng)
+    noise = sorted((t - (t % 86400) + rng.uniform(2, 8) * 3600, f"site{rng.randint(0, 5000)}.example.com")
+                   for t, _ in _person(random.Random(4)))
+    res = evaluate(real, noise, {})
+    for k in ("auc", "ci95", "folds", "roc", "confusion", "accuracy", "precision", "recall", "f1",
+              "log_loss", "giveaways", "hours", "warnings", "_model"):
+        assert k in res, k
+    assert len(res["folds"]) == 5 and res["ci95"][0] <= res["auc"] <= res["ci95"][1] + 0.5
+    c = res["confusion"]
+    assert c["tp"] + c["fp"] + c["tn"] + c["fn"] == 2 * res["compared"]
+    assert res["roc"][0] == [0.0, 0.0] and res["roc"][-1] == [1.0, 1.0]
+    assert sum(res["hours"]["you"]) == sum(res["hours"]["noise"]) == res["compared"]
+    model = res["_model"]
+    assert predict(model, "site42.example.com", 4, 2, {}) > 50 > predict(model, SITES[0], 21, 2, {})
