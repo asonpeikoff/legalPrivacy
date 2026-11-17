@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.9.0
+
+- **New name: legalPrivacy** (formerly noisyCricket), a homage to the blog *Legalizing Privacy*. Commands are now
+  `legalprivacy` and `legalprivacy-launch`, start scripts `Start-legalPrivacy.bat` and `start-legalprivacy.sh` /
+  `.command`, downloads `legalprivacy-launch-*`, and the Docker service `legalprivacy`.
+- **Nothing to redo after updating:** an existing settings folder (`~/.noisycricket`, `%APPDATA%\noisyCricket`) keeps
+  being used, the old commands `cricket` and `cricket-launch` still work, and so do `CRICKET_*` environment variables
+  (the new `LEGALPRIVACY_*` names take priority).
+
 ## v2.8.1
 
 - **Network map explains itself** when it has nothing to draw (psutil missing, watching off, nothing seen yet,

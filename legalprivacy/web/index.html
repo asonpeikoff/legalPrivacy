@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>noisyCricket</title>
+<title>legalPrivacy</title>
 <style>
 :root{--bg:#f5f6f8;--panel:#fff;--ink:#1c2230;--mute:#6b7488;--line:#e2e5ec;--acc:#2f7d4f;--acc2:#e8f3ec;--warn:#b7791f;--warn2:#fdf3df;--bad:#c0392b;--bad2:#fbe9e7;--tor:#7a3fb0;--tor2:#f1e8f9;--code:#f0f2f6}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#11141b;--panel:#1a1f2a;--ink:#e6e9f0;--mute:#8b94a8;--line:#2a3140;--acc:#4cc07d;--acc2:#183326;--warn:#e0a94a;--warn2:#35290f;--bad:#ef6a5b;--bad2:#3a1b17;--tor:#b98aea;--tor2:#2a1b3b;--code:#222938}}
@@ -86,14 +86,14 @@ table.dns td{vertical-align:middle}
 </head>
 <body>
 <header>
-  <h1>🦗 noisyCricket</h1>
+  <h1>⚖️ legalPrivacy</h1>
   <span id="pRun" class="pill">…</span>
   <span id="pTor" class="pill">Tor: off</span>
   <span class="sp"></span>
   <button id="bStart" class="pri">▶ Start</button>
   <button id="bPause">⏸ Pause</button>
   <button id="bStop" class="dng">■ Stop</button>
-  <button id="bQuit" title="Stop everything and close noisyCricket">Quit</button>
+  <button id="bQuit" title="Stop everything and close legalPrivacy">Quit</button>
 </header>
 <nav id="nav">
   <button data-t="dash" class="on">Dashboard</button>
@@ -155,7 +155,7 @@ table.dns td{vertical-align:middle}
 
 <!-- TOR -->
 <section id="t-tor" class="tab">
-  <div class="note tor"><b>Tor is optional.</b> Two separate things you can switch on: <b>🧅 Onion sites</b> (visit real .onion addresses — darknet noise, recommended if you use Tor at all) and <b>clearnet through Tor</b> (off by default and generally not recommended). noisyCricket runs its <i>own private Tor</i> in the background — it never touches your system Tor or Tor Browser.</div>
+  <div class="note tor"><b>Tor is optional.</b> Two separate things you can switch on: <b>🧅 Onion sites</b> (visit real .onion addresses — darknet noise, recommended if you use Tor at all) and <b>clearnet through Tor</b> (off by default and generally not recommended). legalPrivacy runs its <i>own private Tor</i> in the background — it never touches your system Tor or Tor Browser.</div>
   <div class="grid">
     <div class="card"><h3>Status</h3><div class="big" id="tState">—</div><div class="bar tor" style="margin:8px 0"><i id="tBar" style="width:0"></i></div><div class="small mute" id="tSum"></div></div>
     <div class="card"><h3>Details</h3><div class="kv" id="tKv"></div></div>
@@ -173,7 +173,7 @@ table.dns td{vertical-align:middle}
     <div class="small mute" id="tInstallNote"></div>
     <label class="chk"><input type="checkbox" id="tEnable"><span><b>Use Tor</b> — turn the Tor lane on. Starting noise will automatically start (and if needed, install) Tor.</span></label>
     <label class="chk"><input type="checkbox" id="tOnion"><span><b>🧅 Visit onion sites</b> (darknet noise) — only .onion addresses, never leaves the Tor network.</span></label>
-    <label class="chk"><input type="checkbox" id="tManage"><span><b>Let noisyCricket manage Tor</b> (recommended, default). Untick to use an existing Tor at the address below instead.</span></label>
+    <label class="chk"><input type="checkbox" id="tManage"><span><b>Let legalPrivacy manage Tor</b> (recommended, default). Untick to use an existing Tor at the address below instead.</span></label>
     <details class="small" style="margin-top:4px"><summary class="mute">Advanced</summary>
     <label class="chk"><input type="checkbox" id="tClear"><span><b>Also route ordinary web noise through Tor</b> — <b class="bad">not recommended</b>. Ordinary sites would see visits from Tor exits, a distinctive pattern that also burdens volunteer exit relays. Leave this off.</span></label>
     </details>
@@ -320,7 +320,7 @@ table.dns td{vertical-align:middle}
     <div class="row">Stop after <input type="number" id="sMaxF" min="1" style="width:90px"> failures per day</div>
     <div class="row">Clearnet proxy <input type="text" id="sProxy" placeholder="optional  http:// or socks5://…" style="flex:1;min-width:220px"></div>
     <label class="chk"><input type="checkbox" id="sClear"><span>Clearnet noise enabled</span></label>
-    <label class="chk"><input type="checkbox" id="sAuto"><span>Start noise automatically when noisyCricket opens</span></label>
+    <label class="chk"><input type="checkbox" id="sAuto"><span>Start noise automatically when legalPrivacy opens</span></label>
   </div>
   <div class="card"><h3>Realism</h3>
     <div class="row">Browse with a real browser
@@ -344,7 +344,7 @@ table.dns td{vertical-align:middle}
       <option value="168">1 week</option>
       <option value="720">30 days</option></select>
       <label class="chk" style="margin:0 0 0 8px"><input type="checkbox" id="sCookieVary"><span>Vary it a little <span class="mute">(recommended, default)</span></span></label>
-      <details class="why"><summary>ⓘ</summary><div>There's no perfect answer. Cookies are how sites track you, so keeping them long lets the noise build a profile. But a browser that never keeps any looks like a brand-new visitor every time, and sites ask “are you a robot?” far more often. A short life (about an hour) gets most of the benefit with little tracking. With “vary it a little”, each set of cookies lives 60–140% of the time you choose, so the resets don't happen on a fixed beat. These are noisyCricket's own cookies, never your browser's.</div></details></div>
+      <details class="why"><summary>ⓘ</summary><div>There's no perfect answer. Cookies are how sites track you, so keeping them long lets the noise build a profile. But a browser that never keeps any looks like a brand-new visitor every time, and sites ask “are you a robot?” far more often. A short life (about an hour) gets most of the benefit with little tracking. With “vary it a little”, each set of cookies lives 60–140% of the time you choose, so the resets don't happen on a fixed beat. These are legalPrivacy's own cookies, never your browser's.</div></details></div>
     <div class="small mute">Hidden runs the same Chrome code as a normal window, and what your ISP or DNS provider sees is identical. Only a site's own scripts, checking deeply, can tell (for example, no graphics card). <b>Off-screen</b> uses a real window and real graphics where no screen shows it: a little more realistic to those scripts, but uses more CPU and memory. <b>Visible</b> is for watching.</div>
     <div style="margin-top:10px"><b>Where searches come from</b> <span class="small mute">— mixed so no one list dominates</span></div>
     <label class="chk"><input type="checkbox" id="qLive"><span><b>Live trends</b> — Google Trends, Wikipedia most-read, BBC headlines</span></label>
@@ -352,7 +352,7 @@ table.dns td{vertical-align:middle}
     <label class="chk"><input type="checkbox" id="qBuiltin"><span>Built-in topics <span class="mute">(kept a small minority)</span></span></label>
     <label class="chk"><input type="checkbox" id="qWords"><span>Occasional dictionary word <span class="mute">(“define …”)</span></span></label>
     <table style="margin-top:8px"><thead><tr><th>Source</th><th>Items</th><th>From</th><th>Updated</th><th>Status</th></tr></thead><tbody id="fBody"></tbody></table>
-    <div class="small mute" style="margin-top:6px">These lists ship with noisyCricket, so it never has to contact Google Trends, Wikipedia, BBC, Hugging Face or Tranco on your behalf. Refreshing is optional; once every few months is plenty.</div>
+    <div class="small mute" style="margin-top:6px">These lists ship with legalPrivacy, so it never has to contact Google Trends, Wikipedia, BBC, Hugging Face or Tranco on your behalf. Refreshing is optional; once every few months is plenty.</div>
     <label class="chk"><input type="checkbox" id="fAuto"><span>Refresh automatically when the lists are ~3 months old <span class="mute">(contacts those sites from your connection)</span></span></label>
     <div class="row" style="margin-top:8px"><button id="fRefresh">↻ Refresh sources now</button><span class="small mute" id="fNote"></span></div>
   </div>
@@ -369,12 +369,12 @@ table.dns td{vertical-align:middle}
 <!-- HELP -->
 <section id="t-help" class="tab">
   <div class="card"><h3>What this does</h3>
-    <p>noisyCricket makes believable searches, page visits and DNS lookups in the background, so that bulk analysis of your real browsing tells much less about you. Every request shows in <b>Activity</b>; everything the app and Tor report is in <b>Live Log</b>. Both are kept in memory only and cleared when you quit.</p>
+    <p>legalPrivacy makes believable searches, page visits and DNS lookups in the background, so that bulk analysis of your real browsing tells much less about you. Every request shows in <b>Activity</b>; everything the app and Tor report is in <b>Live Log</b>. Both are kept in memory only and cleared when you quit.</p>
     <p><b>Activity vs Live Log.</b> Activity lists each request the noise made and what happened on it. Live Log is everything the app says, including starts and stops, Tor's own messages and warnings.</p>
     <p><b>Getting started.</b> Everything already has the recommended setting. Press <b>Start</b>; the first action comes within seconds. Settings save themselves.</p>
     <p><b>Look like yourself.</b> Add the sites you really use on <b>My List</b>, then check the <b>ML</b> tab: it shows how easily your traffic can be told apart from the noise, and which settings help.</p>
-    <p><b>Tor (optional).</b> Off by default. With Tor on, noisyCricket can visit .onion sites through its own private Tor, which it downloads, checks and starts for you. Many .onion sites are offline at any moment; those are skipped for a while, which is normal. Sending ordinary web noise through Tor is a separate switch, off by default and not recommended.</p>
-    <p><b>Contribute to Tor.</b> <code>cricket relay gen</code> writes a middle-relay or bridge configuration; it never runs an exit.</p>
+    <p><b>Tor (optional).</b> Off by default. With Tor on, legalPrivacy can visit .onion sites through its own private Tor, which it downloads, checks and starts for you. Many .onion sites are offline at any moment; those are skipped for a while, which is normal. Sending ordinary web noise through Tor is a separate switch, off by default and not recommended.</p>
+    <p><b>Contribute to Tor.</b> <code>legalprivacy relay gen</code> writes a middle-relay or bridge configuration; it never runs an exit.</p>
     <p class="small mute">The dashboard is reachable only from this computer (127.0.0.1) and needs the token in its address.</p>
   </div>
 
@@ -385,7 +385,7 @@ table.dns td{vertical-align:middle}
 <div id="wiz"><div class="wcard">
   <div class="steps"><i class="on" id="ws1"></i><i id="ws2"></i><i id="ws3"></i></div>
   <div id="w1">
-    <h2 style="margin-top:0">🦗 Welcome! 1 of 3</h2><p><b>How much background noise?</b></p>
+    <h2 style="margin-top:0">⚖️ Welcome! 1 of 3</h2><p><b>How much background noise?</b></p>
     <label class="opt"><input type="radio" name="rmode" value="random" checked> <b>Randomized</b> <span class="mute">(recommended, default) — changes every hour, busier in the evening, some hours nearly silent, like a real person</span></label>
     <label class="opt"><input type="radio" name="rmode" value="steady"> <b>Steady</b> <span class="mute">— about the same amount every hour</span></label>
     <div class="row" style="margin-top:10px"><span>Less</span><input type="range" id="wLevel" min="1" max="10" step="1" value="5" style="flex:1"><span>More</span></div>
@@ -394,11 +394,11 @@ table.dns td{vertical-align:middle}
   <div id="w2" style="display:none">
     <h2 style="margin-top:0">2 of 3</h2><p><b>Add Tor darknet (.onion) noise?</b></p>
     <label class="opt t"><input type="radio" name="tor" value="off" checked> <b>No</b> <span class="mute">— regular internet only (default)</span></label>
-    <label class="opt t"><input type="radio" name="tor" value="onion"> <b>Yes — visit onion sites</b> <span class="mute">— fully automatic: noisyCricket installs and runs its own private Tor for you</span></label>
+    <label class="opt t"><input type="radio" name="tor" value="onion"> <b>Yes — visit onion sites</b> <span class="mute">— fully automatic: legalPrivacy installs and runs its own private Tor for you</span></label>
     <div class="note small">You can change this any time on the 🧅 Tor tab. Sending ordinary web traffic <i>through</i> Tor is a separate, advanced switch that stays off.</div>
   </div>
   <div id="w3" style="display:none">
-    <h2 style="margin-top:0">3 of 3</h2><p><b>Start automatically whenever you open noisyCricket?</b></p>
+    <h2 style="margin-top:0">3 of 3</h2><p><b>Start automatically whenever you open legalPrivacy?</b></p>
     <label class="opt"><input type="radio" name="auto" value="1" checked> <b>Yes</b> <span class="mute">— just double-click and it runs</span></label>
     <label class="opt"><input type="radio" name="auto" value="0"> <b>No</b> <span class="mute">— I'll press Start myself</span></label>
   </div>
@@ -468,8 +468,8 @@ table.dns td{vertical-align:middle}
 <!-- TOOLS -->
 <section id="t-proof" class="tab vz">
   <div class="card"><h3>Is it working? Proof from your own computer <details class="why"><summary>ⓘ</summary><div>
-    Every few seconds noisyCricket looks at which addresses this computer is connected to and which program owns each connection:
-    <b>your apps</b> (your browser, updates, chat…), <b>noisyCricket</b> (its own requests and the browser it drives) or <b>Tor</b>.
+    Every few seconds legalPrivacy looks at which addresses this computer is connected to and which program owns each connection:
+    <b>your apps</b> (your browser, updates, chat…), <b>legalPrivacy</b> (its own requests and the browser it drives) or <b>Tor</b>.
     Nothing is captured or read, no addresses are looked up, and your own traffic is never labelled or saved; only per-minute counts are kept, for 7 days, on this computer.
     With the noise off you see only your traffic; with it on, the noise should blend in: similar rhythm, similar busyness. That's what this tab shows.</div></details></h3>
     <div id="pHead" class="small"></div>
@@ -481,7 +481,7 @@ table.dns td{vertical-align:middle}
   </div>
   <div class="card"><h3>Last 6 hours, per minute <details class="why"><summary>ⓘ</summary><div>Bars count the different addresses connected in each minute, split by who opened them. Shaded stripes are minutes when the noise was on. Turn the noise off for a while and on again to see the difference, and whether your own pattern and the noise look alike.</div></details></h3>
     <div id="pTime"></div>
-    <div class="small"><span style="color:var(--you)">■</span> your apps &nbsp; <span style="color:var(--noi)">■</span> noisyCricket &nbsp; <span style="color:var(--tor)">■</span> Tor &nbsp; <span class="mute">▒ noise on</span></div>
+    <div class="small"><span style="color:var(--you)">■</span> your apps &nbsp; <span style="color:var(--noi)">■</span> legalPrivacy &nbsp; <span style="color:var(--tor)">■</span> Tor &nbsp; <span class="mute">▒ noise on</span></div>
   </div>
   <div class="mlgrid">
     <div class="card"><h3>Off vs on, last 24 hours</h3><div id="pOnOff"></div></div>
@@ -513,7 +513,7 @@ table.dns td{vertical-align:middle}
     <div id="toolSpeedOut" class="small" style="margin-top:8px"></div>
   </div>
   <div class="card"><h3>Live log</h3>
-    <p class="small mute">The live log is kept in memory only. Nothing is written to disk, and it is cleared when noisyCricket quits.</p>
+    <p class="small mute">The live log is kept in memory only. Nothing is written to disk, and it is cleared when legalPrivacy quits.</p>
     <div class="row"><button id="toolClearLog">Clear live log now</button><span class="small mute" id="toolLogNote"></span></div>
   </div>
   <div class="card"><h3>Related checks</h3>
@@ -523,7 +523,7 @@ table.dns td{vertical-align:middle}
   </div>
   <div class="card"><h3>Files</h3>
     <div class="small">Config file: <code id="toolCfg"></code></div>
-    <div class="small mute" style="margin-top:6px">No log file is kept. The only file noisyCricket writes is that config file.</div>
+    <div class="small mute" style="margin-top:6px">No log file is kept. The only file legalPrivacy writes is that config file.</div>
   </div>
 </section>
 <div id="toast"></div>
@@ -531,8 +531,8 @@ table.dns td{vertical-align:middle}
 <script>
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const TOKEN=new URLSearchParams(location.search).get('t')||sessionStorage.getItem('cricket_t')||'';
-sessionStorage.setItem('cricket_t',TOKEN);
+const TOKEN=new URLSearchParams(location.search).get('t')||sessionStorage.getItem('legalprivacy_t')||'';
+sessionStorage.setItem('legalprivacy_t',TOKEN);
 async function api(path,body){
   const o={headers:{'X-Token':TOKEN}};
   if(body!==undefined){o.method='POST';o.headers['Content-Type']='application/json';o.body=JSON.stringify(body)}
@@ -556,7 +556,7 @@ $('#bStart').onclick=()=>act('/api/start');
 $('#bStop').onclick=()=>act('/api/stop');
 $('#bPause').onclick=()=>act('/api/pause',{paused:!(S&&S.paused)});
 $('#bTest').onclick=()=>{act('/api/test');toast('Test hit sent — see Activity')};
-$('#bQuit').onclick=async()=>{if(confirm('Stop everything and quit noisyCricket?')){try{await api('/api/shutdown',{})}catch(e){}document.body.innerHTML='<main><div class="card"><h2>noisyCricket has quit.</h2><p>You can close this tab.</p></div></main>'}};
+$('#bQuit').onclick=async()=>{if(confirm('Stop everything and quit legalPrivacy?')){try{await api('/api/shutdown',{})}catch(e){}document.body.innerHTML='<main><div class="card"><h2>legalPrivacy has quit.</h2><p>You can close this tab.</p></div></main>'}};
 ['tStart','tStop','tRestart','tNym','tInstall'].forEach(id=>$('#'+id).onclick=()=>act('/api/tor/'+{tStart:'start',tStop:'stop',tRestart:'restart',tNym:'newnym',tInstall:'install'}[id]));
 
 // ---------- polling
@@ -582,7 +582,7 @@ async function pollProof(){
 function mapWhyEmpty(o){
   if((o.nodes||[]).length)return '';
   const ls=o.last_sample;let why;
-  if(!o.available)why='Connection watching isn’t available: the <b>psutil</b> package is missing. Close noisyCricket and start it again with the start script (it installs what’s missing), or run <code>pip install psutil</code>.';
+  if(!o.available)why='Connection watching isn’t available: the <b>psutil</b> package is missing. Close legalPrivacy and start it again with the start script (it installs what’s missing), or run <code>pip install psutil</code>.';
   else if(!o.enabled)why='Watching is off. Tick “Watch this computer’s connections” above.';
   else if(!ls)why='Starting to watch… the first look takes about 5 seconds.';
   else if(!ls.connections)why='No open connections were seen on the last look. Open a website or start the noise, and they’ll appear within seconds.';
@@ -594,24 +594,24 @@ function renderProof(o){
   $('#pObs').checked=o.enabled;
   $('#pHead').innerHTML=!o.available?'<span class="warnc">Connection watching isn\'t available on this computer (the psutil package is missing).</span>':
     `Noise is <b class="${o.running?'ok':''}">${o.running?'ON':'OFF'}</b> right now.`+
-    (o.limited?' <span class="warnc">This system only lets noisyCricket see its own connections (on macOS, run it as administrator to see your apps too), so “your apps” stays empty.</span>':'');
+    (o.limited?' <span class="warnc">This system only lets legalPrivacy see its own connections (on macOS, run it as administrator to see your apps too), so “your apps” stays empty.</span>':'');
   if(window.NetMap){
     try{if(!pMap)pMap=new NetMap($('#pMap'),{height:420});pMap.update(o.nodes||[]);$('#pMapMsg').innerHTML=mapWhyEmpty(o)}
     catch(err){$('#pMapMsg').innerHTML=`<div class="note bad small">The map hit an error and couldn't draw: <code>${esc(String(err))}</code>. Please send this to the developer.</div>`}
-  }else $('#pMap').innerHTML='<div class="note bad small">The map’s script isn’t part of this install, so it can’t draw. Reinstall noisyCricket, or start it with the start script.</div>';
+  }else $('#pMap').innerHTML='<div class="note bad small">The map’s script isn’t part of this install, so it can’t draw. Reinstall legalPrivacy, or start it with the start script.</div>';
   $('#pTime').innerHTML=svgTimeline(o.timeline||[]);
   const oo=o.onoff||{},f=v=>v==null?'—':v;
   $('#pOnOff').innerHTML=`<table><thead><tr><th></th><th>Noise off</th><th>Noise on</th></tr></thead><tbody>
     <tr><td>Minutes observed</td><td>${f(oo.off&&oo.off.minutes)}</td><td>${f(oo.on&&oo.on.minutes)}</td></tr>
     <tr><td>Your apps: addresses / min</td><td>${f(oo.off&&oo.off.you)}</td><td>${f(oo.on&&oo.on.you)}</td></tr>
-    <tr><td>noisyCricket: addresses / min</td><td>${f(oo.off&&oo.off.noise)}</td><td>${f(oo.on&&oo.on.noise)}</td></tr>
-    <tr><td>noisyCricket: requests / min</td><td>—</td><td>${f(oo.on&&oo.on.req)}</td></tr>
+    <tr><td>legalPrivacy: addresses / min</td><td>${f(oo.off&&oo.off.noise)}</td><td>${f(oo.on&&oo.on.noise)}</td></tr>
+    <tr><td>legalPrivacy: requests / min</td><td>—</td><td>${f(oo.on&&oo.on.req)}</td></tr>
     <tr><td>All traffic: KB / min</td><td>${oo.off&&oo.off.bytes!=null?Math.round(oo.off.bytes/1024):'—'}</td><td>${oo.on&&oo.on.bytes!=null?Math.round(oo.on.bytes/1024):'—'}</td></tr></tbody></table>
     <div class="small mute">With the noise on, an observer of your connection sees your traffic <i>plus</i> the noise; the rows above show how much was added.</div>`;
   const c=o.compare||{};
   if(c.verdict==='collecting'){
     $('#pCmp').innerHTML=`<div class="mute">Collecting data. Needs about ${c.needed.baseline_active} more busy minutes of <b>your own</b> traffic with the noise off, and ${c.needed.noise_active} more with it on.</div>
-      <div class="small mute" style="margin-top:6px">Tip: use your computer normally with noisyCricket stopped for an hour or two, then start it.</div>`;
+      <div class="small mute" style="margin-top:6px">Tip: use your computer normally with legalPrivacy stopped for an hour or two, then start it.</div>`;
   }else{
     const word={similar:'<b class="ok">Looks like you</b>',somewhat:'<b class="warnc">Somewhat like you</b>',different:'<b class="bad">Noticeably different</b>'}[c.verdict]||'';
     $('#pCmp').innerHTML=`<div class="big">${Math.round((c.score||0)*100)}%</div><div>${word}${c.weakest?` · least similar: ${esc(c.weakest)}`:''}</div>`+
@@ -711,7 +711,7 @@ function renderChips(){
 const LV={debug:10,info:20,warn:30,error:40};
 ['lLevel','lQ'].forEach(id=>$('#'+id).oninput=()=>renderLog(true));
 $('#lClear').onclick=()=>{logs=[];renderLog(true);errCount=0;$('#errBadge').style.display='none'};
-$('#lDl').onclick=e=>{e.preventDefault();fetch('/api/logs.txt',{headers:{'X-Token':TOKEN}}).then(r=>r.blob()).then(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='noisycricket-log.txt';a.click()})};
+$('#lDl').onclick=e=>{e.preventDefault();fetch('/api/logs.txt',{headers:{'X-Token':TOKEN}}).then(r=>r.blob()).then(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='legalprivacy-log.txt';a.click()})};
 let lastRendered=0;
 function logLine(e){return `<div class="${e.level}"><span class="src">${fmtT(e.ts)} ${esc(e.source)}</span> ${esc(e.message)}</div>`}
 function renderLog(full){
@@ -768,7 +768,7 @@ function renderTorStatus(){
   $('#tKv').innerHTML=[['Mode',t.mode],['Version',t.version||'—'],['SOCKS',t.socks||'—'],['Control',t.control||'—'],['PID',t.pid||'—'],['Uptime',t.uptime?fmtDur(t.uptime):'—'],['Downloaded',fmtB(t.read)],['Uploaded',fmtB(t.written)],['Program',t.binary||'not installed']].map(([k,v])=>`<b>${k}</b><span style="word-break:break-all">${esc(v)}</span>`).join('');
   $('#cCount').textContent=t.circuits_built||0;
   $('#cBody').innerHTML=(t.circuits||[]).map(c=>`<tr><td>${esc(c.id)}</td><td class="${c.status==='BUILT'?'ok':''}">${esc(c.status)}</td><td>${esc(c.purpose)}</td><td class="url">${esc(c.path.join(' → '))}</td></tr>`).join('')||'<tr><td colspan=4 class="mute">no circuits</td></tr>';
-  $('#tInstallNote').textContent=!t.supported_platform?'Automatic install is not available on this platform — install Tor with your package manager.':t.installed_bundle?'Official Tor bundle installed by noisyCricket.':t.binary?'Using Tor found on this computer.':'Tor is not installed yet — it will be downloaded automatically when needed.';
+  $('#tInstallNote').textContent=!t.supported_platform?'Automatic install is not available on this platform — install Tor with your package manager.':t.installed_bundle?'Official Tor bundle installed by legalPrivacy.':t.binary?'Using Tor found on this computer.':'Tor is not installed yet — it will be downloaded automatically when needed.';
   const busy=['starting','bootstrapping','installing'].includes(t.state);
   $('#tStart').disabled=busy||t.state==='ready';$('#tStop').disabled=t.state==='stopped';$('#tRestart').disabled=t.state==='stopped'||busy;$('#tNym').disabled=t.state!=='ready'||!t.control;$('#tInstall').disabled=busy;
   renderTorLog();
@@ -1015,7 +1015,7 @@ function renderEngines(custom){
 function engWeights(){return engTouched?window._seMix.values():{}}
 $('#eEngReset').onclick=()=>{renderEngines({});saveSettings(true)};
 $('#aCsv').onclick=()=>dlAct('csv');$('#aJson').onclick=()=>dlAct('json');
-function dlAct(kind){fetch('/api/hits.'+kind,{headers:{'X-Token':TOKEN}}).then(r=>r.blob()).then(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='noisycricket-activity.'+kind;a.click()})}
+function dlAct(kind){fetch('/api/hits.'+kind,{headers:{'X-Token':TOKEN}}).then(r=>r.blob()).then(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='legalprivacy-activity.'+kind;a.click()})}
 function randInfo(){
   const v=parseInt($('#sRand').value||0);
   $('#sRandInfo').innerHTML=v===0?'<b>Steady</b>: about the same amount every hour.':
@@ -1157,7 +1157,7 @@ $('#hRun').onclick=async()=>{$('#hBody').innerHTML='<tr><td class="mute">Checkin
 // wizard
 let wizShown=false,wStep=1;
 function showWiz(){wizShown=true;wStep=1;wizStep();rateInfo('wLevel','wLevelInfo');$('#wiz').classList.add('on')}
-function wizStep(){for(let i=1;i<=3;i++){$('#w'+i).style.display=i===wStep?'':'none';$('#ws'+i).classList.toggle('on',i<=wStep)}$('#wBack').style.visibility=wStep>1?'visible':'hidden';$('#wNext').textContent=wStep<3?'Next':'Finish & start 🦗'}
+function wizStep(){for(let i=1;i<=3;i++){$('#w'+i).style.display=i===wStep?'':'none';$('#ws'+i).classList.toggle('on',i<=wStep)}$('#wBack').style.visibility=wStep>1?'visible':'hidden';$('#wNext').textContent=wStep<3?'Next':'Finish & start ⚖️'}
 $('#wBack').onclick=()=>{wStep--;wizStep()};
 $('#wNext').onclick=async()=>{
   if(wStep<3){wStep++;wizStep();return}

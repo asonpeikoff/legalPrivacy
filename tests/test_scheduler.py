@@ -13,11 +13,11 @@ except ImportError:
     pytest = types.ModuleType("pytest")
     pytest.raises = _RaisesContext
 
-from noisycricket.config import (EngineConfig, Profile, TransportConfig,
+from legalprivacy.config import (EngineConfig, Profile, TransportConfig,
                                  load_profile)
-from noisycricket.pacing import Budget
-from noisycricket.scheduler import Lane, Runner, build_lanes
-from noisycricket.transports import (ClearnetTransport, HitResult, Target,
+from legalprivacy.pacing import Budget
+from legalprivacy.scheduler import Lane, Runner, build_lanes
+from legalprivacy.transports import (ClearnetTransport, HitResult, Target,
                                      TorTransport)
 
 WORDS = ["weather", "news", "books", "travel", "recipes", "music"]
@@ -169,7 +169,7 @@ def test_consecutive_failures_rotate_identity():
 
 
 def test_crawl_handles_complex_html():
-    from noisycricket.engines import CrawlTargetFactory
+    from legalprivacy.engines import CrawlTargetFactory
     rng = __import__("random").Random(1)
     fac = CrawlTargetFactory(rng=rng, seeds=["https://example.com/start"])
     html = """
@@ -194,8 +194,8 @@ def test_crawl_handles_complex_html():
 
 
 def test_dns_noise_only_uses_real_domains():
-    from noisycricket.engines import DnsNoise
-    from noisycricket.domains import FALLBACK_DOMAINS
+    from legalprivacy.engines import DnsNoise
+    from legalprivacy.domains import FALLBACK_DOMAINS
     rng = __import__("random").Random(2)
     noise = DnsNoise(rng, ["xqzvbnm", "pentacapsular"])
     for _ in range(50):

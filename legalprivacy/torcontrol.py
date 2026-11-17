@@ -5,6 +5,7 @@ import binascii
 import os
 import re
 import socket
+from .paths import getenv
 from pathlib import Path
 
 DEFAULT_COOKIE_PATHS = (
@@ -29,8 +30,8 @@ class TorControl:
                  password: str | None = None, cookie_path: str | None = None,
                  timeout: float = 5.0):
         self.host, self.port = host, port
-        self.password = password or os.environ.get("CRICKET_TOR_CONTROL_PW")
-        self.cookie_path = cookie_path or os.environ.get("CRICKET_TOR_CONTROL_COOKIE")
+        self.password = password or getenv("TOR_CONTROL_PW")
+        self.cookie_path = cookie_path or getenv("TOR_CONTROL_COOKIE")
         self.timeout = timeout
         self._sock: socket.socket | None = None
         self._f = None
@@ -122,7 +123,7 @@ class TorControl:
                             break
                 if not path:
                     raise TorControlError("cookie auth required but no cookie file found "
-                                          "(set CRICKET_TOR_CONTROL_COOKIE)")
+                                          "(set LEGALPRIVACY_TOR_CONTROL_COOKIE)")
                 data = Path(path).expanduser().read_bytes()
                 self.cmd("AUTHENTICATE " + binascii.hexlify(data).decode())
             else:

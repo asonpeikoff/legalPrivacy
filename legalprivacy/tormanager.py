@@ -108,7 +108,7 @@ def find_tor_binary() -> str | None:
 
 
 def _http_get(url: str, timeout: float = 30.0) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": "noisyCricket-installer"})
+    req = urllib.request.Request(url, headers={"User-Agent": "legalPrivacy-installer"})
     with urllib.request.urlopen(req, timeout=timeout) as r:   # nosec - fixed https host
         return r.read()
 
@@ -292,7 +292,7 @@ class TorManager:
                 break
         else:
             raise RuntimeError(f"No Tor found at {self.ext_socks}. Switch to 'managed' mode "
-                               "and noisyCricket will run its own private Tor.")
+                               "and legalPrivacy will run its own private Tor.")
         if self.ext_control:
             self.control_host, self.control_port = _split(self.ext_control, 9051)
             if self.socks_port == 9150 and self.control_port == 9051:
@@ -559,7 +559,7 @@ class TorManager:
         self.log.info("tor", f"Downloading {fname} (Tor Browser release {ver})…")
         dest = tor_dir() / fname
         h = hashlib.sha256()
-        req = urllib.request.Request(f"{DIST_BASE}{ver}/{fname}", headers={"User-Agent": "noisyCricket-installer"})
+        req = urllib.request.Request(f"{DIST_BASE}{ver}/{fname}", headers={"User-Agent": "legalPrivacy-installer"})
         with urllib.request.urlopen(req, timeout=60) as r, open(dest, "wb") as out:   # nosec
             total = int(r.headers.get("Content-Length") or 0)
             got = 0
@@ -622,7 +622,7 @@ def fetch_bridges_for_country(country: str = "") -> list[dict]:
                        if country else {"transports": ["obfs4", "snowflake", "webtunnel", "meek"]}).encode()
     req = urllib.request.Request(MOAT, data=body, method="POST",
                                  headers={"Content-Type": "application/vnd.api+json",
-                                          "User-Agent": "noisyCricket-bridges"})
+                                          "User-Agent": "legalPrivacy-bridges"})
     with urllib.request.urlopen(req, timeout=30) as r:          # nosec - fixed https host
         data = _json.loads(r.read().decode())
     out = []

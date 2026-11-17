@@ -1,4 +1,4 @@
-# noisyCricket example profile — balanced daily noise on both transports
+# legalPrivacy example profile — balanced daily noise on both transports
 profile:
   name: example
   realtime_scale: 1.0
@@ -38,12 +38,12 @@ profile:
       control: 127.0.0.1:9051
       identities_per_circuit: 8
   daily_max_failures: 30
-  # community contribution — middle relay ONLY, see `cricket relay gen`
+  # community contribution — middle relay ONLY, see `legalprivacy relay gen`
   contribute:
     relay:
       enabled: false
       mode: middle
-      nickname: mycricket
+      nickname: mylegalprivacy
       contact: null
       bandwidth_rate: 5Mbit
       or_port: 9001

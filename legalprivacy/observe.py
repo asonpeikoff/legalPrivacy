@@ -3,8 +3,8 @@
 A light background sampler (every 5 s, only while the app is open) lists this
 computer's open network connections and sorts each one by the program that owns it:
 
-  noise  noisyCricket itself and the browsers it started
-  tor    the Tor that noisyCricket runs
+  noise  legalPrivacy itself and the browsers it started
+  tor    the Tor that legalPrivacy runs
   you    every other program on this computer (your browser, apps, updates…)
 
 Nothing is captured or inspected: only which remote addresses are connected, and
@@ -247,7 +247,7 @@ class TrafficObserver:
                 if now - n.get("last", 0) > window:
                     continue
                 name = self.names.get(ip, "") if n["kind"] != "you" else ""
-                who = {"you": "Your apps", "noise": "noisyCricket", "tor": "Tor (noisyCricket)"}[n["kind"]]
+                who = {"you": "Your apps", "noise": "legalPrivacy", "tor": "Tor (legalPrivacy)"}[n["kind"]]
                 conns = max(1, len(n.get("ports", ())))
                 out.append({"id": ip, "label": name or (ip if n["kind"] != "you" else ""),
                             "kind": n["kind"], "weight": conns, "active": now - n["last"] < self.interval * 1.5,

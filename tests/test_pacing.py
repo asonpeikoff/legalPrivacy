@@ -2,7 +2,7 @@
 
 from random import Random
 
-from noisycricket.pacing import Budget, Pacer, diurnal_factor
+from legalprivacy.pacing import Budget, Pacer, diurnal_factor
 
 
 def test_diurnal_curve_bounds():
@@ -57,7 +57,7 @@ def test_budget_exhausts_and_counts_failures():
 def test_sittings_fit_the_hour_but_are_irregular():
     import random
     import statistics
-    from noisycricket.pacing import SessionPacer
+    from legalprivacy.pacing import SessionPacer
     totals, gaps0 = [], None
     for seed in range(100):
         sp = SessionPacer(random.Random(seed))

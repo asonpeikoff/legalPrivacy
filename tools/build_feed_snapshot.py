@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from noisycricket.feeds import FeedStore  # noqa: E402
+from legalprivacy.feeds import FeedStore  # noqa: E402
 
 out = Path(__file__).resolve().parents[1] / "data" / "feeds" / "snapshot.json.gz"
 st = FeedStore(None, path=Path(tempfile.mkdtemp()) / "f.json", bundled=False)

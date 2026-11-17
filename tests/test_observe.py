@@ -6,9 +6,9 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-os.environ.setdefault("CRICKET_HOME", tempfile.mkdtemp(prefix="cricket-test-"))
+os.environ.setdefault("LEGALPRIVACY_HOME", tempfile.mkdtemp(prefix="legalprivacy-test-"))
 
-from noisycricket.observe import TrafficObserver, ks_similarity, runs  # noqa: E402
+from legalprivacy.observe import TrafficObserver, ks_similarity, runs  # noqa: E402
 
 
 def test_runs_and_ks():

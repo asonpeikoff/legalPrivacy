@@ -19,14 +19,14 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            artifact: cricket-launch-linux
-            rename: cricket-launch-linux
+            artifact: legalprivacy-launch-linux
+            rename: legalprivacy-launch-linux
           - os: windows-latest
-            artifact: cricket-launch.exe
-            rename: cricket-launch-windows.exe
+            artifact: legalprivacy-launch.exe
+            rename: legalprivacy-launch-windows.exe
           - os: macos-latest
-            artifact: cricket-launch
-            rename: cricket-launch-macos
+            artifact: legalprivacy-launch
+            rename: legalprivacy-launch-macos
 
     runs-on: ${{ matrix.os }}
 
@@ -45,16 +45,16 @@ jobs:
           python run_tests.py
 
       - name: Build executable
-        run: pyinstaller cricket.spec --clean --noconfirm
+        run: pyinstaller legalprivacy.spec --clean --noconfirm
 
       - name: Rename artifact (Linux/macOS)
         if: runner.os != 'Windows'
-        run: mv dist/cricket-launch dist/${{ matrix.rename }}
+        run: mv dist/legalprivacy-launch dist/${{ matrix.rename }}
 
       - name: Rename artifact (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Move-Item dist\cricket-launch.exe dist\${{ matrix.rename }}
+        run: Move-Item dist\legalprivacy-launch.exe dist\${{ matrix.rename }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -76,17 +76,17 @@ jobs:
 
       - name: Make Linux/macOS binaries executable
         run: |
-          chmod +x dist/cricket-launch-linux/cricket-launch-linux || true
-          chmod +x dist/cricket-launch-macos/cricket-launch-macos || true
+          chmod +x dist/legalprivacy-launch-linux/legalprivacy-launch-linux || true
+          chmod +x dist/legalprivacy-launch-macos/legalprivacy-launch-macos || true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           target_commitish: ${{ github.sha }}
-          name: "noisyCricket ${{ github.event.inputs.tag || github.ref_name }}"
+          name: "legalPrivacy ${{ github.event.inputs.tag || github.ref_name }}"
           body: |
-            ## 🦗 noisyCricket ${{ github.event.inputs.tag || github.ref_name }}
+            ## ⚖️ legalPrivacy ${{ github.event.inputs.tag || github.ref_name }}
 
             Believable background browsing, searches and DNS lookups, so bulk analysis of your traffic tells much less about you.
 
@@ -94,20 +94,20 @@ jobs:
 
             | Platform | File | How to run |
             |---|---|---|
-            | Windows | `cricket-launch-windows.exe` | Double-click. If SmartScreen warns, choose **More info → Run anyway**. |
-            | macOS | `cricket-launch-macos` | Right-click → **Open** the first time (the app isn't signed). |
-            | Linux | `cricket-launch-linux` | `chmod +x cricket-launch-linux && ./cricket-launch-linux` |
+            | Windows | `legalprivacy-launch-windows.exe` | Double-click. If SmartScreen warns, choose **More info → Run anyway**. |
+            | macOS | `legalprivacy-launch-macos` | Right-click → **Open** the first time (the app isn't signed). |
+            | Linux | `legalprivacy-launch-linux` | `chmod +x legalprivacy-launch-linux && ./legalprivacy-launch-linux` |
 
             Your browser opens the dashboard, you answer three quick questions, and it starts. A real Chrome, Edge,
             Brave or Chromium on the computer makes the browsing look human; Tor is optional and set up for you.
 
-            Or from source: `pip install git+https://github.com/asonpeikoff/noisyCricket` then `cricket-launch`.
+            Or from source: `pip install git+https://github.com/asonpeikoff/noisyCricket` then `legalprivacy-launch`.
 
             ### What's new
             See the [changelog](https://github.com/asonpeikoff/noisyCricket/blob/master/CHANGELOG.md).
           files: |
-            dist/cricket-launch-linux/cricket-launch-linux
-            dist/cricket-launch-windows.exe/cricket-launch-windows.exe
-            dist/cricket-launch-macos/cricket-launch-macos
+            dist/legalprivacy-launch-linux/legalprivacy-launch-linux
+            dist/legalprivacy-launch-windows.exe/legalprivacy-launch-windows.exe
+            dist/legalprivacy-launch-macos/legalprivacy-launch-macos
           draft: false
           prerelease: false

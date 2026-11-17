@@ -13,7 +13,7 @@ emulation, a phone viewport and an Android UA built from the browser's real
 major version, with matching client-hint metadata.
 
 Optional: needs the `playwright` Python package and a Chromium-family browser.
-If either is missing, noisyCricket falls back to the plain HTTP transport.
+If either is missing, legalPrivacy falls back to the plain HTTP transport.
 """
 from __future__ import annotations
 
@@ -32,6 +32,7 @@ from typing import Callable
 from .useragents import DEFAULT_DEVICE, MOBILE_DEVICES
 from .humanize import HumanDriver, lognormal_clipped
 from .transports import ClearnetTransport, HitResult, Target, Transport
+from .paths import getenv
 
 DESKTOP_VIEWPORTS = [((1920, 1080), 30), ((1536, 864), 14), ((1366, 768), 12), ((1440, 900), 9),
                      ((1280, 720), 8), ((2560, 1440), 7), ((1600, 900), 6), ((1280, 800), 5)]
@@ -43,7 +44,7 @@ MAX_DOWNLOAD = 8_000_000
 
 def find_browser() -> str | None:
     """Locate a Chromium-family browser executable on this machine."""
-    env = os.environ.get("CRICKET_BROWSER")
+    env = getenv("BROWSER")
     if env and Path(env).exists():
         return env
     cands: list[str] = []
@@ -269,7 +270,7 @@ class BrowserTransport(Transport):
                 "--no-first-run", "--disable-background-networking"]
         if self.offscreen:                                 # a real window, placed where no screen is
             args += ["--window-position=-32000,-32000", "--window-size=1366,850"]
-        if os.environ.get("CRICKET_NO_SANDBOX") == "1" or (hasattr(os, "geteuid") and os.geteuid() == 0):
+        if getenv("NO_SANDBOX") == "1" or (hasattr(os, "geteuid") and os.geteuid() == 0):
             args.append("--no-sandbox")                    # Chromium refuses to sandbox as root
         self._browser = self._pw.chromium.launch(executable_path=self.executable, headless=self.headless,
                                                  args=args, proxy={"server": self.proxy} if self.proxy else None)

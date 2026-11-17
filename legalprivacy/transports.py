@@ -18,9 +18,10 @@ from typing import Any
 try:
     import requests
 except ImportError as exc:  # pragma: no cover
-    raise ImportError("noisyCricket v2 needs the 'requests' package (pip install requests)") from exc
+    raise ImportError("legalPrivacy v2 needs the 'requests' package (pip install requests)") from exc
 
 from .identity import Identity
+from .paths import getenv
 
 
 @dataclass
@@ -140,7 +141,7 @@ class TorTransport(Transport):
         self.socks_port = int(port) if port else 9050
         self.control = control
         self.identities_per_circuit = identities_per_circuit
-        self.control_password = control_password or os.environ.get("CRICKET_TOR_CONTROL_PW")
+        self.control_password = control_password or getenv("TOR_CONTROL_PW")
         self.circuit_seed = binascii.hexlify(os.urandom(8)).decode()
         self.cookie_path: str | None = None    # set when a managed Tor owns the control port
         self.dimmed = False

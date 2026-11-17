@@ -1,4 +1,4 @@
-noisyCricket diurnal activity model
+legalPrivacy diurnal activity model
 activity weight by local hour (scheduler divides hit delays by this)
 
 00:00 |##################################                        | 0.93

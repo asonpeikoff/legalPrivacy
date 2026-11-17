@@ -1,4 +1,4 @@
-"""noisyCricket launcher — double-click me.
+"""legalPrivacy launcher — double-click me.
 
 Opens the dashboard in your browser (first run: 3 quick questions, then it
 starts). Use --text for the old terminal menu.
@@ -21,7 +21,7 @@ def _pause_on_windows_error() -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="cricket-launch", description=__doc__)
+    ap = argparse.ArgumentParser(prog="legalprivacy-launch", description=__doc__)
     ap.add_argument("--text", action="store_true", help="terminal menu instead of the dashboard")
     ap.add_argument("--no-browser", action="store_true", help="don't open a browser automatically")
     ap.add_argument("--port", type=int, help="dashboard port (default 8765)")
@@ -54,7 +54,7 @@ def _text_menu() -> int:
     while True:
         ctl = Controller()
         tor_cfg = ctl.profile.transports["tor"]
-        print("\n  🦗 noisyCricket (text mode)\n")
+        print("\n  ⚖️ legalPrivacy (text mode)\n")
         print(f"  Tor: {'ON' if tor_cfg.enabled else 'off'}  (program: {find_tor_binary() or 'not installed'}; "
               f"other Tor running: {port_open('127.0.0.1', 9050) or port_open('127.0.0.1', 9150)})")
         print("  [1] Start now   [2] One test round   [3] Health check   "

@@ -1,11 +1,11 @@
-# Running noisyCricket in Docker (home server, NAS, Raspberry Pi)
+# Running legalPrivacy in Docker (home server, NAS, Raspberry Pi)
 
 The image includes Chromium (real-browser noise) and Tor (optional .onion noise).
 Settings live in a Docker volume, so they survive updates.
 
 ```sh
 docker compose up -d                      # build and start
-docker compose logs noisycricket          # shows the dashboard link with its token
+docker compose logs legalprivacy          # shows the dashboard link with its token
 ```
 
 Open the printed link (`http://127.0.0.1:8765/?t=…`) on the same machine.
@@ -22,7 +22,7 @@ Open the printed link (`http://127.0.0.1:8765/?t=…`) on the same machine.
   to the host's. On Linux, `network_mode: host` makes lookups and traffic look exactly like the
   host's own (and lets "Your own activity" see the host's traffic). Remove the `ports:` section
   if you use it.
-- **Chromium's own sandbox is off** inside the container (`CRICKET_NO_SANDBOX=1`): the container
+- **Chromium's own sandbox is off** inside the container (`LEGALPRIVACY_NO_SANDBOX=1`): the container
   is the sandbox. It runs as an unprivileged user.
 - **Memory.** Chromium needs `shm_size: 1gb` (set in the compose file) and about 500 MB of RAM.
 

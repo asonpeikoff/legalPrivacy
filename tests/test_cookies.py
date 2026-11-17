@@ -5,12 +5,12 @@ import tempfile
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from noisycricket import browser as B  # noqa: E402
-from noisycricket.config import Profile, TransportConfig, apply_overrides  # noqa: E402
+from legalprivacy import browser as B  # noqa: E402
+from legalprivacy.config import Profile, TransportConfig, apply_overrides  # noqa: E402
 
 
 def _bt(hours, vary=True):
-    os.environ["CRICKET_HOME"] = tempfile.mkdtemp()
+    os.environ["LEGALPRIVACY_HOME"] = tempfile.mkdtemp()
     t = B.BrowserTransport.__new__(B.BrowserTransport)
     t.cookie_hours, t.cookie_vary, t.engine, t.on_event = hours, vary, "chromium", lambda *a: None
     return t

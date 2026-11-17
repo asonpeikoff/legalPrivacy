@@ -7,9 +7,9 @@ import tempfile
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from noisycricket.config import ConfigError, Profile, apply_overrides  # noqa: E402
-from noisycricket.domains import DomainPool  # noqa: E402
-from noisycricket.history import site_of, top_sites  # noqa: E402
+from legalprivacy.config import ConfigError, Profile, apply_overrides  # noqa: E402
+from legalprivacy.domains import DomainPool  # noqa: E402
+from legalprivacy.history import site_of, top_sites  # noqa: E402
 
 WEBKIT = 11_644_473_600
 

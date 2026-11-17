@@ -5,7 +5,7 @@ import statistics
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from noisycricket.humanize import (HumanDriver, bezier_path, reading_pause,  # noqa: E402
+from legalprivacy.humanize import (HumanDriver, bezier_path, reading_pause,  # noqa: E402
                                    scroll_steps, target_depth)
 
 
@@ -90,7 +90,7 @@ def test_visits_mix_down_up_and_reread_patterns():
 
 
 def test_time_on_page_is_mostly_short_with_a_rare_long_tail():
-    from noisycricket.humanize import sample_dwell
+    from legalprivacy.humanize import sample_dwell
     rng = random.Random(1)
     xs = [sample_dwell(rng) for _ in range(200_000)]
     n = len(xs)

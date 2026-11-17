@@ -93,7 +93,7 @@ def site_of(url: str) -> str | None:
 
 
 def _read_copy(src: str, query: str, args: tuple) -> list[tuple]:
-    tmp = tempfile.mkdtemp(prefix="cricket-hist-")
+    tmp = tempfile.mkdtemp(prefix="legalprivacy-hist-")
     try:
         dst = os.path.join(tmp, "h.sqlite")
         shutil.copy2(src, dst)

@@ -1,17 +1,17 @@
-# docker compose up -d   →   docker compose logs noisycricket   (shows the dashboard link)
+# docker compose up -d   →   docker compose logs legalprivacy   (shows the dashboard link)
 services:
-  noisycricket:
+  legalprivacy:
     build: .
-    image: noisycricket
-    container_name: noisycricket
+    image: legalprivacy
+    container_name: legalprivacy
     restart: unless-stopped
     ports:
       - "127.0.0.1:8765:8765"     # dashboard: this machine only. Keep both sides 8765.
     volumes:
-      - noisycricket-data:/data   # settings and Tor state
+      - legalprivacy-data:/data   # settings and Tor state
     shm_size: "1gb"               # Chromium needs more shared memory than Docker's default
     environment:
       TZ: "Etc/UTC"               # set yours (e.g. America/New_York): noise follows local hours
 
 volumes:
-  noisycricket-data: {}
+  legalprivacy-data: {}

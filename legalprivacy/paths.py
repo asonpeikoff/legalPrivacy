@@ -6,15 +6,25 @@ import sys
 from pathlib import Path
 
 
+def getenv(name: str, default: str | None = None) -> str | None:
+    """LEGALPRIVACY_<name>, or the name it had before the rename (CRICKET_<name>)."""
+    return os.environ.get(f"LEGALPRIVACY_{name}") or os.environ.get(f"CRICKET_{name}") or default
+
+
 def app_dir() -> Path:
-    """Per-user writable directory (config, managed Tor, logs). Created on demand."""
-    override = os.environ.get("CRICKET_HOME")
+    """Per-user writable directory (config, managed Tor, browser cookies). Created on demand.
+    An existing folder from before the rename (noisyCricket) keeps being used, so nothing is lost."""
+    override = getenv("HOME")
     if override:
         base = Path(override)
-    elif sys.platform == "win32":
-        base = Path(os.environ.get("APPDATA", Path.home())) / "noisyCricket"
     else:
-        base = Path.home() / ".noisycricket"
+        if sys.platform == "win32":
+            parent = Path(os.environ.get("APPDATA", Path.home()))
+            base, old = parent / "legalPrivacy", parent / "noisyCricket"
+        else:
+            base, old = Path.home() / ".legalprivacy", Path.home() / ".noisycricket"
+        if not base.exists() and old.exists():
+            base = old
     base.mkdir(parents=True, exist_ok=True)
     return base
 

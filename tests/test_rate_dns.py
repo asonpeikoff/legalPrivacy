@@ -6,13 +6,13 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-os.environ.setdefault("CRICKET_HOME", tempfile.mkdtemp(prefix="cricket-test-"))
+os.environ.setdefault("LEGALPRIVACY_HOME", tempfile.mkdtemp(prefix="legalprivacy-test-"))
 
-from noisycricket.config import ConfigError, DnsConfig, Profile, apply_overrides  # noqa: E402
-from noisycricket.dnsplan import DnsPlan  # noqa: E402
-from noisycricket.rate import RateConfig, RatePlanner, describe, searches_per_hour  # noqa: E402
-from noisycricket.scheduler import Runner, build_lanes  # noqa: E402
-from noisycricket.transports import HitResult  # noqa: E402
+from legalprivacy.config import ConfigError, DnsConfig, Profile, apply_overrides  # noqa: E402
+from legalprivacy.dnsplan import DnsPlan  # noqa: E402
+from legalprivacy.rate import RateConfig, RatePlanner, describe, searches_per_hour  # noqa: E402
+from legalprivacy.scheduler import Runner, build_lanes  # noqa: E402
+from legalprivacy.transports import HitResult  # noqa: E402
 
 
 def test_slider_is_monotonic_and_labelled_with_benchmarks():
@@ -133,8 +133,8 @@ def test_partial_randomness_scales_between_steady_and_random():
 
 
 def test_top_level_stays_gentle_and_no_engine_exceeds_its_hourly_cap():
-    from noisycricket.engines import MAX_SEARCHES_PER_ENGINE_PER_HOUR, _ENGINE_HITS, pick_search_endpoint
-    from noisycricket.rate import searches_per_hour
+    from legalprivacy.engines import MAX_SEARCHES_PER_ENGINE_PER_HOUR, _ENGINE_HITS, pick_search_endpoint
+    from legalprivacy.rate import searches_per_hour
     assert searches_per_hour(10) <= 20
     _ENGINE_HITS.clear()
     rng, t0 = random.Random(1), 1_000_000.0
@@ -144,7 +144,7 @@ def test_top_level_stays_gentle_and_no_engine_exceeds_its_hourly_cap():
 
 
 def test_opennic_filter_keeps_only_passing_encrypted_no_or_anonymized_log_servers():
-    from noisycricket.feeds import parse_opennic_servers
+    from legalprivacy.feeds import parse_opennic_servers
     row = ("<p><span> {feats}</span><span class='host' title=\"(Paris, FR)\"><a id='{h}.dns.opennic.glue' href='x'>{h}</a></span>"
            "<span class='mono ipv4'>{ip}</span><span class='stat' title='{st}'>x</span></p>")
     f = lambda *t: "".join(f"<i style='color:#000;' title='{x}'>i</i>" for x in t)   # noqa: E731
