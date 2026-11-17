@@ -253,7 +253,6 @@ def _looks_like_page(p) -> bool:
 
 # --- raw crafted DNS packets (clearnet DNS engine, stdlib only) ---
 
-_DNS_SERVERS = ["1.1.1.1", "9.9.9.8", "208.67.222.222", "94.140.14.14"]
 
 
 def build_dns_query(domain: str, qid: int) -> bytes:
@@ -299,16 +298,30 @@ class DnsNoise:
     never generated: a stream of NXDOMAINs is itself a tell.
     """
 
-    def __init__(self, rng: random.Random, words: list[str] | None = None, domains=None):
+    def __init__(self, rng: random.Random, words: list[str] | None = None, domains=None, plan=None):
         from .domains import DomainPool
         self.rng = rng
         self.domains = domains or DomainPool(rng)
+        self.plan = plan                     # DnsPlan; None = your normal (system) resolver
 
     def make_query(self) -> tuple[bytes, str, str]:
-        """(packet, domain, resolver_ip) — firing is the scheduler's probe step."""
+        """(packet, domain, server). server "system" = the OS resolver; else a resolver IP."""
         domain = self.domains.hostname()
         packet = build_dns_query(domain, qid=self.rng.randint(0, 0xFFFF))
-        return packet, domain, self.rng.choice(_DNS_SERVERS)
+        server = self.plan.pick()[0] if self.plan is not None else "system"
+        return packet, domain, server
+
+    @staticmethod
+    def resolve_system(domain: str, timeout: float = 4.0) -> bool:
+        """Look the name up exactly as any app would: through the OS resolver (router/ISP/VPN DNS)."""
+        import concurrent.futures
+        ex = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        try:
+            return bool(ex.submit(socket.getaddrinfo, domain, 443, 0, socket.SOCK_STREAM).result(timeout=timeout))
+        except Exception:
+            return False
+        finally:
+            ex.shutdown(wait=False)
 
     def fire(self, packet: bytes, server: str, timeout: float = 3.0) -> bool:
         """Send one UDP query; return True if a parseable answer came back."""

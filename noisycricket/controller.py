@@ -21,7 +21,9 @@ from . import __version__
 from .config import (ConfigError, Profile, apply_overrides, load_profile,
                      profile_to_dict, save_profile)
 from .engines import load_wordlist
+from .dnsplan import DnsPlan
 from .domains import DomainPool
+from .rate import RatePlanner, describe as describe_rate
 from .events import EventLog
 from .feeds import FeedStore
 from .queries import QueryConfig, QuerySource
@@ -86,18 +88,16 @@ class Controller:
         intensity: light|normal|heavy       tor: off|onion
         clearnet_via_tor: bool (advanced, default False)   autostart: bool
         """
-        intensity = answers.get("intensity", "normal")
-        if intensity not in PRESETS:
-            raise ConfigError("intensity must be light, normal or heavy")
-        raw: dict[str, Any] = {"engines": {n: {"budget_per_day": v} for n, v in PRESETS[intensity].items()},
+        raw: dict[str, Any] = {"rate": {"mode": answers.get("rate_mode", "random"),
+                                        "level": float(answers.get("level", 5))},
                                "transports": {"tor": {"enabled": answers.get("tor", "off") != "off",
                                                       "onion": True,
                                                       "clearnet_via_tor": bool(answers.get("clearnet_via_tor", False))}}}
         self.apply_config(raw, save=False)
-        self.app["intensity"] = intensity
         self.app["autostart"] = bool(answers.get("autostart", False))
         self._save()
-        self.log.info("app", f"Setup saved: intensity={intensity}, tor={answers.get('tor', 'off')}.")
+        self.log.info("app", f"Setup saved: {self.profile.rate.mode} noise at level {self.profile.rate.level:g}, "
+                             f"tor={answers.get('tor', 'off')}.")
         return self.state()
 
     def apply_config(self, raw: dict[str, Any], save: bool = True) -> dict:
@@ -243,7 +243,9 @@ class Controller:
             import random as _r
             self.runner = Runner(profile=prof, lanes=lanes, wordlist=words, log=self.log,
                                  stop_event=self._stop, sleep_fn=lambda s: self._stop.wait(s),
-                                 queries=self._query_source(words), domains=DomainPool(_r.Random(), self.feeds))
+                                 queries=self._query_source(words), domains=DomainPool(_r.Random(), self.feeds),
+                                 rate=RatePlanner(_r.Random(), prof.rate),
+                                 dns_plan=DnsPlan(_r.Random(), prof.dns, self.feeds.items("opennic")))
             self._thread = threading.Thread(target=self._run_loop, daemon=True, name="cricket-runner")
             self._thread.start()
             self.log.info("app", "Started: lanes = " + ", ".join(
@@ -282,7 +284,8 @@ class Controller:
             import random as _r
             r = Runner(profile=prof, lanes=lanes, wordlist=words, log=self.log, sleep_fn=lambda s: None,
                        local_hour_fn=lambda: 12.0, queries=self._query_source(words),
-                       domains=DomainPool(_r.Random(), self.feeds))
+                       domains=DomainPool(_r.Random(), self.feeds),
+                       dns_plan=DnsPlan(_r.Random(), prof.dns, self.feeds.items("opennic")))
             try:
                 r.run_once(wait=False)
             except MaxFailuresExceeded as exc:
@@ -307,7 +310,15 @@ class Controller:
             "config_path": self.profile_path, "log_path": str(app_dir() / "cricket.log"),
             "presets": PRESETS, "browser": self.browser_info(), "feeds": self.feeds.status(),
             "feeds_refreshing": self.feeds.refreshing,
+            "rate_info": [describe_rate(lv, self._search_share()) for lv in range(1, 11)],
+            "hour_target": round(self.runner.hour_target) if self.runner and self.running else None,
+            "opennic": [x.split("|") for x in self.feeds.items("opennic")],
         }
+
+    def _search_share(self) -> float:
+        e = self.profile.engines
+        on = {n: c.budget_per_day for n, c in e.items() if c.enabled and (n != "onion" or self._tor_cfg().enabled)}
+        return (on.get("search", 0) / sum(on.values())) if sum(on.values()) else 0.3
 
     def hits(self, after: int = 0) -> list[dict]:
         if not self.runner:

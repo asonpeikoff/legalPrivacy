@@ -113,6 +113,8 @@ class Runner:
     queries: object | None = None      # QuerySource shared by all lanes (live/real queries)
     domains: object | None = None      # DomainPool (real popular domains)
     click_prob: float = 0.6            # chance a search is followed by opening a result
+    rate: object | None = None         # RatePlanner: hourly plan (app mode). None = daily budgets (CLI/tests)
+    dns_plan: object | None = None     # DnsPlan: which resolver DNS noise uses
 
     def __post_init__(self) -> None:
         self.rng = random.Random()
@@ -124,6 +126,11 @@ class Runner:
         self.day = time.localtime().tm_yday
         self.paused = False
         self._hit_seq = 0
+        self.day_failures = 0           # daily failure caps (independent of hourly budget resets)
+        self.day_onion_failures = 0
+        self.hour: int | None = None
+        self.hour_target = 0.0
+        self._pace: tuple[float, float] | None = None   # (min_delay, max_delay) for this hour
 
     def _emit(self, level: str, source: str, msg: str, **data) -> None:
         if self.log:
@@ -148,12 +155,49 @@ class Runner:
             })
         return {"lanes": lanes, "paused": self.paused, "uptime": int(time.time() - self.started_at)}
 
+    # ── hourly plan (app mode) ──────────────────────────────────────────────
+    def engine_shares(self) -> dict[tuple[str, str], float]:
+        """(lane, engine) -> share of all actions, from the engines' relative weights."""
+        w = {}
+        for lane in self.lanes:
+            for e in lane.engines:
+                w[(lane.name, e)] = max(0.0, float(self.profile.engines[e].budget_per_day))
+        tot = sum(w.values()) or 1.0
+        return {k: v / tot for k, v in w.items()}
+
+    def _apply_pace(self, pacer: Pacer | None) -> None:
+        if pacer is None or self._pace is None:
+            return
+        pacer.min_delay, pacer.max_delay = self._pace
+        pacer.min_gap = min(pacer.min_gap, self._pace[0])
+        pacer.diurnal = False              # the hourly plan already follows the day/night curve
+
+    def plan_hour(self, hour: int) -> float:
+        """Set this hour's per-engine allowances and pacing from the RatePlanner."""
+        shares = self.engine_shares()
+        search_share = sum(v for (ln, e), v in shares.items() if e == "search") or 0.3
+        total = self.rate.actions_for_hour(hour, search_share)
+        self.hour, self.hour_target = hour, total
+        for lane in self.lanes:
+            for e, b in lane.budgets.items():
+                x = total * shares.get((lane.name, e), 0)
+                b.per_day = int(x) + (1 if self.rng.random() < x - int(x) else 0)   # unbiased rounding
+                b.spent = 0
+        gap = 3600.0 / max(total, 0.25)
+        self._pace = (max(1.0, gap * 0.35), max(2.0, gap * 1.35))
+        for lane in self.lanes:
+            self._apply_pace(lane.pacer)
+        self._emit("info", "scheduler", f"Hour {hour:02d}:00 plan: about {total:.0f} actions "
+                   f"({self.profile.rate.mode}, level {self.profile.rate.level:g}).")
+        return total
+
     def reset_budgets(self) -> None:
         for lane in self.lanes:
             for b in lane.budgets.values():
                 b.spent = b.failures = 0
                 b.history.clear()
             lane.hits_by_identity = lane.consecutive_failures = 0
+        self.day_failures = self.day_onion_failures = 0
         self._emit("info", "scheduler", "New day — daily budgets reset.")
 
     def _probe(self, lane: Lane, identity: Identity, target: Target) -> HitResult:
@@ -174,10 +218,21 @@ class Runner:
         if not domain:
             return HitResult(None, error="malformed dns target")
         packet = build_dns_query(domain, qid=self.rng.randint(0, 0xFFFF))
+        if server == "system":
+            if DnsNoise.resolve_system(domain, timeout=target.timeout):
+                return HitResult(200, "")
+            return HitResult(None, error="lookup via your normal DNS failed")
         noise = DnsNoise(self.rng, self.wordlist, self.domains)
         if noise.fire(packet, server, timeout=target.timeout):
             return HitResult(200, "")
         return HitResult(None, error=f"dns query to {server} failed")
+
+    def _dns_label(self, server: str) -> str:
+        if self.dns_plan is not None:
+            for ip, label in self.dns_plan.secure_servers():
+                if ip == server:
+                    return f"{label} ({ip})"
+        return server
 
     def _local_hour(self) -> float | None:
         if self.local_hour_fn:
@@ -198,6 +253,7 @@ class Runner:
                                pace_multiplier=lane.identity.pace_multiplier,
                                realtime_scale=self.profile.realtime_scale)
             lane.pacer.sleep_fn = self.sleep_fn
+            self._apply_pace(lane.pacer)
             lane.hits_by_identity = 0
             renew = getattr(lane.transport, "renew_circuits", None)
             if renew is not None:
@@ -251,8 +307,12 @@ class Runner:
         lane.last_latency_ms = getattr(result, "latency_ms", None)
         # Onion services are routinely offline: they don't count toward the clearnet failure cap
         # (they get their own, more generous one).
-        total_failures = sum(b.failures for l in self.lanes for n, b in l.budgets.items() if n != "onion")
-        onion_failures = sum(b.failures for l in self.lanes for n, b in l.budgets.items() if n == "onion")
+        if not result.ok:
+            if eng_name == "onion":
+                self.day_onion_failures += 1
+            else:
+                self.day_failures += 1
+        total_failures, onion_failures = self.day_failures, self.day_onion_failures
         self._record_hit(lane, eng_name, identity, target, result)
         if total_failures > self.profile.daily_max_failures or \
                 onion_failures > self.profile.daily_max_failures * 3:
@@ -360,9 +420,10 @@ class Runner:
                 # Arbitrary UDP cannot traverse Tor circuits: DoH over the circuit.
                 fac = DohNoise(rng=self.rng, words=words, domains=self.domains)
                 return fac.make(identity)
-            fac = DnsNoise(rng=self.rng, words=words, domains=self.domains)
+            fac = DnsNoise(rng=self.rng, words=words, domains=self.domains, plan=self.dns_plan)
             _packet, domain, server = fac.make_query()
-            return Target(url=f"dns://{server}/{domain}", kind="dns", timeout=3.0)
+            via = "your normal DNS" if server == "system" else self._dns_label(server)
+            return Target(url=f"dns://{server}/{domain}", kind="dns", timeout=4.0, note=f"via {via}")
         raise ValueError(f"unknown engine '{eng_name}'")
 
     def run(self) -> dict[str, dict[str, int]]:
@@ -382,10 +443,16 @@ class Runner:
         """Long-running mode for the app: honours stop/pause, resets budgets daily."""
         self._emit("info", "scheduler", "Noise generation started.")
         while not self._stopped():
-            today = time.localtime().tm_yday
-            if today != self.day:
-                self.day = today
+            now = time.localtime()
+            if now.tm_yday != self.day:
+                self.day = now.tm_yday
                 self.reset_budgets()
+                self.paused = False if self.paused == "failures" else self.paused
+            if self.rate is not None and now.tm_hour != self.hour:
+                total = self.plan_hour(now.tm_hour)
+                # start somewhere inside the hour, never in a burst on the hour mark
+                self.sleep_fn(self.rng.uniform(0, min(600.0, 3600.0 / max(total, 0.25))) * self.profile.realtime_scale)
+                continue
             if self.paused:
                 self.sleep_fn(1.0)
                 continue
@@ -393,7 +460,7 @@ class Runner:
                 worked = self.run_once()
             except MaxFailuresExceeded as exc:
                 self._emit("error", "scheduler", f"{exc}. Pausing until tomorrow.")
-                self.paused = True
+                self.paused = "failures"           # auto-resumes at the next day reset
                 continue
             if not worked:
                 self.sleep_fn(2.0)       # all budgets spent or lanes gated: idle politely

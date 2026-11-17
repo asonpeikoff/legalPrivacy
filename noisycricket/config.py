@@ -8,6 +8,8 @@ from typing import Any
 
 import yaml
 
+from .rate import RateConfig
+
 DEFAULT_TOR_SOCKS = "127.0.0.1:9050"
 DEFAULT_TOR_CONTROL = "127.0.0.1:9051"
 DEFAULT_WORDLIST = "data/wordlists/words.txt"
@@ -92,6 +94,29 @@ class RelayConfig:
 
 
 @dataclass
+class DnsConfig:
+    """Which resolver the DNS noise uses. See noisycricket/dnsplan.py."""
+    mode: str = "system"          # system (your normal DNS, recommended) | secure | mix
+    opennic: bool = True          # include OpenNIC no-log servers in the "secure" set
+    quad9: bool = False           # include Quad9 (9.9.9.9 / 149.112.112.112) in the "secure" set
+    custom: list[str] = field(default_factory=list)   # extra resolver IPs, your choice
+    system_share: float = 0.7     # mix mode: share of time on your normal DNS
+    block_minutes: list[int] = field(default_factory=lambda: [10, 60])   # mix mode: switch every 10-60 min
+
+    def validate(self) -> None:
+        import ipaddress
+        if self.mode not in ("system", "secure", "mix"):
+            raise ConfigError("dns.mode must be system, secure or mix")
+        for ip in self.custom:
+            try:
+                ipaddress.ip_address(ip.strip())
+            except ValueError as exc:
+                raise ConfigError(f"dns.custom: '{ip}' is not an IP address") from exc
+        if not 0 <= self.system_share <= 1:
+            raise ConfigError("dns.system_share must be between 0 and 1")
+
+
+@dataclass
 class QuerySources:
     """Where search queries come from (mixed; none dominates). See queries.py."""
     live: bool = True        # Google Trends, Wikipedia most-read, BBC headlines (refreshed daily)
@@ -117,6 +142,8 @@ class Profile:
     relay: RelayConfig = field(default_factory=RelayConfig)
     daily_max_failures: int = 30
     queries: "QuerySources" = field(default_factory=lambda: QuerySources())
+    rate: "RateConfig" = field(default_factory=lambda: RateConfig())
+    dns: "DnsConfig" = field(default_factory=lambda: DnsConfig())
 
     def active_engines(self, transport: str) -> list[str]:
         """Engines a lane runs. Onion is Tor-only; clearnet engines run on Tor
@@ -160,6 +187,8 @@ def profile_to_dict(profile: Profile) -> dict[str, Any]:
         "daily_max_failures": profile.daily_max_failures,
         "contribute": {"relay": asdict(profile.relay)},
         "queries": asdict(profile.queries),
+        "rate": asdict(profile.rate),
+        "dns": asdict(profile.dns),
     }}
 
 
@@ -195,6 +224,21 @@ def apply_overrides(profile: Profile, raw: dict[str, Any]) -> Profile:
         merged = profile.queries.__dict__ | p["queries"]
         profile.queries = QuerySources(**{k: bool(v) for k, v in merged.items()
                                           if k in QuerySources.__dataclass_fields__})
+    if p.get("rate"):
+        merged = profile.rate.__dict__ | p["rate"]
+        profile.rate = RateConfig(**{k: v for k, v in merged.items() if k in RateConfig.__dataclass_fields__})
+        profile.rate.level = float(profile.rate.level)
+        try:
+            profile.rate.validate()
+        except ValueError as exc:
+            raise ConfigError(str(exc)) from exc
+    if p.get("dns"):
+        merged = profile.dns.__dict__ | p["dns"]
+        if isinstance(merged.get("custom"), str):
+            merged["custom"] = [x.strip() for x in merged["custom"].replace(",", "\n").splitlines() if x.strip()]
+        profile.dns = DnsConfig(**{k: v for k, v in merged.items() if k in DnsConfig.__dataclass_fields__})
+        profile.dns.system_share = float(profile.dns.system_share)
+        profile.dns.validate()
     if "daily_max_failures" in p:
         profile.daily_max_failures = int(p["daily_max_failures"])
     for name, eng in profile.engines.items():

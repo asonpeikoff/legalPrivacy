@@ -40,6 +40,7 @@ NEWS_FEEDS = [f"https://feeds.bbci.co.uk/news/{p}rss.xml" for p in
                "entertainment_and_arts/")]
 TRANCO_URL = "https://tranco-list.eu/top-1m.csv.zip"
 DENY_URL = "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/fakenews-gambling-porn/hosts"
+OPENNIC_URL = "https://api.opennicproject.org/geoip/?json&ipv=4&anon=true&pct=95&res=50"
 DS_ROWS = "https://datasets-server.huggingface.co/rows"
 DATASETS = [  # (dataset, config, split, field, conservative max row index)
     ("microsoft/ms_marco", "v2.1", "train", "query", 800_000),
@@ -47,7 +48,7 @@ DATASETS = [  # (dataset, config, split, field, conservative max row index)
 ]
 # A shipped snapshot (data/feeds/snapshot.json.gz) means users never need to fetch these.
 # If they opt in to auto-refresh, sources are re-fetched only this rarely.
-TTL = {k: 90 * 86400 for k in ("trends", "wiki", "news", "dataset", "tranco", "deny")}
+TTL = {k: 90 * 86400 for k in ("trends", "wiki", "news", "dataset", "tranco", "deny", "opennic")}
 _SKIP_WIKI = re.compile(r"^(Main_Page|Special:|Wikipedia:|Portal:|File:|Help:|Category:|Template:|Talk:|User:|-$)")
 
 
@@ -83,7 +84,8 @@ class FeedStore:
         self.errors: dict[str, str] = {}
         self.fetchers: dict[str, Callable[[], list]] = fetchers or {
             "deny": self._fetch_deny, "trends": self._fetch_trends, "wiki": self._fetch_wiki,
-            "news": self._fetch_news, "dataset": self._fetch_dataset, "tranco": self._fetch_tranco}
+            "news": self._fetch_news, "dataset": self._fetch_dataset, "tranco": self._fetch_tranco,
+            "opennic": self._fetch_opennic}
         self.refreshing = False
         self._load()
 
@@ -236,6 +238,18 @@ class FeedStore:
                             break
                     if row and row[0].isdigit() and int(row[0]) > 25_000:
                         break
+        return out
+
+    def _fetch_opennic(self) -> list[str]:
+        """OpenNIC Tier-2 resolvers with anonymized logs, >=95% reliable, one per admin: 'ip|name|loc'."""
+        import ipaddress
+        out = []
+        for s in _get(OPENNIC_URL).json():
+            try:
+                ipaddress.IPv4Address(s["ip"])
+            except (KeyError, ValueError):
+                continue
+            out.append(f"{s['ip']}|{s.get('short', '')}|{s.get('loc', '')}")
         return out
 
     def _fetch_deny(self) -> list[str]:
