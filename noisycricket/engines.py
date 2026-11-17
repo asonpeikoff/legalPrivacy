@@ -192,6 +192,9 @@ def _unwrap_redirect(href: str, base: str) -> str:
     return absu
 
 
+_ENGINE_BRANDS = ("google", "duckduckgo", "bing", "brave", "startpage", "ecosia", "mojeek", "qwant", "microsoft")
+
+
 def extract_result_links(html: str, search_url: str, limit: int = 12) -> list[str]:
     """Organic result URLs from a SERP's HTML, in page order, one per site."""
     from .safety import safe_domain
@@ -202,11 +205,15 @@ def extract_result_links(html: str, search_url: str, limit: int = 12) -> list[st
         pass
     seen_hosts: set[str] = set()
     out: list[str] = []
-    for href in parser.links:
+    for href, text in zip(parser.links, parser.texts):
         u = _unwrap_redirect(href, search_url)
         p = urllib.parse.urlparse(u)
         host = (p.hostname or "").lower()
         if p.scheme not in ("http", "https") or not host or any(h in host for h in _SEARCH_HOSTS):
+            continue
+        if any(b in u.lower() for b in _ENGINE_BRANDS):        # the engine's own social profiles, apps…
+            continue
+        if len(" ".join(text.split())) < 12:                    # organic results have real titles
             continue
         if host in seen_hosts or not safe_domain(host):
             continue
@@ -253,15 +260,29 @@ class SearchTargetFactory:
 
 
 class _LinkExtractor(HTMLParser):
+    """Collects hrefs (self.links) and, in parallel, each link's visible text (self.texts)."""
+
     def __init__(self) -> None:
         super().__init__()
         self.links: list[str] = []
+        self.texts: list[str] = []
+        self._open: int | None = None
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag.lower() == "a":
             for k, v in attrs:
                 if k.lower() == "href" and v:
                     self.links.append(v)
+                    self.texts.append("")
+                    self._open = len(self.links) - 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() == "a":
+            self._open = None
+
+    def handle_data(self, data: str) -> None:
+        if self._open is not None:
+            self.texts[self._open] += data
 
 
 @dataclass

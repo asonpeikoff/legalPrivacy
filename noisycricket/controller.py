@@ -165,6 +165,73 @@ class Controller:
                                   bridges=cfg.bridges, auto_install=cfg.auto_install)
         return self.tor
 
+    # ── DNS resolver table: health + verification ──────────────────────────
+    def _fresh_dns_plan(self) -> DnsPlan:
+        """One shared plan (keeps health results); re-checks resolvers when they'll be used."""
+        plan = getattr(self, "dns_plan", None)
+        if plan is None:
+            plan = self.dns_plan = DnsPlan(random.Random(), self.profile.dns, self.feeds.items("opennic"))
+        plan.cfg = self.profile.dns
+        if self.profile.dns.mode != "system":
+            plan.check_async()
+            if not getattr(self, "_dns_timer", False):
+                self._dns_timer = True
+
+                def loop():
+                    while True:
+                        time.sleep(600)
+                        if self.running and self.profile.dns.mode != "system":
+                            plan.check_async()
+                threading.Thread(target=loop, daemon=True, name="dns-recheck").start()
+        return plan
+
+    def check_dns(self) -> None:
+        plan = getattr(self, "dns_plan", None) or self._fresh_dns_plan()
+        plan.cfg = self.profile.dns
+        plan.check_async()
+
+    def dns_report(self) -> dict:
+        plan = getattr(self, "dns_plan", None)
+        if plan is None:
+            plan = self.dns_plan = DnsPlan(random.Random(), self.profile.dns, self.feeds.items("opennic"))
+        plan.cfg = self.profile.dns
+        return plan.report()
+
+    def tor_selftest(self) -> None:
+        """User-initiated check: does traffic leave through Tor, and does an onion site load?"""
+        tm = self.tor_manager()
+        self.tor_test = {"running": True, "ts": time.time()}
+
+        def go():
+            import requests
+            from .onion import BUILTIN_ONION_SEEDS
+            from .transports import explain_tor_error
+            res = {"running": False, "ts": time.time()}
+            if not tm.ready:
+                res["summary"] = "Tor isn't ready yet — start it and wait for 100%."
+                self.tor_test = res
+                return
+            proxies = {"http": f"socks5h://test:test@{tm.socks_addr}", "https": f"socks5h://test:test@{tm.socks_addr}"}
+            try:
+                t0 = time.time()
+                j = requests.get("https://check.torproject.org/api/ip", proxies=proxies, timeout=60).json()
+                res["exit"] = {"ok": bool(j.get("IsTor")), "ip": j.get("IP"), "ms": round((time.time() - t0) * 1000)}
+            except Exception as exc:
+                res["exit"] = {"ok": False, "error": explain_tor_error(str(exc), tm.socks_addr)}
+            url = next(u for n, u in BUILTIN_ONION_SEEDS if n == "Tor Project")
+            try:
+                t0 = time.time()
+                r = requests.get(url, proxies=proxies, timeout=90)
+                res["onion"] = {"ok": r.status_code < 400, "status": r.status_code, "ms": round((time.time() - t0) * 1000)}
+            except Exception as exc:
+                res["onion"] = {"ok": False, "error": explain_tor_error(str(exc), tm.socks_addr)}
+            ok = res["exit"]["ok"] and res["onion"]["ok"]
+            res["summary"] = ("Tor works: traffic leaves through the Tor network and onion sites load."
+                              if ok else "Tor test found a problem — see details.")
+            self.log.add("info" if ok else "warn", "tor", "Self-test: " + res["summary"])
+            self.tor_test = res
+        threading.Thread(target=go, daemon=True, name="tor-selftest").start()
+
     # ── Tools tab: network checks (user-initiated, clearnet only) ───────────
     def resolvers_check(self) -> dict:
         from . import nettools
@@ -418,6 +485,7 @@ class Controller:
         d = tm.snapshot()
         d["enabled"] = self._tor_cfg().enabled
         d["circuits"] = tm.circuits()
+        d["selftest"] = getattr(self, "tor_test", None)
         return d
 
     # ── realism helpers ─────────────────────────────────────────────────────
@@ -532,7 +600,7 @@ class Controller:
                                  stop_event=self._stop, sleep_fn=lambda s: self._stop.wait(s),
                                  queries=self._query_source(words), domains=self._domain_pool(_r),
                                  rate=RatePlanner(_r.Random(), prof.rate),
-                                 dns_plan=DnsPlan(_r.Random(), prof.dns, self.feeds.items("opennic")),
+                                 dns_plan=self._fresh_dns_plan(),
                                  mix=True)
             self._thread = threading.Thread(target=self._run_loop, daemon=True, name="cricket-runner")
             self._thread.start()
@@ -575,7 +643,7 @@ class Controller:
             r = Runner(profile=prof, lanes=lanes, wordlist=words, log=self.log, sleep_fn=lambda s: None,
                        local_hour_fn=lambda: 12.0, queries=self._query_source(words),
                        domains=self._domain_pool(_r),
-                       dns_plan=DnsPlan(_r.Random(), prof.dns, self.feeds.items("opennic")))
+                       dns_plan=self._fresh_dns_plan())
             try:
                 r.run_once(wait=False)
             except MaxFailuresExceeded as exc:
@@ -607,6 +675,7 @@ class Controller:
             "rate_info": [describe_rate(lv, self._search_share()) for lv in range(1, 11)],
             "hour_target": round(self.runner.hour_target) if self.runner and self.running else None,
             "opennic": [x.split("|") for x in self.feeds.items("opennic")],
+            "dns": self.dns_report(),
         }
 
     def _search_share(self) -> float:

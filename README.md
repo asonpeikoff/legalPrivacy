@@ -142,9 +142,9 @@ Nothing is sent anywhere; only the scores are kept.
 |---|---|
 | **Mix** (default) | Switches between your normal DNS and the secure resolvers in random 10–60 minute blocks, half the time each (adjustable) |
 | **Your normal DNS** | Your computer's own resolver: router, ISP, VPN or your system's encrypted DNS |
-| **Secure resolvers only** | OpenNIC servers that pass OpenNIC's checks, keep no logs (preferred) or anonymized logs, and offer DNSCrypt, DoH or DoT; optionally Quad9 and your own |
+| **Secure resolvers only** | Only the resolvers in the list in Settings. By default: OpenNIC ns2.de `80.152.203.134`, ns3.de `193.31.24.55` and ns4.de `80.153.146.105` as primaries, and Quad9 `9.9.9.9` as a fallback used only when they're down or slower than 250 ms. Every row is editable; extras: the whole OpenNIC directory, Quad9's pair, your own IPs. |
 
-Each lookup in Activity shows which resolver answered it.
+Each lookup in Activity shows which resolver answered it. **Check now** times each resolver and asks it for `whoami.akamai.net`, which reveals the machine that really answered. If something on your network secretly answers in their place (some ISPs, workplaces, hotels and cloud hosts do), the list says **⚠ intercepted**.
 
 ## Extras (Settings)
 
@@ -160,6 +160,8 @@ All optional:
 - **Browser-like DNS** (on by default): also asks for IPv6 and HTTPS records
 
 ## Tor (optional)
+
+**Test Tor** (Tor tab) checks that traffic really leaves through Tor and that the Tor Project's onion site loads. Tor errors are shown in plain English ("onion site is offline" rather than "0xf0").
 
 | Switch | Default | What it does |
 |---|---|---|
