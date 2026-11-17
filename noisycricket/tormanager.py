@@ -128,12 +128,17 @@ class TorManager:
     def __init__(self, log: EventLog, mode: str = "managed",
                  socks: str = "127.0.0.1:9050", control: str | None = "127.0.0.1:9051",
                  control_password: str | None = None, bridges: list[str] | None = None,
+                 bridge_mode: str = "off", bridge_auto: bool = True,
                  auto_install: bool = True):
         self.log = log
         self.mode = mode                      # managed | external
         self.ext_socks, self.ext_control = socks, control
         self.control_password = control_password
         self.bridges = [b.strip() for b in (bridges or []) if b.strip()]
+        self.bridge_mode = bridge_mode          # off | obfs4 | snowflake | meek | custom (may change by itself)
+        self.configured_bridge_mode = bridge_mode   # what the user chose
+        self.bridge_auto = bridge_auto          # try built-in bridges if a direct connection gets stuck
+        self._auto_tried: list[str] = []
         self.auto_install = auto_install
 
         self.state = "stopped"   # stopped|installing|starting|bootstrapping|ready|error
@@ -241,7 +246,8 @@ class TorManager:
             "installed_bundle": (tor_dir() / "bundle" / "tor" / _EXE).exists(),
             "pid": self.pid, "uptime": uptime,
             "socks": self.socks_addr if self.socks_port else None,
-            "control": self.control_addr, "bridges": len(self.bridges),
+            "control": self.control_addr, "bridges": len(self.effective_bridges()),
+            "bridge_mode": self.bridge_mode, "builtin": {k: len(v) for k, v in self.builtin_bridges().items()},
             "install_progress": self.install_progress,
             "supported_platform": platform_key() is not None,
             "hint": self._hint(uptime),
@@ -339,6 +345,9 @@ class TorManager:
         self.bootstrap_pct = 0
         threading.Thread(target=self._pump_output, args=(self._proc,), daemon=True,
                          name="tor-log").start()
+        if self.bridge_auto and self.bridge_mode in ("off",) + tuple(self._auto_tried):
+            threading.Thread(target=self._auto_bridges_watch, args=(self.started_at,), daemon=True,
+                             name="tor-bridge-assist").start()
         self._start_monitor()
 
     def _write_torrc(self, data_dir: Path) -> Path:
@@ -357,25 +366,82 @@ class TorManager:
         for name, key in (("geoip", "GeoIPFile"), ("geoip6", "GeoIPv6File")):
             if (bundle_data / name).exists():
                 lines.append(f"{key} {_torrc_quote(bundle_data / name)}")
-        if self.bridges:
+        bridges = self.effective_bridges()
+        if bridges:
             lines.append("UseBridges 1")
-            for transport in sorted({b.split()[0] for b in self.bridges
-                                     if b.split()[0].isalpha() and not b.split()[0].isdigit()}):
-                exe = self._pt_binary(transport)
-                if exe:
-                    lines.append(f"ClientTransportPlugin {transport} exec {exe}")
+            for transport in sorted({b.split()[0] for b in bridges if not b.split()[0][0].isdigit()}):
+                line = self._pt_line(transport)
+                if line:
+                    lines.append(line)
                 else:
-                    self.log.warn("tor", f"No pluggable-transport binary found for '{transport}'.")
-            lines += [f"Bridge {b}" for b in self.bridges]
+                    self.log.warn("tor", f"No pluggable-transport program found for '{transport}' bridges.")
+            lines += [f"Bridge {b}" for b in bridges]
+            self.log.info("tor", f"Using {len(bridges)} {self.bridge_mode if self.bridge_mode != 'custom' else 'saved'} "
+                                 "bridge(s).")
         path = tor_dir() / "torrc"
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return path
+
+    # ── bridges ───────────────────────────────────────────────────────────
+    def pt_config(self) -> dict:
+        """The bundle's own pluggable_transports/pt_config.json (built-in bridges + how to run each PT)."""
+        binary = self.binary or find_tor_binary()
+        if not binary:
+            return {}
+        p = Path(binary).resolve().parent / "pluggable_transports" / "pt_config.json"
+        try:
+            import json
+            return json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+    def builtin_bridges(self) -> dict[str, list[str]]:
+        return {k: list(v) for k, v in (self.pt_config().get("bridges") or {}).items()}
+
+    def effective_bridges(self) -> list[str]:
+        if self.bridge_mode == "custom":
+            return list(self.bridges)
+        if self.bridge_mode in ("obfs4", "snowflake", "meek"):
+            return self.builtin_bridges().get(self.bridge_mode, [])
+        return []
+
+    def _pt_line(self, transport: str) -> str | None:
+        """A ClientTransportPlugin line: from the bundle's pt_config.json when present, else by binary name."""
+        pt_dir = Path(self.binary).resolve().parent / "pluggable_transports"
+        for entry in (self.pt_config().get("pluggableTransports") or {}).values():
+            m = re.match(r"ClientTransportPlugin\s+(\S+)\s+exec\s+(.*)$", entry)
+            if m and transport in m.group(1).split(","):
+                cmd = m.group(2).replace("${pt_path}", str(pt_dir) + os.sep)
+                return f"ClientTransportPlugin {transport} exec {cmd}"
+        exe = self._pt_binary(transport)
+        return f"ClientTransportPlugin {transport} exec {exe}" if exe else None
+
+    def _auto_bridges_watch(self, started: float) -> None:
+        """Like Tor Browser's Connection Assist: a direct connection stuck early -> built-in bridges."""
+        while not self._stop_evt.is_set() and self.started_at == started:
+            time.sleep(5)
+            if self.state == "ready" or self.state in ("stopped", "error"):
+                return
+            if time.time() - started > 75 and self.bootstrap_pct < 30:
+                order = [m for m in ("obfs4", "snowflake") if m not in self._auto_tried
+                         and self.builtin_bridges().get(m)]
+                if not order:
+                    self.log.warn("tor", "Tor still can't connect, even with built-in bridges. Get bridges for "
+                                         "your country on the Tor tab, or from bridges.torproject.org.")
+                    return
+                mode = order[0]
+                self._auto_tried.append(mode)
+                self.log.warn("tor", f"Tor can't seem to connect directly; your network may block it. "
+                                     f"Trying the built-in {mode} bridges.")
+                self.bridge_mode = mode
+                self.restart()
+                return
 
     def _pt_binary(self, transport: str) -> str | None:
         pt_dir = Path(self.binary).resolve().parent / "pluggable_transports"
         names = {"obfs4": ["lyrebird", "obfs4proxy"], "meek_lite": ["lyrebird"],
                  "webtunnel": ["lyrebird"], "conjure": ["conjure-client"],
-                 "snowflake": ["snowflake-client"]}.get(transport, [transport])
+                 "snowflake": ["lyrebird", "snowflake-client"]}.get(transport, [transport])
         for n in names:
             for cand in (pt_dir / n, pt_dir / f"{n}.exe"):
                 if cand.exists():
@@ -543,3 +609,25 @@ def _safe_extract(archive: Path, target: Path) -> None:
             if m.issym() or m.islnk():
                 continue                       # bundles don't need links; skip for safety
             tf.extract(m, target)
+
+
+MOAT = "https://bridges.torproject.org/moat/circumvention/settings"
+
+
+def fetch_bridges_for_country(country: str = "") -> list[dict]:
+    """Ask the Tor Project's bridge service which bridges work in a country ('' = detect from this IP).
+    Returns [{"type": "obfs4", "lines": [...]}]. Contacts bridges.torproject.org directly."""
+    import json as _json
+    body = _json.dumps({"country": country.lower()[:2], "transports": ["obfs4", "snowflake", "webtunnel", "meek"]}
+                       if country else {"transports": ["obfs4", "snowflake", "webtunnel", "meek"]}).encode()
+    req = urllib.request.Request(MOAT, data=body, method="POST",
+                                 headers={"Content-Type": "application/vnd.api+json",
+                                          "User-Agent": "noisyCricket-bridges"})
+    with urllib.request.urlopen(req, timeout=30) as r:          # nosec - fixed https host
+        data = _json.loads(r.read().decode())
+    out = []
+    for s in data.get("settings") or []:
+        b = s.get("bridges") or {}
+        if b.get("bridge_strings"):
+            out.append({"type": b.get("type", "?"), "lines": list(b["bridge_strings"])})
+    return out

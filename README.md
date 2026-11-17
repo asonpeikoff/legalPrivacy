@@ -184,6 +184,15 @@ All optional:
 
 ## Tor (optional)
 
+**Bridges** (Tor tab), for networks that block Tor:
+- **Built-in obfs4, Snowflake or meek:** taken from the official Tor bundle's own list, so they stay current with each Tor update.
+- **My bridges:** your saved lines.
+- **Automatic** (on by default): if Tor can't connect directly within about a minute, it tries the built-in obfs4 bridges, then Snowflake, like Tor Browser's Connection Assist.
+- **Get bridges that work here:** asks the Tor Project's bridge service (bridges.torproject.org) for your country and saves the answer. It asks before contacting the service.
+- **Request private bridges:** shortcuts to the [website](https://bridges.torproject.org/options), Telegram [@GetBridgesBot](https://t.me/GetBridgesBot), and email to bridges@torproject.org (from Gmail or Riseup).
+
+On Tor, failures are handled like a person would: sometimes reload the page a minute or two later, sometimes move on, sometimes get a new identity first. A new identity follows 2–5 failures in a row, and circuits also change by themselves every 10–40 minutes.
+
 **Test Tor** (Tor tab) checks that traffic really leaves through Tor and that the Tor Project's onion site loads. Tor errors are shown in plain English ("onion site is offline" rather than "0xf0").
 
 | Switch | Default | What it does |

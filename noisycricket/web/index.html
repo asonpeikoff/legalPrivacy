@@ -188,9 +188,22 @@ table.dns td{vertical-align:middle}
       <textarea id="tSeeds" rows="6" placeholder="http://example…56chars….onion/"></textarea>
       <details class="small"><summary>Built-in seeds</summary><div id="tBuiltin" class="mute"></div></details>
     </div>
-    <div class="card"><h3>Bridges (censored networks)</h3>
-      <div class="small mute">Optional. Paste bridge lines from bridges.torproject.org, e.g. <code>obfs4 1.2.3.4:443 FINGERPRINT cert=… iat-mode=0</code></div>
-      <textarea id="tBridges" rows="6"></textarea>
+    <div class="card"><h3>Bridges <details class="why"><summary>ⓘ</summary><div>Bridges are unlisted entry points into Tor. You only need them if your network blocks Tor or you don't want your provider to see that you use Tor. <b>obfs4</b> disguises Tor as random-looking traffic; <b>Snowflake</b> goes through volunteers' browsers and looks like a video call; <b>meek</b> looks like ordinary visits to a big website (slow). The built-in ones come with the official Tor bundle and are shared by many people, so they get blocked more often than your own.</div></details></h3>
+      <label class="opt"><input type="radio" name="bmode" value="off"> <b>No bridges</b> <span class="mute">— connect to Tor directly (fine for most people)</span></label>
+      <label class="opt"><input type="radio" name="bmode" value="obfs4"> <b>Built-in obfs4</b> <span class="mute" id="bnObfs4"></span></label>
+      <label class="opt"><input type="radio" name="bmode" value="snowflake"> <b>Built-in Snowflake</b> <span class="mute" id="bnSnow"></span></label>
+      <label class="opt"><input type="radio" name="bmode" value="meek"> <b>Built-in meek</b> <span class="mute" id="bnMeek"></span></label>
+      <label class="opt"><input type="radio" name="bmode" value="custom"> <b>My bridges</b> <span class="mute">— the saved lines below</span></label>
+      <textarea id="tBridges" rows="5" placeholder="obfs4 1.2.3.4:443 FINGERPRINT cert=… iat-mode=0"></textarea>
+      <label class="chk"><input type="checkbox" id="bAuto"><span>If Tor can't connect directly, try the built-in bridges automatically <span class="mute">(obfs4, then Snowflake; on by default)</span></span></label>
+      <div class="row" style="margin-top:6px">Country <input type="text" id="bCountry" size="3" maxlength="2" placeholder="auto" title="Two-letter country code, e.g. ir, cn, ru. Leave empty to let the Tor Project detect it.">
+        <button id="bGet">Get bridges that work here</button>
+        <details class="why"><summary>ⓘ</summary><div>Asks the Tor Project's bridge service (bridges.torproject.org, the same one Tor Browser uses) which bridges work in your country, and saves them as “My bridges”. This contacts that site from your connection.</div></details></div>
+      <div class="small" style="margin-top:6px">Request your own private bridges:
+        <a href="https://bridges.torproject.org/options" target="_blank" rel="noopener">website</a> ·
+        <a href="https://t.me/GetBridgesBot" target="_blank" rel="noopener">Telegram @GetBridgesBot</a> ·
+        <a href="mailto:bridges@torproject.org">email bridges@torproject.org</a> <span class="mute">(from Gmail or Riseup)</span>. Paste them above and choose “My bridges”.</div>
+      <div class="small mute" id="bNow"></div>
     </div>
   </div>
   <div class="card"><h3>Tor log</h3><div class="scroll" style="max-height:260px"><div id="tLog" class="logbox"></div></div></div>
@@ -700,8 +713,26 @@ function renderTorSelftest(t){
     (st.exit?`Through Tor to the web: ${st.exit.ok?`<span class="ok">✓ yes</span> — sites see Tor exit ${esc(st.exit.ip||'')} (${st.exit.ms} ms)`:`<span class="bad">✗ ${esc(st.exit.error||'not via Tor')}</span>`}<br>`:'')+
     (st.onion?`Onion site (Tor Project): ${st.onion.ok?`<span class="ok">✓ loaded</span> in ${st.onion.ms} ms`:`<span class="bad">✗ ${esc(st.onion.error||('HTTP '+st.onion.status))}</span>`}`:'');
 }
+$('#bGet').onclick=async()=>{
+  if(!confirm('Ask bridges.torproject.org for bridges that work in your country? This contacts that site from your connection.'))return;
+  $('#bGet').disabled=true;$('#bGet').textContent='Asking…';
+  try{const r=await api('/api/tor/getbridges',{country:$('#bCountry').value.trim()});
+    toast(r.ok?`Saved ${r.count} bridge(s): ${r.types.join(', ')}. Restart Tor to use them.`:r.message,!r.ok);await poll();fillTor(true)}
+  catch(e){toast('Could not reach the bridge service: '+e.message,1)}
+  finally{$('#bGet').disabled=false;$('#bGet').textContent='Get bridges that work here'}};
+$$('input[name=bmode]').forEach(x=>x.onchange=()=>{dirty.tor=true;$('#tSaved').textContent='unsaved changes'});
+$('#bAuto').onchange=()=>{dirty.tor=true;$('#tSaved').textContent='unsaved changes'};
+function renderBridges(t){
+  const n=t.builtin||{};$('#bnObfs4').textContent=n.obfs4?`— ${n.obfs4} from the Tor bundle`:'— install Tor first';
+  $('#bnSnow').textContent=n.snowflake?`— ${n.snowflake} from the Tor bundle`:'— install Tor first';
+  $('#bnMeek').textContent=n.meek?`— ${n.meek} from the Tor bundle (slow)`:'— install Tor first';
+  const cfg=S.profile.transports.tor.bridge_mode||'off';
+  $('#bNow').textContent=t.bridge_mode&&t.bridge_mode!==cfg&&t.state!=='stopped'?`Right now Tor is using the built-in ${t.bridge_mode} bridges because a direct connection didn't work.`:
+    (t.bridges?`Tor is using ${t.bridges} bridge(s).`:'');
+}
 function renderTorStatus(){
   const t=S.tor;
+  renderBridges(t);
   renderTorSelftest(t);
   $('#tState').textContent=({stopped:'Stopped',installing:'Installing…',starting:'Starting…',bootstrapping:'Connecting…',ready:'Ready 🧅',error:'Error'})[t.state]||t.state;
   $('#tBar').style.width=(t.state==='installing'?t.install_progress*100:t.bootstrap_pct)+'%';
@@ -719,13 +750,14 @@ function fillTor(force){
   $('#tEnable').checked=c.enabled;$('#tOnion').checked=c.onion;$('#tClear').checked=c.clearnet_via_tor;$('#tManage').checked=c.manage;
   $('#tSocks').value=c.socks;$('#tCtl').value=c.control||'';$('#tExt').style.display=c.manage?'none':'flex';
   $('#tSeeds').value=(c.onion_seeds||[]).join('\n');$('#tBridges').value=(c.bridges||[]).join('\n');
+  (document.querySelector(`input[name=bmode][value=${c.bridge_mode||'off'}]`)||{}).checked=true;$('#bAuto').checked=c.bridge_auto!==false;
   $('#tBuiltin').innerHTML=S.builtin_onion_seeds.map(b=>`<div>${esc(b.name)}: <code>${esc(b.url)}</code></div>`).join('');
   dirty.tor=false;
 }
 $$('#t-tor input,#t-tor textarea').forEach(i=>i.oninput=()=>{dirty.tor=true;$('#tExt').style.display=$('#tManage').checked?'none':'flex';$('#tSaved').textContent='unsaved changes'});
 $('#tClear').onchange=()=>{if($('#tClear').checked&&!confirm('Route ordinary clearnet noise through Tor?\n\nThis is NOT recommended: it adds load to Tor exit relays and Tor-exit search traffic is a distinctive pattern.\n\nUse only if you specifically want it.'))$('#tClear').checked=false};
 async function saveTor(auto){
-  try{await api('/api/config',{transports:{tor:{enabled:$('#tEnable').checked,onion:$('#tOnion').checked,clearnet_via_tor:$('#tClear').checked,manage:$('#tManage').checked,socks:$('#tSocks').value,control:$('#tCtl').value||null,onion_seeds:$('#tSeeds').value,bridges:$('#tBridges').value}}});
+  try{await api('/api/config',{transports:{tor:{enabled:$('#tEnable').checked,onion:$('#tOnion').checked,clearnet_via_tor:$('#tClear').checked,manage:$('#tManage').checked,socks:$('#tSocks').value,control:$('#tCtl').value||null,onion_seeds:$('#tSeeds').value,bridges:$('#tBridges').value,bridge_mode:(document.querySelector('input[name=bmode]:checked')||{}).value||'off',bridge_auto:$('#bAuto').checked}}});
     dirty.tor=false;$('#tSaved').textContent='Saved ✓ '+(S&&S.running?'(applies the next time noise starts)':'');await poll()}catch(e){$('#tSaved').textContent='Not saved: '+e.message;if(!auto)toast(e.message,1)}
 }
 $('#tSave').onclick=()=>saveTor(false);

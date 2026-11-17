@@ -238,6 +238,8 @@ class UIServer:
                         ctl.check_dns()
                     elif path == "/api/feeds/refresh":
                         ctl.refresh_feeds()
+                    elif path == "/api/tor/getbridges":
+                        return self._json(ctl.get_bridges(str(body.get("country", ""))))
                     elif path == "/api/tor/selftest":
                         ctl.tor_selftest()
                     elif path.startswith("/api/tor/"):
