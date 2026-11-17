@@ -783,5 +783,17 @@ class Controller:
                 + (f" — {f['error']}" if f["error"] else ""))
         if self.profile.relay.enabled:
             add("Relay contribution", "info", f"{self.profile.relay.mode} relay '{self.profile.relay.nickname}' (never an exit)")
+        try:
+            import psutil  # noqa: F401
+            add("Connection watching (Proof tab)", "ok", "available")
+        except ImportError:
+            add("Connection watching (Proof tab)", "warn",
+                "the psutil package is missing, so the Proof tab's map and timeline stay empty. "
+                "Close noisyCricket and start it again with the start script (it now installs what's "
+                "missing), or run: pip install psutil")
+        from pathlib import Path as _P
+        nm = _P(__file__).parent / "web" / "netmap.js"
+        add("Network map", "ok" if nm.exists() else "warn",
+            "ready" if nm.exists() else "the map's file (netmap.js) is missing from this install; reinstall noisyCricket")
         add("Data folder", "ok", str(app_dir()))
         return checks

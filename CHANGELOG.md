@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.8.1
+
+- **Proof tab map and timeline fixed for installs made before v2.8.0.** The double-click start scripts only
+  installed what noisyCricket needs on the very first run, so the new `psutil` requirement was never added and the
+  Proof tab stayed empty. They now update the environment whenever the requirements change.
+- **`pip install` from GitHub now includes the map.** The map's script file wasn't packaged, so the map showed
+  "Map unavailable".
+- **Health tab** says whether connection watching and the map are available, and what to do if not.
+
 ## v2.8.0
 
 - **Proof tab:** a live EtherApe-style map of every machine this computer talks to (your apps, noisyCricket, Tor),

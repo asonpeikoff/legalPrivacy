@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "noisycricket"
-version = "2.8.0"
+version = "2.8.1"
 description = "noisyCricket — privacy noise generator with optional Tor/onion mode, a local dashboard, and community relay contribution"
 requires-python = ">=3.10"
 dependencies = [
@@ -25,4 +25,4 @@ dev = ["pytest>=8.0"]
 include = ["noisycricket*"]
 
 [tool.setuptools.package-data]
-noisycricket = ["web/*.html"]
+noisycricket = ["web/*.html", "web/*.js"]
