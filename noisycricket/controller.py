@@ -547,7 +547,7 @@ class Controller:
                                                                     _os.environ.get("WAYLAND_DISPLAY"))
         offscreen = cfg.browser_offscreen and has_display
         return BrowserTransport(proxy=cfg.proxy, headless=not (cfg.browser_visible or offscreen),
-                                engine=engine, cookie_days=cfg.cookie_days,
+                                engine=engine, cookie_hours=cfg.cookie_hours, cookie_vary=cfg.cookie_vary,
                                 offscreen=offscreen and not cfg.browser_visible, executable=info["detail"],
                                 low_data=self.profile.extras.low_data,
                                 stop_event=stop, scale=lambda: self.profile.realtime_scale,

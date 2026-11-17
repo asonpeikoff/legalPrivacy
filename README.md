@@ -94,10 +94,11 @@ When Chrome, Edge, Brave or Chromium is installed, noisyCricket drives it in the
 
 ### Cookies
 
-Like a real browser, noisyCricket **keeps its own cookies between runs** (separate from yours; it
-never touches your browser's cookies), so sites see a returning visitor and Google shows its
-"are you a robot?" page less often. They are **wiped every week** by default. Settings → *Keep
-cookies* also offers 1 day, 30 days, or "don't keep".
+Cookies are a trade-off: they're how sites track visitors, but a browser that never keeps any looks
+like a brand-new visitor every time and gets far more "are you a robot?" checks. noisyCricket keeps
+**its own** cookies (never your browser's) for **about an hour** by default, then starts fresh. Each
+set lives 60–140% of that time, so the resets don't happen on a fixed beat. Settings → Realism offers
+"don't keep", 1 hour, 6 hours, 1 day, 1 week or 30 days, and the variation can be turned off.
 
 ### User agent
 

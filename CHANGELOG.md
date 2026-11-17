@@ -2,6 +2,9 @@
 
 ## v2.8.1
 
+- **Cookies:** the noise browser keeps its own cookies for about an hour by default (was a week), then starts
+  fresh, with each set living 60–140% of the chosen time. Choices: don't keep, 1 hour, 6 hours, 1 day, 1 week,
+  30 days. Earlier day-based settings carry over.
 - **Proof tab map and timeline fixed for installs made before v2.8.0.** The double-click start scripts only
   installed what noisyCricket needs on the very first run, so the new `psutil` requirement was never added and the
   Proof tab stayed empty. They now update the environment whenever the requirements change.
