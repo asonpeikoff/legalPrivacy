@@ -1,4 +1,4 @@
-# noisyCricket v2.4
+# noisyCricket v2.5
 
 Conducts random searches, crawls, and DNS lookups so that mass traffic and
 bulk analysis of any one person's browsing is less useful. Fully automated,
@@ -16,7 +16,7 @@ that runs a Tor *middle/bridge* relay — never an exit.
 
 Your browser opens the **dashboard**. First run asks 3 questions, then starts:
 
-1. How much noise? (Light / Normal / Heavy)
+1. How much noise? **Randomized** (recommended) or **Steady**, plus a 1–10 slider that shows what each level means in searches per hour
 2. Add Tor darknet (.onion) noise? (default: No)
 3. Start automatically whenever you open it? (Yes / No)
 
@@ -111,16 +111,49 @@ noisyCricket v2 - one scheduler, two transports, three engines
 
 ## How it works
 
-The scheduler spends a daily budget per engine, spread over the day on a human
-activity curve. Each "hit" is made by one **identity** (a consistent persona)
-over one **lane** (clearnet or Tor).
+**How much, and when.** You choose a level from 1 to 10. Each hour noisyCricket plans
+that hour's activity and spreads it across the hour. It never fires a burst on the hour mark.
+
+| Mode | What happens |
+|---|---|
+| **Randomized** (recommended) | Every hour's amount varies around your level (log-normal), follows a day/night curve that's busiest in the evening, and about 1 hour in 8 is nearly silent ("away from the computer"). |
+| **Steady** | About the same amount every hour. |
+
+| Level | Searches / hour | Over a 15-hour waking day |
+|---|---|---|
+| 1 | 0.5 | ~8 |
+| 3 | 1.5 | ~23 |
+| 5 (default) | 4 | ~60 |
+| 7 | 9 | ~135 |
+| 10 | 30 | ~450 |
+
+For scale: active US desktop users average about 126 Google searches a month,
+roughly 4 a day ([SparkToro, 2024](https://sparktoro.com/blog/new-research-how-often-do-americans-search-google-which-search-verticals-do-they-use/)).
+Noise only hides you if it's at least comparable to your real activity, so even
+the middle levels are well above that. Page visits and DNS lookups come on top of
+searches, in proportion to the activity mix in Settings.
 
 | Engine | What a hit is |
 |---|---|
 | **search** | A realistic query on a weighted mix of engines. About 60% of the time the persona then **clicks a result** (top results more often), and sometimes follows one more link on that site. |
 | **crawl** | Opens a popular real site (or a configured seed, or a site reached earlier via search) and wanders a few links deep, skipping anchors, images, logins and edit pages. |
-| **dns** | Looks up a **real, popular domain** (Tranco ranking). Raw UDP on clearnet; DNS-over-HTTPS on the Tor lane. Invented domains are never used: a stream of failed lookups would itself stand out. |
+| **dns** | Looks up a **real, popular domain** (Tranco ranking) through the resolver you choose (below). DNS-over-HTTPS on the Tor lane. Invented domains are never used: a stream of failed lookups would itself stand out. |
 | **onion** | Tor only. See above. |
+
+### DNS: which resolver answers the noise
+
+| Setting | What it does |
+|---|---|
+| **Your normal DNS** (default, recommended) | Uses your computer's own resolver: your router, ISP or VPN DNS, or whatever encrypted DNS your system uses. The noise lands exactly where your real lookups do, so whoever can see your real DNS sees the noise mixed in. |
+| **Secure resolvers only** | OpenNIC servers that anonymize their logs (11 shipped, ≥95% reliable), optionally Quad9 (`9.9.9.9`, `149.112.112.112`), plus any resolver IPs you add. |
+| **Mix** | Switches between the two in random 10–60 minute blocks, spending a share of the time you set (default 70%) on your normal DNS. |
+
+Why normal DNS is the default: sending noise to resolvers you never otherwise use
+would hide nothing from whoever sees your real lookups, and would itself be an
+unusual pattern on your connection.
+
+Every lookup in Activity reads like `www.reddit.com [via your normal DNS]` or
+`www.bbc.com [via OpenNIC ns1.ca (148.113.235.58)]`.
 
 ### Behaving like a person (real-browser mode)
 

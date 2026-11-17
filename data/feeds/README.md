@@ -17,3 +17,7 @@ Each source has its own terms; check them before reusing this data elsewhere.
 MS MARCO, for example, is published by Microsoft for non-commercial research use.
 noisyCricket uses the data only to generate privacy noise and does not sell or
 re-publish it as a dataset.
+
+`opennic`: OpenNIC Tier-2 resolvers from `api.opennicproject.org/geoip/?json&ipv=4&anon=true&pct=95&res=50`
+(only servers with anonymized logs and ≥95% reliability). Used only when you choose
+"secure" or "mix" DNS. You can add your own resolver IPs in Settings.

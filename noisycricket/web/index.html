@@ -165,8 +165,21 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
 <!-- SETTINGS -->
 <section id="t-set" class="tab">
   <div class="card"><h3>Amount of noise</h3>
-    <div class="row"><button data-preset="light">Light</button><button data-preset="normal">Normal</button><button data-preset="heavy">Heavy</button><span class="small mute">presets fill the boxes below</span></div>
+    <label class="opt"><input type="radio" name="srmode" value="random" checked> <b>Randomized</b> <span class="mute">(recommended) — changes every hour, busier in the evening, some hours nearly silent, like a real person</span></label>
+    <label class="opt"><input type="radio" name="srmode" value="steady"> <b>Steady</b> <span class="mute">— about the same amount every hour</span></label>
+    <div class="row" style="margin-top:10px"><span>Less</span><input type="range" id="sLevel" min="1" max="10" step="1" value="5" style="flex:1"><span>More</span></div>
+    <div class="note small" id="sLevelInfo"></div>
+    <div style="margin-top:10px"><b>Mix of activity</b> <span class="small mute">— relative weights; the slider sets the total per hour</span></div>
     <div id="engines"></div>
+  </div>
+  <div class="card"><h3>DNS lookups</h3>
+    <div class="small mute">In Activity and the Live Log each lookup shows the site looked up and which resolver answered, e.g. <code>www.reddit.com [via your normal DNS]</code>.</div>
+    <label class="opt"><input type="radio" name="dnsm" value="system"> <b>Your normal DNS</b> <span class="mute">(recommended) — whatever your router, ISP, VPN or system already uses, so the noise lands exactly where your real lookups do</span></label>
+    <label class="opt"><input type="radio" name="dnsm" value="secure"> <b>Secure resolvers only</b> <span class="mute">— the servers ticked below</span></label>
+    <label class="opt"><input type="radio" name="dnsm" value="mix"> <b>Mix</b> <span class="mute">— switch between the two in random 10–60 minute blocks, spending</span> <input type="number" id="dShare" min="0" max="100" style="width:64px"> <span class="mute">% of the time on your normal DNS</span></label>
+    <label class="chk"><input type="checkbox" id="dOpen"><span><b>OpenNIC</b> servers that anonymize logs (<span id="dOpenN">0</span>) <details style="display:inline"><summary class="small">list</summary><div class="small mute" id="dOpenList"></div></details></span></label>
+    <label class="chk"><input type="checkbox" id="dQuad9"><span><b>Quad9</b> 9.9.9.9 and 149.112.112.112 <span class="mute">(blocks malware domains, DNSSEC)</span></span></label>
+    <div class="row">Your own resolvers <input type="text" id="dCustom" placeholder="optional, e.g. 1.2.3.4, 5.6.7.8" style="flex:1;min-width:220px"></div>
   </div>
   <div class="card"><h3>General</h3>
     <div class="row">Speed <input type="number" id="sScale" step="0.1" min="0.05" style="width:90px"> <span class="small mute">1.0 = human pace; lower = faster (for testing)</span></div>
@@ -182,7 +195,7 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
     <div class="small mute">A real Chrome/Edge/Chromium scrolls, pauses to read, moves the mouse, clicks or taps search results and now and then downloads a file (discarded). Plain HTTP can't do any of that and is easier to spot.</div>
     <label class="chk"><input type="checkbox" id="sVisible"><span>Show the browser window (watch it work)</span></label>
     <div style="margin-top:10px"><b>Where searches come from</b> <span class="small mute">— mixed so no one list dominates</span></div>
-    <label class="chk"><input type="checkbox" id="qLive"><span><b>Live trends</b> — Google Trends, Wikipedia most-read, BBC headlines (refreshed daily)</span></label>
+    <label class="chk"><input type="checkbox" id="qLive"><span><b>Live trends</b> — Google Trends, Wikipedia most-read, BBC headlines</span></label>
     <label class="chk"><input type="checkbox" id="qData"><span><b>Real past searches</b> — MS MARCO (Bing) and GooAQ (Google autocomplete), fresh random sample</span></label>
     <label class="chk"><input type="checkbox" id="qBuiltin"><span>Built-in topics <span class="mute">(kept a small minority)</span></span></label>
     <label class="chk"><input type="checkbox" id="qWords"><span>Occasional dictionary word <span class="mute">(“define …”)</span></span></label>
@@ -216,10 +229,11 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
 <div id="wiz"><div class="wcard">
   <div class="steps"><i class="on" id="ws1"></i><i id="ws2"></i><i id="ws3"></i></div>
   <div id="w1">
-    <h2 style="margin-top:0">🦗 Welcome! 1 of 3</h2><p><b>How much background noise do you want?</b></p>
-    <label class="opt"><input type="radio" name="int" value="light"> <b>Light</b> <span class="mute">— ~150 requests/day, barely noticeable</span></label>
-    <label class="opt"><input type="radio" name="int" value="normal" checked> <b>Normal</b> <span class="mute">— ~400/day (recommended)</span></label>
-    <label class="opt"><input type="radio" name="int" value="heavy"> <b>Heavy</b> <span class="mute">— ~1,000/day, more bandwidth</span></label>
+    <h2 style="margin-top:0">🦗 Welcome! 1 of 3</h2><p><b>How much background noise?</b></p>
+    <label class="opt"><input type="radio" name="rmode" value="random" checked> <b>Randomized</b> <span class="mute">(recommended) — changes every hour, busier in the evening, some hours nearly silent, like a real person</span></label>
+    <label class="opt"><input type="radio" name="rmode" value="steady"> <b>Steady</b> <span class="mute">— about the same amount every hour</span></label>
+    <div class="row" style="margin-top:10px"><span>Less</span><input type="range" id="wLevel" min="1" max="10" step="1" value="5" style="flex:1"><span>More</span></div>
+    <div class="note small" id="wLevelInfo"></div>
   </div>
   <div id="w2" style="display:none">
     <h2 style="margin-top:0">2 of 3</h2><p><b>Add Tor darknet (.onion) noise?</b></p>
@@ -299,7 +313,7 @@ function render(){
   s.lanes.forEach(l=>{hitsT+=l.hits;failT+=l.failures;if(l.last_hit_ts&&l.last_hit_ts>last){last=l.last_hit_ts;lastSub=l.name}});
   $('#kHits').textContent=hitsT;$('#kFail').textContent=failT;
   $('#kUp').textContent=s.running?fmtDur(s.uptime):'—';
-  $('#kPace').textContent='speed ×'+(1/s.profile.realtime_scale).toFixed(1);
+  $('#kPace').textContent=(s.hour_target!=null?`this hour: ~${s.hour_target} planned · `:'')+`${s.profile.rate.mode} · level ${s.profile.rate.level}`;
   $('#kLast').textContent=last?fmtDur(Date.now()/1000-last)+' ago':'—';$('#kLastSub').textContent=lastSub;
   let note='';
   if(!s.running)note='<div class="note"><b>Stopped.</b> Press <b>▶ Start</b> to begin generating noise.</div>';
@@ -315,7 +329,7 @@ function render(){
 }
 function laneCard(l){
   const isT=l.name==='tor';
-  const rows=Object.entries(l.engines).map(([e,b])=>`<tr><td style="width:90px">${e==='onion'?'🧅 ':''}${esc(e)}</td><td><div class="bar ${isT?'tor':''}"><i style="width:${Math.min(100,100*b.spent/Math.max(1,b.per_day))}%"></i></div></td><td style="width:110px" class="mute">${b.spent}/${b.per_day} · ${b.failures} fail</td></tr>`).join('');
+  const rows=Object.entries(l.engines).map(([e,b])=>`<tr><td style="width:90px">${e==='onion'?'🧅 ':''}${esc(e)}</td><td><div class="bar ${isT?'tor':''}"><i style="width:${Math.min(100,100*b.spent/Math.max(1,b.per_day))}%"></i></div></td><td style="width:150px" class="mute">${b.spent}/${b.per_day} this hour</td></tr>`).join('');
   const st=!l.open?'<span class="pill warn">waiting for Tor</span>':l.dimmed?'<span class="pill warn">backing off</span>':'<span class="pill ok">active</span>';
   return `<div class="card"><h3>${isT?'🧅 Tor lane':'Clearnet lane'} ${st}</h3><table><tbody>${rows}</tbody></table>${l.last_error?`<div class="small warnc" style="margin-top:6px">last error: ${esc(l.last_error)}</div>`:''}</div>`
 }
@@ -393,28 +407,39 @@ $('#tSave').onclick=async()=>{
 // settings
 function fillSettings(force){
   if(!S||(dirty.set&&!force))return;const p=S.profile;
-  $('#engines').innerHTML=Object.entries(p.engines).map(([n,e])=>`<div class="row"><label class="chk" style="margin:0;width:150px"><input type="checkbox" data-en="${n}" ${e.enabled?'checked':''}> ${n==='onion'?'🧅 onion':n}</label><input type="number" min="0" data-bud="${n}" value="${e.budget_per_day}" style="width:100px"> <span class="small mute">per day${n==='onion'?' (needs Tor)':''}</span></div>`).join('');
+  $('#engines').innerHTML=Object.entries(p.engines).map(([n,e])=>`<div class="row"><label class="chk" style="margin:0;width:150px"><input type="checkbox" data-en="${n}" ${e.enabled?'checked':''}> ${n==='onion'?'🧅 onion':n}</label><input type="number" min="0" data-bud="${n}" value="${e.budget_per_day}" style="width:100px"> <span class="small mute">weight${n==='onion'?' (needs Tor)':''}</span></div>`).join('');
+  const r=p.rate||{mode:'random',level:5};document.querySelector(`input[name=srmode][value=${r.mode}]`).checked=true;$('#sLevel').value=r.level;rateInfo('sLevel','sLevelInfo');
+  const d=p.dns||{};(document.querySelector(`input[name=dnsm][value=${d.mode||'system'}]`)||{}).checked=true;
+  $('#dShare').value=Math.round((d.system_share??0.7)*100);$('#dOpen').checked=d.opennic!==false;$('#dQuad9').checked=!!d.quad9;$('#dCustom').value=(d.custom||[]).join(', ');
+  $('#dOpenN').textContent=(S.opennic||[]).length;$('#dOpenList').innerHTML=(S.opennic||[]).map(o=>esc(o[1]+' '+o[0]+' ('+(o[2]||'?')+')')).join('<br>');
   $('#sScale').value=p.realtime_scale;$('#sMaxF').value=p.daily_max_failures;$('#sProxy').value=p.transports.clearnet.proxy||'';
   $('#sClear').checked=p.transports.clearnet.enabled;
   $('#sBrowser').value=p.transports.clearnet.browser||'auto';$('#sVisible').checked=!!p.transports.clearnet.browser_visible;
   const q=p.queries||{};$('#qLive').checked=q.live!==false;$('#qData').checked=q.dataset!==false;$('#qBuiltin').checked=q.builtin!==false;$('#qWords').checked=q.words!==false;$('#sAuto').checked=!!S.app.autostart;$('#sPath').textContent=S.config_path;dirty.set=false;
   $$('#t-set input').forEach(i=>i.oninput=()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'});
 }
-$$('[data-preset]').forEach(b=>b.onclick=()=>{const pr=S.presets[b.dataset.preset];$$('[data-bud]').forEach(i=>{if(pr[i.dataset.bud]!=null)i.value=pr[i.dataset.bud]});dirty.set=true;$('#sSaved').textContent='unsaved changes'});
 $('#sSave').onclick=async()=>{
   const engines={};$$('[data-en]').forEach(i=>engines[i.dataset.en]={enabled:i.checked});$$('[data-bud]').forEach(i=>engines[i.dataset.bud].budget_per_day=parseInt(i.value||0));
-  try{await api('/api/config',{realtime_scale:parseFloat($('#sScale').value),daily_max_failures:parseInt($('#sMaxF').value),engines,transports:{clearnet:{enabled:$('#sClear').checked,proxy:$('#sProxy').value||null,browser:$('#sBrowser').value,browser_visible:$('#sVisible').checked}},
+  try{await api('/api/config',{realtime_scale:parseFloat($('#sScale').value),daily_max_failures:parseInt($('#sMaxF').value),engines,rate:{mode:document.querySelector('input[name=srmode]:checked').value,level:parseFloat($('#sLevel').value)},
+      dns:{mode:document.querySelector('input[name=dnsm]:checked').value,system_share:parseInt($('#dShare').value||70)/100,opennic:$('#dOpen').checked,quad9:$('#dQuad9').checked,custom:$('#dCustom').value},
+      transports:{clearnet:{enabled:$('#sClear').checked,proxy:$('#sProxy').value||null,browser:$('#sBrowser').value,browser_visible:$('#sVisible').checked}},
       queries:{live:$('#qLive').checked,dataset:$('#qData').checked,builtin:$('#qBuiltin').checked,words:$('#qWords').checked}});
     await api('/api/app',{autostart:$('#sAuto').checked});dirty.set=false;$('#sSaved').textContent='saved ✓ '+(S&&S.running?'(Stop → Start to apply)':'');toast('Settings saved');poll()}catch(e){toast(e.message,1)}
 };
 $('#sWiz').onclick=()=>showWiz();
+function rateInfo(sl,out){
+  if(!S||!S.rate_info)return;const d=S.rate_info[parseInt($('#'+sl).value)-1];
+  $('#'+out).innerHTML=`<b>Level ${d.level} — ${esc(d.name)}.</b> About <b>${d.searches_per_hour} searches an hour</b> (≈${d.actions_per_hour} actions an hour counting page visits and DNS lookups). Over a 15-hour waking day that's ≈${d.searches_per_day_awake} searches. For comparison, an average person does about 4 searches a day (SparkToro study of US users), so this is about <b>${d.vs_average_person}×</b> that. Noise only hides you if it's at least comparable to your real activity.`;
+}
+$('#wLevel').oninput=()=>rateInfo('wLevel','wLevelInfo');
+$('#sLevel').oninput=()=>{rateInfo('sLevel','sLevelInfo');dirty.set=true;$('#sSaved').textContent='unsaved changes'};
 $('#fRefresh').onclick=()=>{if(confirm('Download fresh lists now from Google Trends, Wikipedia, BBC, Hugging Face and Tranco? This contacts those sites from your connection.')){act('/api/feeds/refresh');toast('Refreshing sources in the background…')}};
 $('#fAuto').onchange=()=>act('/api/app',{auto_refresh_sources:$('#fAuto').checked});
 $('#sBrowser').oninput=$('#sVisible').oninput=()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'};
 function renderRealism(){
   const b=S.browser;
   $('#sBrowserInfo').innerHTML=b.active?`<span class="ok">✓ using ${esc(b.detail.split(/[\\/]/).pop())}</span>`:b.setting==='off'?'<span class="mute">off</span>':`<span class="warnc">⚠ ${esc(b.detail)}</span>`;
-  const label={deny:'Safety blocklist',trends:'Google Trends',wiki:'Wikipedia most-read',news:'BBC headlines',dataset:'Real past searches',tranco:'Popular sites (Tranco)'};
+  const label={deny:'Safety blocklist',trends:'Google Trends',wiki:'Wikipedia most-read',news:'BBC headlines',dataset:'Real past searches',tranco:'Popular sites (Tranco)',opennic:'OpenNIC resolvers'};
   $('#fBody').innerHTML=S.feeds.map(f=>`<tr><td>${esc(label[f.name]||f.name)}</td><td>${f.count.toLocaleString()}</td><td class="small">${esc(f.origin||'')}</td><td>${f.updated?fmtDur(Date.now()/1000-f.updated)+' ago':'—'}</td><td class="${f.error?'warnc':f.count&&!f.stale?'ok':'mute'}">${esc(f.error?'unavailable — '+f.error.slice(0,60):f.count?(f.stale?'old — consider refreshing':'ok'):'missing')}</td></tr>`).join('');
   $('#fNote').textContent=S.feeds_refreshing?'refreshing…':'';
   if(document.activeElement!==$('#fAuto'))$('#fAuto').checked=!!S.app.auto_refresh_sources;
@@ -425,13 +450,13 @@ $('#hRun').onclick=async()=>{$('#hBody').innerHTML='<tr><td class="mute">Checkin
     $('#hBody').innerHTML=r.checks.map(c=>`<tr><td style="width:30px" class="${cl[c.status]}">${ic[c.status]}</td><td style="width:230px"><b>${esc(c.name)}</b></td><td class="${c.status==='ok'?'':cl[c.status]}">${esc(c.detail)}</td></tr>`).join('')}catch(e){toast(e.message,1)}};
 // wizard
 let wizShown=false,wStep=1;
-function showWiz(){wizShown=true;wStep=1;wizStep();$('#wiz').classList.add('on')}
+function showWiz(){wizShown=true;wStep=1;wizStep();rateInfo('wLevel','wLevelInfo');$('#wiz').classList.add('on')}
 function wizStep(){for(let i=1;i<=3;i++){$('#w'+i).style.display=i===wStep?'':'none';$('#ws'+i).classList.toggle('on',i<=wStep)}$('#wBack').style.visibility=wStep>1?'visible':'hidden';$('#wNext').textContent=wStep<3?'Next':'Finish & start 🦗'}
 $('#wBack').onclick=()=>{wStep--;wizStep()};
 $('#wNext').onclick=async()=>{
   if(wStep<3){wStep++;wizStep();return}
   const v=n=>document.querySelector(`input[name=${n}]:checked`).value;
-  try{await api('/api/wizard',{intensity:v('int'),tor:v('tor'),autostart:v('auto')==='1'});$('#wiz').classList.remove('on');dirty={set:false,tor:false};await api('/api/start',{});toast('Running! Watch it live on the Activity and Live Log tabs.');poll()}catch(e){toast(e.message,1)}
+  try{await api('/api/wizard',{rate_mode:v('rmode'),level:parseFloat($('#wLevel').value),tor:v('tor'),autostart:v('auto')==='1'});$('#wiz').classList.remove('on');dirty={set:false,tor:false};await api('/api/start',{});toast('Running! Watch it live on the Activity and Live Log tabs.');poll()}catch(e){toast(e.message,1)}
 };
 poll();
 </script>
