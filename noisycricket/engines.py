@@ -244,7 +244,11 @@ class SearchTargetFactory:
         links = extract_result_links(html, search_url)
         if not links:
             return None
-        weights = [1.0 / (i + 1) ** 1.2 for i in range(len(links))]      # top results get most clicks
+        # the top result about half the time, the rest falling off with position
+        weights = [1.0] + [1.0 / (i + 1) ** 1.2 for i in range(1, len(links))]
+        rest = sum(weights[1:])
+        if rest:
+            weights = [rest] + weights[1:]
         return Target(url=self.rng.choices(links, weights=weights)[0], referer=search_url, role="result")
 
 

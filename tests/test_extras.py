@@ -251,3 +251,28 @@ def test_household_identities_come_from_several_browsers():
     r = _runner({"household": True, "household_size": 4, "interest_salt": "abc"})
     uas = {r._entry_for_next_identity()["ua"] for _ in range(200)}
     assert len(uas) >= 2
+
+
+def test_top_result_is_clicked_about_half_the_time():
+    import noisycricket.engines as E
+    from noisycricket.engines import SearchTargetFactory
+    real = E.extract_result_links
+    E.extract_result_links = lambda html, u: [f"https://r{i}.example.com/" for i in range(10)]
+    try:
+        f = SearchTargetFactory(rng=random.Random(2), words=["w"])
+        picks = [f.result_target("", "https://www.google.com/search?q=x").url for _ in range(4000)]
+    finally:
+        E.extract_result_links = real
+    assert 0.45 < picks.count("https://r0.example.com/") / len(picks) < 0.55
+
+
+def test_offline_onion_sites_are_quiet_and_rested():
+    from noisycricket.scheduler import _onion_offline
+    r = _runner({})
+    assert _onion_offline(HitResult(None, error="SOCKS error: Host unreachable"))
+    assert not _onion_offline(HitResult(None, error="HTTP 500"))
+    url = "http://" + "a" * 56 + ".onion/"
+    r._onion_seen_dead(url)
+    assert not r._onion_is_dead(url)                           # one miss: try again later
+    r._onion_seen_dead(url)
+    assert r._onion_is_dead(url)                               # two misses: rest it for hours

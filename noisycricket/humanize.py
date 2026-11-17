@@ -52,6 +52,20 @@ def target_depth(rng: random.Random) -> float:
     return rng.uniform(0.70, 1.00)         # read to the end
 
 
+def sample_dwell(rng: random.Random) -> float:
+    """Seconds spent on a page. Mostly short, with a long, rare tail:
+    1 in 25 visits last a minute or more, 1 in 100 three minutes or more, 1 in 500 ten
+    minutes or more. The rest are 1-59 seconds, weighted towards the short end."""
+    r = rng.random()
+    if r < 1 / 500:
+        return rng.uniform(600, 1200) if rng.random() < 0.8 else rng.uniform(1200, 1800)
+    if r < 1 / 100:
+        return rng.uniform(180, 600)
+    if r < 1 / 25:
+        return rng.uniform(60, 180)
+    return lognormal_clipped(rng, 10.0, 0.85, 1.0, 59.0)
+
+
 def scroll_steps(rng: random.Random, distance: float, mobile: bool) -> list[tuple[float, float]]:
     """(dy, delay_seconds) steps for one scroll burst, eased: slow start, fast middle, slow end."""
     steps: list[tuple[float, float]] = []
@@ -130,36 +144,57 @@ class HumanDriver:
         self.stats["scrolls"] += 1
 
     # -- a whole visit -----------------------------------------------------
-    def browse(self, max_seconds: float = 90.0) -> dict:
-        """Behave like a person who just opened this page."""
+    def browse(self, dwell: float | None = None, max_seconds: float | None = None) -> dict:
+        """Behave like a person who just opened this page, for `dwell` seconds (drawn from
+        sample_dwell() if not given). Long visits keep moving: slow scrolls, glances back up,
+        the mouse wandering, instead of sitting still."""
         rng, act = self.rng, self.act
+        dwell = sample_dwell(rng) if dwell is None else float(dwell)
+        if max_seconds is not None:
+            dwell = min(dwell, max_seconds)
+        self.stats["planned_seconds"] = round(dwell, 1)
+        left = [dwell]
+
+        def spend(sec: float) -> None:
+            sec = max(0.2, min(sec, left[0])) if left[0] > 0.2 else 0.2
+            self.pause(sec)
+            left[0] -= sec
+
         w, h = act.viewport()
-        self.pause(lognormal_clipped(rng, 1.2, 0.5, 0.4, 4.0))              # page settles / eyes land
-        self.move_to(rng.uniform(0.2, 0.8) * w, rng.uniform(0.25, 0.7) * h)
+        spend(lognormal_clipped(rng, 1.2, 0.5, 0.4, 4.0))               # page settles / eyes land
+        if left[0] > 0.5:
+            self.move_to(rng.uniform(0.2, 0.8) * w, rng.uniform(0.25, 0.7) * h)
         scrollable = max(0, act.page_height() - h)
         depth = target_depth(rng) if scrollable > 60 else 0.0             # most pages get at least a skim
+        if dwell > 60 and scrollable > 60:
+            depth = max(depth, rng.uniform(0.6, 1.0))                     # a long visit reads further
         goal = depth * scrollable
-        spent = 0.0
-        while act.scroll_y() < goal and not act.stopped() and spent < max_seconds:
-            burst = h * rng.uniform(0.25, 0.9) if rng.random() < 0.8 else h * rng.uniform(0.08, 0.25)
-            self.scroll_burst(burst)                                       # scroll down…
-            rp = reading_pause(rng)
-            spent += rp
-            self.pause(rp)                                                 # …pause and read
-            roll = rng.random()
-            if roll < 0.30:                                                # …then glance back up a little
-                self.scroll_burst(-h * rng.uniform(0.1, 0.4))
-                self.stats["back_scrolls"] += 1
-                self.pause(lognormal_clipped(rng, 1.4, 0.5, 0.4, 5.0))
-            elif roll < 0.40:                                              # …or re-read something higher up
-                self.scroll_burst(-h * rng.uniform(0.5, 1.0))
-                self.stats["re_reads"] += 1
-                rp2 = lognormal_clipped(rng, 4.0, 0.5, 1.5, 12.0)
-                spent += rp2
-                self.pause(rp2)
+        while left[0] > 0.3 and not act.stopped():
+            if act.scroll_y() < goal - 5:
+                burst = h * rng.uniform(0.25, 0.9) if rng.random() < 0.8 else h * rng.uniform(0.08, 0.25)
+                self.scroll_burst(burst)                                   # scroll down…
+                spend(reading_pause(rng))                                  # …pause and read
+                roll = rng.random()
+                if roll < 0.30:                                            # …then glance back up a little
+                    self.scroll_burst(-h * rng.uniform(0.1, 0.4))
+                    self.stats["back_scrolls"] += 1
+                    spend(lognormal_clipped(rng, 1.4, 0.5, 0.4, 5.0))
+                elif roll < 0.40:                                          # …or re-read something higher up
+                    self.scroll_burst(-h * rng.uniform(0.5, 1.0))
+                    self.stats["re_reads"] += 1
+                    spend(lognormal_clipped(rng, 4.0, 0.5, 1.5, 12.0))
+            elif scrollable <= 60:                                         # nothing to scroll: read, fidget
+                spend(lognormal_clipped(rng, 5.0, 0.6, 1.0, 30.0))
+            else:                                                          # reached the part they read:
+                if act.scroll_y() >= scrollable - 5 or rng.random() < 0.3:  # keep moving slowly while staying
+                    self.scroll_burst(-h * rng.uniform(0.1, 0.35))
+                    self.stats["back_scrolls"] += 1
+                else:
+                    self.scroll_burst(h * rng.uniform(0.08, 0.3))
+                spend(lognormal_clipped(rng, 8.0 if dwell > 120 else 4.0, 0.6, 1.5, 40.0))
             if not act.mobile and rng.random() < 0.12:                    # hover over something, linger
                 self.move_to(rng.uniform(0.15, 0.85) * w, rng.uniform(0.2, 0.8) * h)
-                self.pause(lognormal_clipped(rng, 0.9, 0.5, 0.3, 3.0))
+                spend(lognormal_clipped(rng, 0.9, 0.5, 0.3, 3.0))
                 self.stats["hovers"] += 1
             select = getattr(act, "select_text", None)
             if select is not None and not act.mobile and rng.random() < 0.05:   # highlight a line while reading
@@ -167,13 +202,47 @@ class HumanDriver:
                 self.move_to(x, y)
                 if select(x, y, rng.uniform(80, 260)):
                     self.stats["selections"] += 1
-                    self.pause(lognormal_clipped(rng, 1.2, 0.5, 0.4, 4.0))
+                    spend(lognormal_clipped(rng, 1.2, 0.5, 0.4, 4.0))
             if rng.random() < 0.25:                                        # fidget with the mouse
                 self.move_to(rng.uniform(0.1, 0.9) * w, rng.uniform(0.15, 0.85) * h)
             if act.page_height() - h <= 0:
-                break
-        if rng.random() < 0.5:
-            self.pause(lognormal_clipped(rng, 2.0, 0.6, 0.5, 10.0))       # final look before leaving
+                scrollable = 0
+        self.stats["depth"] = round(min(1.0, act.scroll_y() / scrollable), 2) if scrollable else 0.0
+        return self.stats
+
+    def serp(self) -> dict:
+        """A search results page. People scan results in a few typical ways:
+        a quick glance; a look, half a screen down, a longer pause; or one smooth skim, then stop."""
+        rng, act = self.rng, self.act
+        w, h = act.viewport()
+        self.pause(lognormal_clipped(rng, 1.4, 0.5, 0.5, 4.0))              # eyes land on the first results
+        self.move_to(rng.uniform(0.15, 0.6) * w, rng.uniform(0.25, 0.6) * h)
+        scrollable = max(0, act.page_height() - h)
+        mode = rng.random()
+        if scrollable > 60:
+            if mode < 0.35:                                                # quick glance, maybe a nudge
+                self.stats["serp"] = "glance"
+                if rng.random() < 0.5:
+                    self.scroll_burst(h * rng.uniform(0.1, 0.3))
+                    self.pause(lognormal_clipped(rng, 1.5, 0.5, 0.5, 5.0))
+            elif mode < 0.70:                                              # look, half a screen, pause a while
+                self.stats["serp"] = "half-screen"
+                self.pause(lognormal_clipped(rng, 2.5, 0.5, 1.0, 6.0))
+                self.scroll_burst(h * rng.uniform(0.4, 0.6))
+                self.pause(lognormal_clipped(rng, 5.0, 0.6, 2.0, 20.0))
+                if rng.random() < 0.3:
+                    self.scroll_burst(h * rng.uniform(0.3, 0.6))
+                    self.pause(lognormal_clipped(rng, 3.0, 0.6, 1.0, 12.0))
+            else:                                                          # one smooth skim, then stop
+                self.stats["serp"] = "skim"
+                self.scroll_burst(h * rng.uniform(0.9, 2.2))
+                self.pause(lognormal_clipped(rng, 3.0, 0.6, 1.0, 10.0))
+                if rng.random() < 0.4:
+                    self.scroll_burst(-h * rng.uniform(0.3, 0.8))
+                    self.stats["back_scrolls"] += 1
+                    self.pause(lognormal_clipped(rng, 2.0, 0.5, 0.6, 6.0))
+        else:
+            self.pause(lognormal_clipped(rng, 2.5, 0.5, 1.0, 8.0))
         self.stats["depth"] = round(min(1.0, act.scroll_y() / scrollable), 2) if scrollable else 0.0
         return self.stats
 

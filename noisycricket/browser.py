@@ -373,11 +373,13 @@ class BrowserTransport(Transport):
         how = "open"
         try:
             resp = None
+            t_load = time.time()
             if target.role == "result" and target.referer and s["last_url"] == target.referer:
                 resp, how = self._click_through(page, driver, target, mobile)
             if resp is None and how == "open":
                 resp = page.goto(target.url, referer=target.referer, wait_until="domcontentloaded",
                                  timeout=int(target.timeout * 1000))
+            load_ms = (time.time() - t_load) * 1000.0
             status = resp.status if resp is not None else 200
             title = (page.title() or "").lower()
             if ("/sorry/" in page.url or "captcha" in page.url.lower()
@@ -385,12 +387,14 @@ class BrowserTransport(Transport):
                                                 "access denied", "attention required"))
                     or (status == 202 and "duckduckgo" in page.url)):
                 status = 429          # a bot check: back off instead of counting it as a visit
-            stats = driver.browse(max_seconds=60)
+            stats = driver.serp() if target.role == "search" else driver.browse()
             downloaded = self._maybe_download(page) or self._maybe_save_image(page)
             s["last_url"] = page.url
             html = page.content()[:2_000_000]
             parts = [f"{how} {'📱' if mobile else '🖥'}", f"{stats['scrolls']} scrolls",
-                     f"{int(stats['depth'] * 100)}% depth", f"{stats['seconds']:.0f}s reading"]
+                     f"{int(stats['depth'] * 100)}% depth", f"{stats['seconds']:.0f}s on page"]
+            if stats.get("serp"):
+                parts.insert(1, f"results: {stats['serp']}")
             if stats["back_scrolls"]:
                 parts.append(f"{stats['back_scrolls']} scroll-back")
             if stats.get("selections"):
@@ -400,6 +404,8 @@ class BrowserTransport(Transport):
             self.on_event("debug", f"{urllib.parse.urlparse(page.url).hostname}: " + ", ".join(parts))
             res = HitResult(status, html)
             res.detail = ", ".join(parts)
+            res.load_ms = load_ms
+            res.on_page_s = stats["seconds"]
             # content-length is missing for some compressed responses, so this is a floor
             res.bytes = max(len(html), s.get("counter", {}).get("bytes", 0) - bytes_before)
             return res

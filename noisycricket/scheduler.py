@@ -19,6 +19,13 @@ from .pacing import Budget, Pacer, SessionPacer
 from .transports import ClearnetTransport, HitResult, Target, TorTransport, Transport
 
 
+def _onion_offline(result) -> bool:
+    """Tor reports an unreachable .onion (offline, moved, or descriptor not found) with these."""
+    e = (result.error or "").lower()
+    return any(k in e for k in ("host unreachable", "ttl expired", "general socks server failure",
+                                "0x04", "0x06", "0x01", "connection refused", "timed out", "timeout"))
+
+
 class MaxFailuresExceeded(RuntimeError):
     """Raised when total failures exceed daily_max_failures."""
 
@@ -179,6 +186,7 @@ class Runner:
             })
         ex = getattr(self.profile, "extras", None)
         return {"lanes": lanes, "paused": self.paused, "uptime": int(time.time() - self.started_at),
+                "current": dict(self.current) if getattr(self, "current", None) else None,
                 "bytes_today": self.bytes_today, "data_cap_mb": ex.daily_data_mb if ex else 0}
 
     # ── hourly plan (app mode) ──────────────────────────────────────────────
@@ -321,6 +329,19 @@ class Runner:
         member = self._household.pick(self.rng)
         return member["entry"] if member["entry"] is not None else self._ua.choose()
 
+    def _onion_seen_dead(self, url: str) -> None:
+        import urllib.parse as _up
+        host = _up.urlparse(url).hostname or ""
+        dead = self.__dict__.setdefault("_onion_dead", {})
+        fails, _ = dead.get(host, (0, 0.0))
+        fails += 1
+        dead[host] = (fails, time.time() + (6 * 3600 if fails >= 2 else 0))   # two misses: rest it 6 hours
+
+    def _onion_is_dead(self, url: str) -> bool:
+        import urllib.parse as _up
+        fails, until = self.__dict__.get("_onion_dead", {}).get(_up.urlparse(url).hostname or "", (0, 0.0))
+        return fails >= 2 and time.time() < until
+
     def _active_hour(self, hour: int) -> bool:
         ex = getattr(self.profile, "extras", None)
         if ex is None or not ex.active_hours:
@@ -349,7 +370,8 @@ class Runner:
             return self._dns_probe(target)
         t0 = time.time()
         res = lane.transport.hit(identity, target)
-        res.latency_ms = (time.time() - t0) * 1000.0
+        total = (time.time() - t0) * 1000.0
+        res.latency_ms = getattr(res, "load_ms", None) or total     # page load only; time on page separate
         return res
 
     def _dns_probe(self, target: Target) -> HitResult:
@@ -436,7 +458,16 @@ class Runner:
                 if self.clock() - self._host_last.get(host, -1e9) >= 60:
                     break
                 target = self._make_target(lane, eng_name, identity)
-        result = self._probe(lane, identity, target)
+        self.current = {"lane": lane.name, "engine": eng_name, "url": target.url, "started": time.time(),
+                        "role": target.role}
+        try:
+            result = self._probe(lane, identity, target)
+        finally:
+            self.current = None
+        if eng_name == "onion" and not result.ok and _onion_offline(result):
+            result.error = "site offline (common for .onion sites; skipped for a while)"
+            result.offline = True
+            self._onion_seen_dead(target.url)
         if target.kind != "dns":
             import urllib.parse as _up
             self._host_last[_up.urlparse(target.url).hostname or ""] = self.clock()
@@ -504,11 +535,12 @@ class Runner:
             "error": result.error, "latency_ms": getattr(result, "latency_ms", None),
             "identity": getattr(identity, "id", None),
             "note": target.note, "role": target.role, "detail": getattr(result, "detail", None),
+            "on_page_s": round(getattr(result, "on_page_s", 0) or 0, 1),
         }
         self.hit_log.append(rec)
         short = shown if len(shown) <= 90 else shown[:87] + "…"
         tag = f" [{target.note}]" if target.note else (" [click]" if target.role == "result" else "")
-        self._emit("info" if result.ok else "warn", lane.name,
+        self._emit("info" if result.ok or getattr(result, "offline", False) else "warn", lane.name,
                    f"{eng_name:6s} {short}{tag} → {status}"
                    + (f" ({rec['latency_ms']:.0f} ms)" if rec["latency_ms"] else ""), **{"hit": rec["seq"]})
         if self.verbose:
@@ -567,7 +599,11 @@ class Runner:
                     rng=self.rng, seeds=list(tor_cfg.onion_seeds) if tor_cfg and tor_cfg.onion_seeds else [],
                     max_depth=self.profile.engines["onion"].max_depth,
                     follow_offsite=bool(tor_cfg.onion_follow_offsite) if tor_cfg else True)
-            return lane.onion_factory.make(identity)
+            for _ in range(8):                       # skip sites that were offline recently
+                t = lane.onion_factory.make(identity)
+                if not self._onion_is_dead(t.url):
+                    return t
+            return t
         if eng_name == "search":
             if lane.follow_next is not None:
                 nxt, lane.follow_next = lane.follow_next, None
@@ -620,9 +656,14 @@ class Runner:
                 self.reset_budgets()
                 self.paused = False if self.paused == "failures" else self.paused
             if self.rate is not None and now.tm_hour != self.hour:
+                first = self.hour is None
                 total = self.plan_hour(now.tm_hour)
-                # start somewhere inside the hour, never in a burst on the hour mark
-                self.sleep_fn(self.rng.uniform(0, min(600.0, 3600.0 / max(total, 0.25))) * self.profile.realtime_scale)
+                # first plan after Start: begin within seconds. Later hours: a short, random offset,
+                # never a burst exactly on the hour mark.
+                wait = self.rng.uniform(3, 20) if first else self.rng.uniform(0, min(120.0, 3600.0 / max(total, 0.25)))
+                if first:
+                    self._emit("info", "scheduler", f"First action in about {wait:.0f} seconds.")
+                self.sleep_fn(wait * self.profile.realtime_scale)
                 continue
             if self.paused:
                 self.sleep_fn(1.0)

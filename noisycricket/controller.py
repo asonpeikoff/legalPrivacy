@@ -562,6 +562,7 @@ class Controller:
         return {
             "version": __version__, "first_run": self.first_run, "running": self.running,
             "paused": stats.get("paused", False), "uptime": stats.get("uptime", 0) if self.running else 0,
+            "current": stats.get("current") if self.running else None,
             "lanes": stats["lanes"], "app": self.app,
             "bytes_today": stats.get("bytes_today", 0) if self.running else 0,
             "data_cap_mb": self.profile.extras.daily_data_mb,

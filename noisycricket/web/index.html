@@ -33,7 +33,10 @@ main{padding:16px;max-width:1200px;margin:0 auto}
 .bar.tor>i{background:var(--tor)}
 table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);vertical-align:top}
 th{color:var(--mute);font-weight:600;position:sticky;top:0;background:var(--panel)}
-td.url{word-break:break-all;font-family:ui-monospace,Consolas,monospace;font-size:12px}
+td.url{font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+#actTable{table-layout:fixed;width:100%}#actTable td{overflow:hidden}
+#actTable tr.open td.url{white-space:normal;word-break:break-all}
+@media (max-width:700px){#actTable col.opt{width:0}#actTable .opt{display:none}}
 .scroll{max-height:62vh;overflow:auto;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
 .logbox{font:12px/1.5 ui-monospace,Consolas,monospace;padding:8px;white-space:pre-wrap;word-break:break-word}
 .logbox div{padding:1px 4px;border-radius:3px}.logbox .warn{background:var(--warn2)}.logbox .error{background:var(--bad2)}.logbox .debug{color:var(--mute)}
@@ -112,7 +115,9 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
     <span class="mute small" id="aCount"></span>
     <button id="aCsv" title="Download this session's activity">⬇ CSV</button><button id="aJson" title="Download this session's activity">⬇ JSON</button>
   </div>
-  <div class="scroll"><table><thead><tr><th>Time</th><th>Lane</th><th>Engine</th><th>URL</th><th>Via / behaviour</th><th>Result</th><th>ms</th></tr></thead><tbody id="aBody"></tbody></table></div>
+  <div class="note small" id="aNow" style="display:none"></div>
+  <div class="scroll"><table id="actTable"><colgroup><col style="width:70px"><col class="opt" style="width:78px"><col class="opt" style="width:64px"><col style="width:34%"><col><col style="width:110px"><col class="opt" style="width:62px"><col class="opt" style="width:66px"></colgroup>
+    <thead><tr><th>Time</th><th class="opt">Lane</th><th class="opt">Engine</th><th>URL <span class="mute small">(click a row for the full address)</span></th><th>Via / behaviour</th><th>Result</th><th class="opt" title="How long the page took to load">Load</th><th class="opt" title="How long the visit stayed on the page">On page</th></tr></thead><tbody id="aBody"></tbody></table></div>
 </section>
 
 <!-- LOG -->
@@ -139,10 +144,11 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
     <div class="row">
       <button id="tStart" class="torb">▶ Start Tor</button>
       <button id="tStop">■ Stop Tor</button>
-      <button id="tRestart">↻ Restart</button>
-      <button id="tNym">🔀 New identity (new circuits)</button>
+      <button id="tRestart" title="Stop and start the Tor program: it reconnects to the Tor network from scratch (10–30 seconds)">↻ Restart</button>
+      <button id="tNym" title="Tor keeps running and uses fresh circuits (a new path and exit) for new connections. Takes a second.">🔀 New identity (new circuits)</button>
       <button id="tInstall">⬇ Install / update Tor</button>
     </div>
+    <div class="small mute"><b>Restart</b> stops and starts Tor itself, reconnecting to the network from scratch (use it if Tor seems stuck). <b>New identity</b> keeps Tor running and switches to fresh circuits, so new connections take a different path. <b>Ready</b> means Tor is connected; individual .onion sites are often offline, and those show in Activity as “site offline” and are skipped for a while.</div>
     <div class="small mute" id="tInstallNote"></div>
     <label class="chk"><input type="checkbox" id="tEnable"><span><b>Use Tor</b> — turn the Tor lane on. Starting noise will automatically start (and if needed, install) Tor.</span></label>
     <label class="chk"><input type="checkbox" id="tOnion"><span><b>🧅 Visit onion sites</b> (darknet noise) — only .onion addresses, never leaves the Tor network.</span></label>
@@ -175,6 +181,7 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
     <div><b>How much</b> <span class="small mute">— the average amount. It applies however random you make it.</span></div>
     <div class="row"><span>Less</span><input type="range" id="sLevel" min="1" max="10" step="1" value="5" style="flex:1"><span>More</span></div>
     <div class="note small" id="sLevelInfo"></div>
+    <div class="small mute" id="sLevelScope"></div>
     <div style="margin-top:10px"><b>How random</b> <span class="small mute">— how much each hour varies around that average</span></div>
     <div class="row"><span>Steady</span><input type="range" id="sRand" min="0" max="100" step="10" value="100" style="flex:1"><span>Random</span></div>
     <div class="small" id="sRandInfo"></div>
@@ -234,7 +241,7 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
     </details>
   </div>
   <div class="card"><h3>Extras</h3>
-    <div class="small mute">Optional additions, several borrowed from similar projects. None of them changes anything above unless you turn it on.</div>
+    <div class="small mute">Optional extras. None of them changes anything above unless you turn it on.</div>
     <label class="chk"><input type="checkbox" id="eHours"><span><b>Only make noise during these hours</b> <span class="mute">(off by default; noise outside your waking hours can look odd, so this helps if your days are regular)</span></span></label>
     <div class="row">from <select id="eFrom"></select> to <select id="eTo"></select> <span class="small mute">your local time</span></div>
     <label class="chk"><input type="checkbox" id="eDns"><span><b>Look sites up like a browser does</b> <span class="mute">(recommended, on) — also asks for IPv6 (AAAA) and HTTPS records, not just the address</span></span></label>
@@ -431,7 +438,7 @@ const fmtB=n=>n>1e9?(n/1e9).toFixed(2)+' GB':n>1e6?(n/1e6).toFixed(1)+' MB':n>1e
 // tabs
 $$('#nav button').forEach(b=>b.onclick=()=>{$$('#nav button').forEach(x=>x.classList.toggle('on',x===b));$$('.tab').forEach(t=>t.classList.toggle('on',t.id==='t-'+b.dataset.t));if(b.dataset.t==='log')renderLog(true);if(b.dataset.t==='set')fillSettings(true);if(b.dataset.t==='tor')fillTor(true);if(b.dataset.t==='tools')$('#toolCfg').textContent=S?S.config_path:'';if(b.dataset.t==='mylist')loadML()});
 
-let S=null, hits=[], hitAfter=0, logs=[], logAfter=0, errCount=0, srcOn=new Set(), srcAll=new Set();
+let S=null, hits=[], hitAfter=0, logs=[], logAfter=0, errCount=0, srcOn=new Set(), srcAll=new Set(['app','scheduler','clearnet','browser','tor','onion','tools','mylist']);
 let dirty={set:false,tor:false};
 
 // ---------- header buttons
@@ -473,7 +480,7 @@ function render(){
   let hitsT=0,failT=0,last=0,lastSub='';
   s.lanes.forEach(l=>{hitsT+=l.hits;failT+=l.failures;if(l.last_hit_ts&&l.last_hit_ts>last){last=l.last_hit_ts;lastSub=l.name}});
   $('#kHits').textContent=hitsT;$('#kFail').textContent=failT;
-  $('#kUp').textContent=s.running?fmtDur(s.uptime):'—';
+  $('#kUp').textContent=s.running?fmtDur(s.uptime):'—';renderNow();
   $('#kData').textContent=s.running?fmtB(s.bytes_today||0):'—';$('#kDataSub').textContent=s.data_cap_mb>0?`cap ${s.data_cap_mb} MB a day`:'approximate; no cap';
   $('#kPace').textContent=(s.hour_target!=null?`this hour: ~${s.hour_target} planned · `:'')+`${s.profile.rate.mode} · level ${s.profile.rate.level}`;
   $('#kLast').textContent=last?fmtDur(Date.now()/1000-last)+' ago':'—';$('#kLastSub').textContent=lastSub;
@@ -503,11 +510,20 @@ function renderSpark(){
 }
 // activity
 ['aLane','aEng','aErr','aQ'].forEach(id=>$('#'+id).oninput=renderAct);
+// long .onion names are shortened in the middle; the full address is in the tooltip
+function shortUrl(u){return String(u).replace(/([a-z2-7]{10})[a-z2-7]{30,}([a-z2-7]{6}\.onion)/g,'$1…$2')}
+function renderNow(){const c=S&&S.current, el=$('#aNow');if(!el)return;
+  if(!c){el.style.display='none';return}
+  const secs=Math.max(0,Math.round(Date.now()/1000-c.started));
+  el.style.display='';el.innerHTML=`<b>Now:</b> ${esc(c.role==='search'?'looking at search results':c.engine==='dns'?'DNS lookup':c.role==='result'?'reading a result':'on a page')} — <code>${esc(shortUrl(c.url))}</code> <span class="mute">for ${secs} s</span>`}
 function renderAct(){
   const ln=$('#aLane').value,en=$('#aEng').value,er=$('#aErr').checked,q=$('#aQ').value.toLowerCase();
   const rows=hits.filter(h=>(!ln||h.lane===ln)&&(!en||h.engine===en)&&(!er||!h.ok)&&(!q||h.url.toLowerCase().includes(q))).slice(-400).reverse();
   $('#aCount').textContent=rows.length+' shown / '+hits.length;
-  $('#aBody').innerHTML=rows.map(h=>`<tr><td>${fmtT(h.ts)}</td><td>${h.lane==='tor'?'🧅 tor':'clearnet'}</td><td>${esc(h.engine)}</td><td class="url">${esc(h.url)}</td><td class="small">${esc([h.role==='result'?'clicked result':'',h.note,h.detail].filter(Boolean).join(' · '))}</td><td class="${h.ok?'ok':'bad'}">${esc(h.status||h.error||'error')}</td><td>${h.latency_ms?Math.round(h.latency_ms):''}</td></tr>`).join('');
+  const lane=l=>l==='tor'?'🧅 tor':l==='clearnet-plain'?'plain HTTP':'clearnet';
+  const onP=s=>!s?'':s<60?Math.round(s)+' s':s<3600?Math.floor(s/60)+' m '+Math.round(s%60)+' s':'1 h+';
+  $('#aBody').innerHTML=rows.map(h=>`<tr><td>${fmtT(h.ts)}</td><td class="opt">${lane(h.lane)}</td><td class="opt">${esc(h.engine)}</td><td class="url" title="${esc(h.url)}">${esc(shortUrl(h.url))}</td><td class="small">${esc([h.role==='result'?'clicked result':'',h.note,h.detail].filter(Boolean).join(' · '))}</td><td class="${h.ok?'ok':(/offline/.test(h.error||'')?'mute':'bad')}">${esc(h.status?('HTTP '+h.status):/offline/.test(h.error||'')?'site offline':(h.error||'error'))}</td><td class="opt">${h.latency_ms?Math.round(h.latency_ms)+' ms':''}</td><td class="opt">${onP(h.on_page_s)}</td></tr>`).join('');
+  $$('#aBody tr').forEach(tr=>tr.onclick=()=>tr.classList.toggle('open'));
 }
 // log
 function renderChips(){
@@ -691,7 +707,7 @@ function fillSettings(force){
   window._engMix=MixBar($('#engines'),Object.entries(p.engines).filter(([n])=>n!=='onion'||torOn)
     .map(([n,e])=>({key:n,label:ENAME[n]||n,value:e.enabled?e.budget_per_day:0})));
   $('#engines').insertAdjacentHTML('beforeend',torOn?'':'<div class="small mute">Onion sites join this mix automatically when Tor is on (🧅 Tor tab).</div>');
-  const r=p.rate||{mode:'random',level:5,randomness:1};$('#sLevel').value=r.level;rateInfo('sLevel','sLevelInfo');
+  const r=p.rate||{mode:'random',level:5,randomness:1};$('#sLevel').value=r.level;rateInfo('sLevel','sLevelInfo');levelScope();
   $('#sRand').value=r.mode==='steady'?0:Math.round((r.randomness??1)*100);randInfo();
   const d=p.dns||{};(document.querySelector(`input[name=dnsm][value=${d.mode||'mix'}]`)||{}).checked=true;
   $('#dShare').value=Math.round((d.system_share??0.5)*100);$('#dOpen').checked=d.opennic!==false;$('#dQuad9').checked=!!d.quad9;$('#dCustom').value=(d.custom||[]).join(', ');
@@ -800,6 +816,10 @@ function randInfo(){
     `<b>${v}% random</b>: each hour is ${100-v}% steady and ${v}% random — the swings are gentler than fully random.`;
 }
 $('#sRand').addEventListener('input',()=>{randInfo();dirty.set=true;$('#sSaved').textContent='unsaved changes'});
+function levelScope(){const p=S&&S.profile;if(!p||!$('#sLevelScope'))return;
+  const tor=!!(p.transports.tor&&p.transports.tor.enabled), web=!!p.transports.clearnet.enabled;
+  const parts=[web?'web pages and searches':'',web?'DNS lookups':'',tor?'.onion sites':''].filter(Boolean);
+  $('#sLevelScope').innerHTML=parts.length?`This sets the total for everything that's on: <b>${parts.join(', ')}</b>${!web&&tor?' (with only Tor on, it is the amount of .onion browsing)':''}. <b>Activity mix</b> and <b>Traffic mix</b> split that total; <b>How random</b> varies each hour around it, so busy hours go above it and quiet hours below.`:'Nothing is turned on yet.'}
 function rateInfo(sl,out){
   if(!S||!S.rate_info)return;const d=S.rate_info[parseInt($('#'+sl).value)-1];
   $('#'+out).innerHTML=`<b>Level ${d.level} — ${esc(d.name)}.</b> About <b>${d.searches_per_hour} searches an hour</b> (≈${d.actions_per_hour} actions an hour counting page visits and DNS lookups). Over a 15-hour waking day that's ≈${d.searches_per_day_awake} searches. For comparison, studies of typed Google searches find about 4 a day for an active US desktop user (SparkToro/Datos, 2024; the median is about 2), so this is about <b>${d.vs_average_person}×</b> that. That figure leaves out phones, apps, maps, YouTube and AI assistants, so real people look things up far more often than it suggests. Noise only hides you if it's at least comparable to your real activity.`;
