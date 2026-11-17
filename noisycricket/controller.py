@@ -373,7 +373,8 @@ class Controller:
                                          "Using plain HTTP instead.")
             return None
         from .browser import BrowserTransport
-        return BrowserTransport(proxy=cfg.proxy, headless=not cfg.browser_visible, executable=info["detail"],
+        return BrowserTransport(proxy=cfg.proxy, headless=not (cfg.browser_visible or cfg.browser_offscreen),
+                                offscreen=cfg.browser_offscreen and not cfg.browser_visible, executable=info["detail"],
                                 low_data=self.profile.extras.low_data,
                                 stop_event=stop, scale=lambda: self.profile.realtime_scale,
                                 on_event=lambda lvl, msg: self.log.add(lvl, "browser", msg))

@@ -178,7 +178,9 @@ class BrowserTransport(Transport):
     def __init__(self, proxy: str | None = None, headless: bool = True, executable: str | None = None,
                  stop_event: threading.Event | None = None, scale: Callable[[], float] = lambda: 1.0,
                  download_prob: float = 0.03, on_event: Callable[[str, str], None] | None = None,
-                 rng: random.Random | None = None, low_data: bool = False, image_prob: float = 0.04):
+                 rng: random.Random | None = None, low_data: bool = False, image_prob: float = 0.04,
+                 offscreen: bool = False):
+        self.offscreen = offscreen and not headless
         self.low_data = low_data
         self.image_prob = 0.0 if low_data else image_prob     # no images loaded in low-data mode
         self.proxy, self.headless = proxy, headless
@@ -202,13 +204,15 @@ class BrowserTransport(Transport):
         self._pw = sync_playwright().start()
         args = ["--disable-blink-features=AutomationControlled", "--no-default-browser-check",
                 "--no-first-run", "--disable-background-networking"]
+        if self.offscreen:                                 # a real window, placed where no screen is
+            args += ["--window-position=-32000,-32000", "--window-size=1366,850"]
         if hasattr(os, "geteuid") and os.geteuid() == 0:
             args.append("--no-sandbox")                    # Chromium refuses to sandbox as root
         self._browser = self._pw.chromium.launch(executable_path=self.executable, headless=self.headless,
                                                  args=args, proxy={"server": self.proxy} if self.proxy else None)
         self._major = (self._browser.version or "0").split(".")[0]
         self.on_event("info", f"Real browser started: {Path(self.executable).name} {self._browser.version}"
-                              f" ({'headless' if self.headless else 'visible'})")
+                              f" ({'headless' if self.headless else 'off-screen window' if self.offscreen else 'visible'})")
 
     def close(self) -> None:
         for s in list(self._sessions.values()):
