@@ -49,7 +49,9 @@ def describe(level: float, search_share: float) -> dict:
     """Numbers for the UI slider label."""
     s = searches_per_hour(level)
     total = s / max(search_share, 0.05)
+    from .sessions import active_minutes
     return {"level": level, "name": LEVEL_NAMES[int(round(level)) - 1],
+            "minutes_per_hour": round(active_minutes(level)),
             "searches_per_hour": round(s, 1), "actions_per_hour": round(total),
             "searches_per_day_awake": round(s * 15), "vs_average_person": round(s * 15 / AVG_PERSON_SEARCHES_PER_DAY, 1)}
 

@@ -65,8 +65,11 @@ def test_real_browser_scrolls_moves_and_clicks_like_a_person():
         assert best > 300, f"page never scrolled (max scrollY {best})"
         assert any("w=0" not in e for e in EVENTS), "no wheel/touch events seen"
         # click-through from a results page
-        tr.hit(Ident(), Target(url=base + "/serp"))
-        r = tr.hit(Ident(), Target(url=base + "/page", referer=tr._sessions[1]["last_url"], role="result"))
+        tr.hit(Ident(), Target(url=base + "/serp", role="search", dwell=1))
+        r = tr.hit(Ident(), Target(url=base + "/page", referer=base + "/serp", role="result", dwell=1))
+        assert r.ok and r.detail and (r.detail.startswith("click") or r.detail.startswith("tap")), r.detail
+        # after reading the result, going "back" to the results and clicking again also works
+        r = tr.hit(Ident(), Target(url=base + "/page", referer=base + "/serp", role="result", dwell=1))
         assert r.ok and r.detail and (r.detail.startswith("click") or r.detail.startswith("tap")), r.detail
     finally:
         tr.close()

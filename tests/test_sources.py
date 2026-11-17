@@ -95,10 +95,12 @@ def test_domain_pool_real_domains_only_and_browsable_filter():
 
 
 def test_serp_result_extraction_unwraps_redirects():
-    html = ('<a href="/l/?uddg=https%3A%2F%2Fwww.example.org%2Fa">r1</a>'
-            '<a href="https://duckduckgo.com/settings">x</a>'
-            '<a href="/url?q=https://news.example.com/story&sa=U">r2</a>'
-            '<a href="https://www.example.org/b">dup host</a>')
+    html = ('<a href="/l/?uddg=https%3A%2F%2Fwww.example.org%2Fa">How to grow tomatoes indoors</a>'
+            '<a href="https://duckduckgo.com/settings">Settings and privacy</a>'
+            '<a href="https://www.instagram.com/duckduckgo/">Follow us on Instagram</a>'
+            '<a href="/url?q=https://news.example.com/story&sa=U">Local news story about gardens</a>'
+            '<a href="https://www.example.org/b">Another page on the same site</a>'
+            '<a href="https://short.example.net/">Next</a>')
     assert extract_result_links(html, "https://html.duckduckgo.com/html/?q=x") == [
         "https://www.example.org/a", "https://news.example.com/story"]
 

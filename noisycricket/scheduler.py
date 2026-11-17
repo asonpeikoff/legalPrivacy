@@ -113,7 +113,8 @@ class Runner:
     queries: object | None = None      # QuerySource shared by all lanes (live/real queries)
     domains: object | None = None      # DomainPool (real popular domains)
     click_prob: float = 0.6            # chance a search is followed by opening a result
-    rate: object | None = None         # RatePlanner: hourly plan (app mode). None = daily budgets (CLI/tests)
+    rate: object | None = None         # RatePlanner: hourly plan (legacy app mode)
+    sessions: object | None = None     # SessionPlanner: human sessions + breaks (app mode)
     dns_plan: object | None = None     # DnsPlan: which resolver DNS noise uses
 
     def __post_init__(self) -> None:
@@ -131,6 +132,8 @@ class Runner:
         self.hour: int | None = None
         self.hour_target = 0.0
         self._pace: tuple[float, float] | None = None   # (min_delay, max_delay) for this hour
+        self.activity: dict = {"state": "starting"}       # what is happening right now (for the UI)
+        self.session_no = 0
 
     def _emit(self, level: str, source: str, msg: str, **data) -> None:
         if self.log:
@@ -282,6 +285,14 @@ class Runner:
         lane, eng_name = self.rng.choices(options, weights=weights)[0]
         identity, pacer = self._identity_pacer_for(lane)
         target = self._make_target(lane, eng_name, identity)
+        self._execute(lane, eng_name, identity, pacer, target)
+        if wait:
+            pacer.wait(hour)
+        return True
+
+    def _execute(self, lane: Lane, eng_name: str, identity: Identity, pacer: Pacer, target: Target,
+                 settle: bool = True) -> HitResult:
+        """Make one request and do all the bookkeeping (counts, failures, log, backoff)."""
         result = self._probe(lane, identity, target)
         budget = lane.budgets[eng_name]
         if result.ok:
@@ -293,7 +304,8 @@ class Runner:
             lane.last_error = None
             if getattr(lane.transport, "dimmed", False):
                 lane.transport.dimmed = False
-            self._settle(lane, eng_name, target, result)
+            if settle:
+                self._settle(lane, eng_name, target, result)
         else:
             budget.record_failure(self.clock())
             lane.failures_total += 1
@@ -322,9 +334,7 @@ class Runner:
             raise MaxFailuresExceeded("daily_max_failures exceeded — stopping run")
         if result.dim_transport and hasattr(lane.transport, "dimmed"):
             lane.transport.dimmed = True
-        if wait:
-            pacer.wait(hour)
-        return True
+        return result
 
     def _record_hit(self, lane: Lane, eng_name: str, identity: Identity,
                     target: Target, result: HitResult) -> None:
@@ -470,6 +480,164 @@ class Runner:
                 self.sleep_fn(2.0)       # all budgets spent or lanes gated: idle politely
         self.close()
         self._emit("info", "scheduler", "Noise generation stopped.")
+
+    # ── human sessions (app mode) ───────────────────────────────────────────
+    def _sleep(self, seconds: float) -> None:
+        self.sleep_fn(max(0.0, seconds) * self.profile.realtime_scale)
+
+    def _now(self) -> float:
+        return float(self.clock())
+
+    def run_sessions(self) -> None:
+        """Alternate browsing sessions and breaks until stopped."""
+        self._emit("info", "scheduler", "Noise generation started (human-like sessions).")
+        last = None
+        while not self._stopped():
+            now = time.localtime()
+            if now.tm_yday != self.day:
+                self.day = now.tm_yday
+                self.reset_budgets()
+                if self.paused == "failures":
+                    self.paused = False
+            if self.paused:
+                self.activity = {"state": "paused"}
+                self._sleep(1.0)
+                continue
+            block = self.sessions.next_block(now.tm_hour + now.tm_min / 60, last)
+            if block.kind == "break":
+                until = time.time() + block.seconds * self.profile.realtime_scale
+                self.activity = {"state": "break", "until": until, "since": time.time()}
+                if block.seconds > 30:
+                    self._emit("info", "scheduler", f"Taking a break for about {block.seconds / 60:.0f} min "
+                               f"(until {time.strftime('%H:%M', time.localtime(until))}), like a person stepping away.")
+                self._background_lookups(block.seconds)
+                last = "break"
+                continue
+            lane = next((l for l in self.lanes if l.name == block.lane and l.open), None) \
+                or next((l for l in self.lanes if l.name == "clearnet"), None)
+            if lane is None:
+                self.activity = {"state": "waiting", "why": "waiting for Tor to connect"}
+                self._sleep(5)
+                continue
+            try:
+                if lane.name == "tor":
+                    self._onion_session(lane, block.seconds)
+                else:
+                    self._web_session(lane, block.seconds)
+            except MaxFailuresExceeded as exc:
+                self._emit("error", "scheduler", f"{exc}. Pausing until tomorrow.")
+                self.paused = "failures"
+            last = "session"
+        self.activity = {"state": "stopped"}
+        self.close()
+        self._emit("info", "scheduler", "Noise generation stopped.")
+
+    def _background_lookups(self, seconds: float) -> None:
+        """During a break: mostly quiet, with the odd background DNS lookup (devices do that)."""
+        end = self._now() + seconds * self.profile.realtime_scale
+        lane = next((l for l in self.lanes if l.name == "clearnet" and "dns" in l.engines), None)
+        while not self._stopped() and self._now() < end:
+            gap = min(end - self._now(), self.rng.uniform(120, 900) * self.profile.realtime_scale)
+            self.sleep_fn(max(0.0, gap))
+            if lane and not self._stopped() and self._now() < end and self.rng.random() < 0.5:
+                ident, pacer = self._identity_pacer_for(lane)
+                self._execute(lane, "dns", ident, pacer, self._make_target(lane, "dns", ident))
+
+    def _set_doing(self, **kw) -> None:
+        self.activity.update(kw)
+
+    def _web_session(self, lane: Lane, seconds: float) -> None:
+        from .engines import CrawlTargetFactory, SearchTargetFactory
+        from .sessions import related_query
+        sp = self.sessions
+        end = self._now() + seconds * self.profile.realtime_scale
+        identity, pacer = self._identity_pacer_for(lane)
+        engines = set(lane.engines)
+        self.session_no += 1
+        if lane.search_factory is None:
+            lane.search_factory = SearchTargetFactory(rng=self.rng, words=self.wordlist, queries=self.queries,
+                                                      html_mode=not getattr(lane.transport, "is_browser", False))
+        sf = lane.search_factory
+        crawl = CrawlTargetFactory(rng=self.rng, seeds=[], domains=self.domains)
+        theme, origin = (sf.queries.next(identity) if "search" in engines else ("", "none"))
+        self.activity = {"state": "session", "session": self.session_no, "lane": lane.name, "theme": theme,
+                         "since": time.time(), "until": time.time() + seconds * self.profile.realtime_scale,
+                         "steps": 0, "doing": "starting"}
+        self._emit("info", "scheduler", f"Session {self.session_no} started ({seconds / 60:.0f} min)"
+                   + (f" — topic: “{theme}”" if theme else ""))
+        query = theme
+        serp: tuple[str, str] | None = None
+        visited: set[str] = set()
+        last_role, last_html, last_url = None, "", ""
+        if "search" not in engines or ("crawl" in engines and self.rng.random() < 0.15):
+            last_role = "open_site"                       # sometimes start by opening a familiar site
+            self.activity["theme"] = "popular sites"
+        while not self._stopped() and self._now() < end:
+            if last_role == "open_site":
+                target, role, eng = crawl.make(identity), "page", "crawl"
+            else:
+                step = sp.next_step(last_role, serp is not None) if "search" in engines else "follow"
+                target, role, eng = None, "page", "search"
+                if step == "search":
+                    target, role = sf.make_for(query, origin), "search"
+                elif step == "related_search":
+                    nq = related_query(self.rng, last_html, query) if last_role == "page" else None
+                    if nq:
+                        query, origin = nq, "related to last page"
+                    else:
+                        query, origin = sf.queries.next(identity)
+                    target, role = sf.make_for(query, origin), "search"
+                elif step in ("result", "another_result") and serp:
+                    target = sf.result_target(serp[1], serp[0], exclude=visited)
+                elif step == "follow" and last_html:
+                    target = crawl.next_from(last_html, last_url)
+                    eng = "crawl" if "crawl" in engines else "search"
+                if target is None:                         # nothing to click: search something related
+                    query, origin = sf.queries.next(identity)
+                    target, role = sf.make_for(query, origin), "search"
+            target.dwell = sp.dwell(role)
+            host = (target.url.split("/")[2] if "://" in target.url else target.url)
+            self._set_doing(doing=("searching “%s”" % query) if role == "search" else f"reading {host}",
+                            steps=self.activity.get("steps", 0) + 1, theme=query)
+            if eng not in lane.budgets:
+                eng = next(iter(lane.budgets))
+            result = self._execute(lane, eng, identity, pacer, target, settle=False)
+            visited.add(target.url)
+            if result.ok:
+                last_html, last_url = result.html or "", target.url
+                if role == "search":
+                    serp = (target.url, last_html)
+                last_role = "search" if role == "search" else "page"
+                if not getattr(lane.transport, "is_browser", False):
+                    self._sleep(target.dwell)              # plain HTTP: time spent "reading"
+            else:
+                last_role = None if role == "search" else last_role
+            if "dns" in engines and self.rng.random() < 0.4:
+                for _ in range(self.rng.randint(1, 2)):
+                    self._execute(lane, "dns", identity, pacer, self._make_target(lane, "dns", identity))
+            self._sleep(sp.think())
+        self._emit("info", "scheduler", f"Session {self.session_no} ended after {self.activity.get('steps', 0)} steps.")
+
+    def _onion_session(self, lane: Lane, seconds: float) -> None:
+        sp = self.sessions
+        end = self._now() + seconds * self.profile.realtime_scale
+        identity, pacer = self._identity_pacer_for(lane)
+        self.session_no += 1
+        self.activity = {"state": "session", "session": self.session_no, "lane": "tor", "theme": "onion sites",
+                         "since": time.time(), "until": time.time() + seconds * self.profile.realtime_scale,
+                         "steps": 0, "doing": "starting"}
+        self._emit("info", "scheduler", f"Session {self.session_no} started on Tor ({seconds / 60:.0f} min).")
+        while not self._stopped() and self._now() < end and lane.open:
+            target = self._make_target(lane, "onion", identity)
+            target.dwell = sp.dwell("page")
+            self._set_doing(doing=f"reading {target.url.split('/')[2][:16]}….onion",
+                            steps=self.activity.get("steps", 0) + 1)
+            result = self._execute(lane, "onion", identity, pacer, target)
+            if result.ok:
+                self._sleep(target.dwell)
+            else:
+                self._sleep(self.rng.uniform(10, 40))     # onion sites are often slow or offline
+            self._sleep(sp.think())
 
     def close(self) -> None:
         """Release transport resources (real browsers) from the thread that used them."""

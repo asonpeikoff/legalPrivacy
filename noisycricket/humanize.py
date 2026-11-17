@@ -120,8 +120,12 @@ class HumanDriver:
         self.stats["scrolls"] += 1
 
     # -- a whole visit -----------------------------------------------------
-    def browse(self, max_seconds: float = 90.0) -> dict:
-        """Behave like a person who just opened this page."""
+    def browse(self, max_seconds: float = 90.0, min_seconds: float = 0.0) -> dict:
+        """Behave like a person who just opened this page.
+
+        Reads down to a chosen depth, then — if the planned time on the page isn't up —
+        keeps reading: long pauses, small scrolls both ways, the occasional mouse drift.
+        """
         rng, act = self.rng, self.act
         w, h = act.viewport()
         self.pause(lognormal_clipped(rng, 1.2, 0.5, 0.4, 4.0))              # page settles / eyes land
@@ -144,6 +148,17 @@ class HumanDriver:
                 self.move_to(rng.uniform(0.1, 0.9) * w, rng.uniform(0.15, 0.85) * h)
             if act.page_height() - h <= 0:
                 break
+        budget = min_seconds * self.scale
+        while self.stats["seconds"] < budget and not act.stopped():       # keep reading until time's up
+            self.pause(min(lognormal_clipped(rng, 6.0, 0.6, 1.5, 25.0),
+                           max(0.2, (budget - self.stats["seconds"]) / self.scale)))
+            if self.stats["seconds"] >= budget:
+                break
+            r = rng.random()
+            if r < 0.45 and scrollable:
+                self.scroll_burst(h * rng.uniform(0.15, 0.6) * (1 if rng.random() < 0.8 else -1))
+            elif r < 0.7:
+                self.move_to(rng.uniform(0.1, 0.9) * w, rng.uniform(0.15, 0.85) * h)
         if rng.random() < 0.5:
             self.pause(lognormal_clipped(rng, 2.0, 0.6, 0.5, 10.0))       # final look before leaving
         self.stats["depth"] = round(min(1.0, act.scroll_y() / scrollable), 2) if scrollable else 0.0

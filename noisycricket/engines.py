@@ -113,7 +113,11 @@ def load_wordlist(path: str, fallback: list[str] | None = None) -> list[str]:
 
 
 _SEARCH_HOSTS = ("google.", "duckduckgo.", "bing.", "brave.", "startpage.", "ecosia.", "mojeek.", "qwant.",
-                 "yahoo.", "yandex.", "baidu.")
+                 "yahoo.", "yandex.", "baidu.", "microsoft.")
+_ENGINE_BRANDS = ("google", "duckduckgo", "bing", "brave", "startpage", "ecosia", "mojeek", "qwant", "microsoft")
+# engines whose results are in the HTML itself (needed when not using a real browser)
+_SERVER_RENDERED = ("html.duckduckgo.com", "lite.duckduckgo.com", "bing.com", "search.brave.com",
+                    "mojeek.com", "startpage.com")
 
 
 def _unwrap_redirect(href: str, base: str) -> str:
@@ -144,11 +148,15 @@ def extract_result_links(html: str, search_url: str, limit: int = 12) -> list[st
         pass
     seen_hosts: set[str] = set()
     out: list[str] = []
-    for href in parser.links:
+    for href, text in zip(parser.links, parser.texts):
         u = _unwrap_redirect(href, search_url)
         p = urllib.parse.urlparse(u)
         host = (p.hostname or "").lower()
         if p.scheme not in ("http", "https") or not host or any(h in host for h in _SEARCH_HOSTS):
+            continue
+        if any(b in u.lower() for b in _ENGINE_BRANDS):        # the engine's own social profiles, apps…
+            continue
+        if len(" ".join(text.split())) < 12:                    # organic results have real titles
             continue
         if host in seen_hosts or not safe_domain(host):
             continue
@@ -174,14 +182,22 @@ class SearchTargetFactory:
             self.queries = QuerySource(self.rng, None, words=self.words)
 
     def make(self, identity) -> Target:
-        endpoint = self.rng.choices(SEARCH_ENDPOINTS, weights=SEARCH_WEIGHTS)[0]
+        query, origin = self.queries.next(identity)
+        return self.make_for(query, origin)
+
+    def make_for(self, query: str, origin: str | None = None) -> Target:
+        # a person sticks with one search engine for a while: reuse it ~85% of the time
+        if getattr(self, "_engine", None) is None or self.rng.random() < 0.15:
+            pool = [(u, w) for u, w in SEARCH_ENGINE_TIERS
+                    if not self.html_mode or any(h in u for h in _SERVER_RENDERED) or "duckduckgo.com/?q=" in u]
+            self._engine = self.rng.choices([u for u, _ in pool], weights=[w for _, w in pool])[0]
+        endpoint = self._engine
         if self.html_mode and "duckduckgo.com/?q=" in endpoint and "lite." not in endpoint:
             endpoint = "https://html.duckduckgo.com/html/?q="     # the JS-free results page
-        query, origin = self.queries.next(identity)
         return Target(url=endpoint + urllib.parse.quote_plus(query), note=origin, role="search")
 
-    def result_target(self, html: str, search_url: str) -> Target | None:
-        links = extract_result_links(html, search_url)
+    def result_target(self, html: str, search_url: str, exclude: set | None = None) -> Target | None:
+        links = [u for u in extract_result_links(html, search_url) if not exclude or u not in exclude]
         if not links:
             return None
         weights = [1.0 / (i + 1) ** 1.2 for i in range(len(links))]      # top results get most clicks
@@ -189,15 +205,29 @@ class SearchTargetFactory:
 
 
 class _LinkExtractor(HTMLParser):
+    """Collects hrefs (self.links) and, in parallel, each link's visible text (self.texts)."""
+
     def __init__(self) -> None:
         super().__init__()
         self.links: list[str] = []
+        self.texts: list[str] = []
+        self._open: int | None = None
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag.lower() == "a":
             for k, v in attrs:
                 if k.lower() == "href" and v:
                     self.links.append(v)
+                    self.texts.append("")
+                    self._open = len(self.links) - 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() == "a":
+            self._open = None
+
+    def handle_data(self, data: str) -> None:
+        if self._open is not None:
+            self.texts[self._open] += data
 
 
 @dataclass
@@ -241,6 +271,7 @@ class CrawlTargetFactory:
 _SKIP_EXT = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico", ".css", ".js", ".json", ".xml",
              ".pdf", ".zip", ".mp4", ".mp3", ".woff", ".woff2", ".rss", ".atom")
 _SKIP_PATH = ("login", "signin", "sign-in", "signup", "register", "logout", "account", "cart", "checkout",
+              "legal", "terms", "privacy", "policy", "cookie", "contact", "careers", "advertis",
               "action=edit", "action=history", "special:", "/edit", "oldid=", "printable=", "share", "mailto")
 
 

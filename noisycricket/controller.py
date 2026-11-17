@@ -23,7 +23,8 @@ from .config import (ConfigError, Profile, apply_overrides, load_profile,
 from .engines import load_wordlist
 from .dnsplan import DnsPlan
 from .domains import DomainPool
-from .rate import RatePlanner, describe as describe_rate
+from .rate import describe as describe_rate
+from .sessions import SessionPlanner
 from .events import EventLog
 from .feeds import FeedStore
 from .queries import QueryConfig, QuerySource
@@ -247,16 +248,24 @@ class Controller:
             self.runner = Runner(profile=prof, lanes=lanes, wordlist=words, log=self.log,
                                  stop_event=self._stop, sleep_fn=lambda s: self._stop.wait(s),
                                  queries=self._query_source(words), domains=DomainPool(_r.Random(), self.feeds),
-                                 rate=RatePlanner(_r.Random(), prof.rate),
+                                 sessions=SessionPlanner(_r.Random(), prof.rate.mode, prof.rate.level,
+                                                         onion_share=self._onion_share()),
                                  dns_plan=self._fresh_dns_plan())
             self._thread = threading.Thread(target=self._run_loop, daemon=True, name="cricket-runner")
             self._thread.start()
             self.log.info("app", "Started: lanes = " + ", ".join(
                 f"{l.name}[{'/'.join(l.engines)}]" for l in lanes))
 
+    def _onion_share(self) -> float:
+        t = self._tor_cfg()
+        if not (t.enabled and t.onion and self.profile.engines["onion"].enabled):
+            return 0.0
+        w = {n: e.budget_per_day for n, e in self.profile.engines.items() if e.enabled}
+        return min(0.6, w.get("onion", 0) / max(1, sum(w.values())) * 1.5)
+
     def _run_loop(self) -> None:
         try:
-            self.runner.run_forever()
+            self.runner.run_sessions()
         except Exception as exc:
             self.log.error("scheduler", f"Runner crashed: {exc!r}")
 
@@ -314,7 +323,7 @@ class Controller:
             "presets": PRESETS, "browser": self.browser_info(), "feeds": self.feeds.status(),
             "feeds_refreshing": self.feeds.refreshing,
             "rate_info": [describe_rate(lv, self._search_share()) for lv in range(1, 11)],
-            "hour_target": round(self.runner.hour_target) if self.runner and self.running else None,
+            "activity": (self.runner.activity if self.runner and self.running else {"state": "stopped"}),
             "opennic": [x.split("|") for x in self.feeds.items("opennic")],
             "dns": self.dns_plan.report(),
         }

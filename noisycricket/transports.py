@@ -31,6 +31,7 @@ class Target:
     referer: str | None = None    # set on click-through / link-follow hits
     note: str | None = None       # e.g. query origin ("trends", "dataset"…), shown in the log
     role: str = "page"            # search | result | page
+    dwell: float | None = None    # seconds a person would spend on this page (sessions)
 
     @property
     def host(self) -> str:
@@ -115,7 +116,10 @@ class ClearnetTransport(Transport):
                 # Identity headers injected here; requests also sets Host/Content-Length.
                 headers=headers,
             )
-            return HitResult(resp.status_code, resp.text[:2_000_000])
+            status = resp.status_code
+            if status == 202 and "duckduckgo.com" in target.url:
+                status = 429                       # DuckDuckGo's bot check: back off, don't count a visit
+            return HitResult(status, resp.text[:2_000_000])
         except requests.RequestException as exc:
             return HitResult(None, error=str(exc))
 
