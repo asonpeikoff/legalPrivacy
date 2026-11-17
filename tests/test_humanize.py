@@ -87,3 +87,22 @@ def test_visits_mix_down_up_and_reread_patterns():
         for k in stats:
             stats[k] += s[k]
     assert stats["scrolls"] > 300 and stats["back_scrolls"] > 20 and stats["re_reads"] > 5
+
+
+def test_time_on_page_is_mostly_short_with_a_rare_long_tail():
+    from noisycricket.humanize import sample_dwell
+    rng = random.Random(1)
+    xs = [sample_dwell(rng) for _ in range(200_000)]
+    n = len(xs)
+    assert 400 < n / sum(x >= 600 for x in xs) < 620          # ~1 in 500 ten minutes or more
+    assert 85 < n / sum(x >= 180 for x in xs) < 115           # ~1 in 100 three minutes or more
+    assert 22 < n / sum(x >= 60 for x in xs) < 28             # ~1 in 25 a minute or more
+    short = sorted(x for x in xs if x < 60)
+    assert short[0] >= 1 and short[len(short) // 2] < 15       # weighted towards the short end
+
+
+def test_long_visits_keep_moving_and_results_pages_use_human_styles():
+    st = HumanDriver(random.Random(3), FakePage(height=9000)).browse(dwell=300)
+    assert st["scrolls"] > 30 and st["back_scrolls"] > 5 and abs(st["seconds"] - 300) < 30
+    styles = {HumanDriver(random.Random(s), FakePage(height=4000)).serp()["serp"] for s in range(60)}
+    assert styles == {"glance", "half-screen", "skim"}

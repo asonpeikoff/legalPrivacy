@@ -1,428 +1,205 @@
-# noisyCricket v2.6
+# noisyCricket v2.7
 
-Conducts random searches, crawls, and DNS lookups so that mass traffic and
-bulk analysis of any one person's browsing is less useful. Fully automated,
-with **separate, appropriate logic for Tor and clearnet traffic**, an
-**optional Tor/onion mode**, and an optional **community contribution** mode
-that runs a Tor *middle/bridge* relay — never an exit.
+noisyCricket makes believable background browsing, searches and DNS lookups from your
+computer, so that bulk analysis of your traffic tells much less about you. It runs in a
+real browser, behaves like a person, follows a daily rhythm, and can make optional Tor
+`.onion` noise. Everything it does is visible in a local dashboard, and nothing about your
+activity is stored after it stops.
 
-## Quick start — double-click
+## Quick start
 
 | You have | Do this |
 |---|---|
-| A release download | Double-click `cricket-launch-windows.exe` / `cricket-launch-macos` / `cricket-launch-linux` |
-| The source (Python 3.10+) | Double-click `Start-noisyCricket.bat` (Windows) or `start-noisycricket.command` (macOS/Linux) — first run makes a private venv |
+| A release download | Double-click `cricket-launch-windows.exe`, `cricket-launch-macos` or `cricket-launch-linux` |
+| The source (Python 3.10+) | Double-click `Start-noisyCricket.bat` (Windows) or `start-noisycricket.command` (macOS/Linux). The first run sets up a private environment. |
 | pip | `pip install .` then `cricket-launch` (or `python -m noisycricket`) |
+| Docker | `docker compose up -d`, then `docker compose logs noisycricket` for the dashboard link. See [docs/DOCKER.md](docs/DOCKER.md). |
 
-Your browser opens the **dashboard**. First run asks 3 questions, then starts:
+Your browser opens the dashboard. The first run asks three questions (how much noise, whether
+to add Tor `.onion` noise, whether to start automatically) and then starts. Every other setting
+already has the recommended value, and settings save themselves as you change them.
 
-1. How much noise? **Randomized** (recommended) or **Steady**, plus a 1–10 slider that shows what each level means in searches per hour
-2. Add Tor darknet (.onion) noise? (default: No)
-3. Start automatically whenever you open it? (Yes / No)
+## Dashboard
 
-Nothing else to configure. Everything it does is visible in the dashboard.
-
-## Tor is optional — two independent switches
-
-| Mode | Default | What it does |
-|---|---|---|
-| **Tor off** | ✅ | Clearnet noise only. No Tor installed or started. |
-| **🧅 Onion sites** | on when Tor is enabled | The `onion` engine visits real v3 `.onion` addresses (official mirrors of public sites, plus links discovered on them) through Tor. Never touches the clearnet. Uses Tor Browser's uniform fingerprint, not a per-identity UA, so it blends in. |
-| **Clearnet through Tor** | **off — not recommended** | Also routes search/crawl/DoH noise via Tor exits. Burdens exit relays and is a distinctive pattern, so it's a separate, explicit opt-in (Tor tab, with a confirmation). |
-
-**Tor is fully automatic** when enabled in managed mode (default): the app finds a
-`tor` already on the machine or downloads the official *Tor Expert Bundle* from
-`dist.torproject.org`, verifies its SHA-256 against the sums file published in the
-same release directory, and runs a **private** Tor on its own ports and data
-folder (`SOCKS 19050`, control `19051` by default) — your system Tor / Tor Browser is never touched.
-Prefer your own Tor? Untick "Let noisyCricket manage Tor" and give its address.
-
-The 19 built-in seeds are official onion mirrors of lawful public sites (news, privacy services, software, search), taken from the curated lists at [dark.fail](https://dark.fail) and [tor.taxi](https://tor.taxi). A seed is only included when two independent sources agree on its address (a guard against phishing clones). Markets, leak/exploit forums, adult, piracy and imageboard and government/law-enforcement sites are deliberately excluded.
-
-Every `.onion` seed is validated offline with the v3 checksum (sha3-256) before use, so a
-typo can never be dispatched; add your own seeds on the Tor tab.
-
-## Dashboard tabs
-
-| Tab | Shows / controls |
+| Tab | What it's for |
 |---|---|
-| **Dashboard** | hits, failures, uptime, hits-per-minute chart, per-lane per-engine budgets, one-click test hit |
-| **Activity** | every request: time, lane, engine, URL, where the query came from, what the browser did (scrolls, depth, reading time, click/tap, download), status, latency |
-| **Live Log** | one merged log (app, scheduler, clearnet, onion, **Tor's own output**), level + source filters, search, follow, download. Memory only: nothing is written to disk and it is cleared on quit |
-| **🧅 Tor** | status + bootstrap progress, version/ports/PID/traffic, **Start / Stop / Restart / New identity / Install**, live circuits table (onion-service circuits marked `HS_CLIENT_*`), Tor-only log, mode switches, onion seeds, bridges |
-| **Settings** | per-engine budgets & presets, speed, failure cap, proxy, autostart, **Realism** (real browser, show window, query sources + their live status), **Traffic mix**, **User agent**, **Extras** (optional: active hours, browser-like DNS, extra search typos, polite mode, low-data mode, daily data cap, search-engine weights, interest themes, pause while you're busy or run mostly while you're active, Prometheus metrics) |
-| **Health** | plain-language self-checks (libs, internet, Tor program/status, seeds, ports) |
-| **My List** | your own sites: page visits and DNS lookups come from them first, with a share of other sites mixed in (30% recommended). Find them by scanning your browsers' history (local only; only site names and counts), importing your bookmarks (from your browsers, or a bookmarks export file), or by recording for 12/24/48 hours, which stops counting at the end of the window. You approve every site, and set how often each is visited (Rarely / Sometimes / Often / Very often). |
-| **Tools** | **self-test**: how easily your ISP could tell the noise from your real browsing, with the biggest giveaways and the settings that fix them; data-use estimate, local privacy check with advice, DNS leak check (which resolvers your computer uses, plus a sample lookup), speed test (10 MB down / 2 MB up over the clearnet, on click only), clear the live log, links to outside checks, config file location |
+| **Dashboard** | Hits, failures, uptime, data used today, hits per minute, a test hit |
+| **Activity** | Every request: time, lane, engine, address, what the browser did (scrolls, depth, time on page, clicks, downloads), result, load time. A "Now" line shows the visit in progress. Download as CSV or JSON. |
+| **Live Log** | Everything the app and Tor report, with level and source filters and search. Kept in memory only and cleared when the app quits. |
+| **🧅 Tor** | Tor status and progress, Start / Stop / Restart / New identity / Install, live circuits, Tor's own log, onion sites, bridges |
+| **Settings** | Amount and randomness, mix of activity, DNS, traffic mix and phones, user agent, extras, realism |
+| **Health** | Plain-language self-checks |
+| **Help** | What each part does |
+| **My List** | Your own sites, which the noise visits most (see below) |
+| **ML** | How easily your traffic can be told apart from the noise (see below) |
+| **Tools** | Data-use estimate, privacy check, DNS leak check, speed test, clear the live log |
 
-The dashboard listens only on `127.0.0.1`, requires a token in its link (kept between launches so bookmarks work), and rejects
-foreign `Host`/`Origin` headers. Config lives in `~/.noisycricket/config.yaml`
-(`%APPDATA%\noisyCricket` on Windows); override with `CRICKET_HOME`.
+The dashboard listens only on `127.0.0.1` and needs the token in its link. Settings live in
+`~/.noisycricket/config.yaml` (`%APPDATA%\noisyCricket` on Windows); set `CRICKET_HOME` to move them.
 
-## Docker / Raspberry Pi
+## How much, and when
 
-`docker compose up -d`, then `docker compose logs noisycricket` for the dashboard link. Details: [docs/DOCKER.md](docs/DOCKER.md).
+- **How much** (1–10) is the average amount of everything that's on: web pages and searches,
+  DNS lookups, and `.onion` sites when Tor is on.
+- **How random** sets how much each hour varies around that average: 0% is the same every hour;
+  100% (the default) varies like a person, with busier evenings, quiet spells and some days
+  heavier than others. Anything in between is partly each.
+- **Activity mix** and **Traffic mix** are bars that always add up to 100%: they split the total
+  between searches, following links and DNS, and between a real browser, plain HTTP and `.onion` sites.
 
-## Command line (optional)
-
-```
-cricket run --profile profiles/example.yaml [--verbose] [--reconnect-tor] [--once] [--dry-run]
-cricket doctor --profile profiles/example.yaml
-cricket relay bridges
-cricket relay gen-client --type snowflake [--out torrc.client]
-cricket relay gen --bandwidth 5Mbit --nickname mycricket [--bridge]
-cricket ui [--no-browser] [--port N]      # the dashboard
-cricket tor status|start|install|newnym   # manage the app's private Tor
-```
-
-## Architecture at a glance
-
-```text
-noisyCricket v2 - one scheduler, two transports, three engines
-
-              ----------------------------
-              |        cricket CLI       |
-              |   run / doctor / relay   |
-              ----------------------------
-                        |
-                ------------------
-                |    Scheduler   |   budgets (360/day)
-                |    (Runner)    |-------------.
-                ------------------             |
-                 |            |            diurnal curve
-        identity lifetime  identity lifetime  (peaks 20-21h)
-        (pinned per proxy) (pinned per circuit)
-                 |            |
-        ----------------   ----------------
-        |   Identity   |   |   Identity   |    pinned: UA + low-entropy
-        | (fingerprint)|   | (fingerprint)|    client hints + language
-        ----------------   ----------------    + pace + query taste
-                 |            |
-     lane: CLEARNET      lane: TOR
-     ----------------    ------------------
-     |  Clearnet     |    |  TorTransport |   SOCKS5h user:pass per
-     |  Transport    |    |               |--- identity => 1 circuit
-     |  direct /     |    |  127.0.0.1:9050   remote DNS only
-     |  proxy pool   |    |  control:9051 |   (NEWNYM on rotation)
-     ----------------    ------------------
-         |         |          |
-         v         v          v
-    _______________________________________
-   |               ENGINES                 |    <- emit neutral Targets
-   |   search         crawl        dns     |       only; no transport
-   |   queries        same-site     udp    |       knowledge here
-   |   (7 endpoints)  link walk     / DoH  |
-   |_______________________________________|
-```
-
-## How it works
-
-**How much, and when.** You choose a level from 1 to 10. Each hour noisyCricket plans
-that hour's activity and spreads it across the hour. It never fires a burst on the hour mark.
-
-| Mode | What happens |
-|---|---|
-| **Randomized** (recommended) | Every hour's amount varies around your level (log-normal), follows a day/night curve that's busiest in the evening, and about 1 hour in 8 is nearly silent ("away from the computer"). |
-| **Steady** | About the same amount every hour. |
-
-| Level | Searches / hour | Over a 15-hour waking day |
+| Level | Searches an hour | Over a 15-hour day |
 |---|---|---|
 | 1 | 0.5 | ~8 |
 | 3 | 1.5 | ~23 |
 | 5 (default) | 4 | ~60 |
-| 7 | 9 | ~135 |
-| 10 | 30 | ~450 |
+| 7 | 8 | ~120 |
+| 10 | 20 | ~300 |
 
-For scale: active US desktop users average about 126 Google searches a month,
-roughly 4 a day ([SparkToro, 2024](https://sparktoro.com/blog/new-research-how-often-do-americans-search-google-which-search-verticals-do-they-use/)).
-Noise only hides you if it's at least comparable to your real activity, so even
-the middle levels are well above that. Page visits and DNS lookups come on top of
-searches, in proportion to the activity mix in Settings.
+Even level 10 stays below what gets one address rate-limited: no search engine gets more than
+8 searches an hour from noisyCricket. Page visits and DNS lookups come on top of searches.
 
-| Engine | What a hit is |
+Activity comes in **sittings**: a few requests close together, then a longer gap, the way people
+use a computer. The first action comes within seconds of pressing Start.
+
+## Behaving like a person
+
+When Chrome, Edge, Brave or Chromium is installed, noisyCricket drives it in the background
+(the window is hidden by default; you can also show it, or keep a real window off-screen).
+
+- **Time on a page** is mostly short, with a long, rare tail: 1 in 25 visits last a minute or
+  more, 1 in 100 three minutes or more, 1 in 500 ten minutes or more. Long visits keep moving:
+  slow scrolls, glances back up, the mouse wandering.
+- **Reading:** scrolling in eased bursts, pauses to read, scrolling back up, re-reading,
+  hovering, now and then highlighting a line of text.
+- **Search results pages:** a quick glance; or a look, half a screen down and a longer pause;
+  or one smooth scroll and a stop. The top result is clicked about half the time.
+- **Clicks** follow curved mouse paths, or taps on phones.
+- **Now and then** a linked document is downloaded or an image saved, through the browser, and
+  discarded.
+- **Phones:** 55% of noise identities are phones, an **iPhone 13 with Safari** by default (or
+  iPhone 15, iPhone SE, Pixel 7, Galaxy S24, or a mix), with the phone's screen and touch input.
+- **Browser engine:** matches your own browser by default. If you use Firefox and Playwright's
+  Firefox is installed (`python -m playwright install firefox`), the noise uses Firefox too.
+
+### User agent
+
+By default the noise uses **your own browser's user agent**, read automatically from your
+installed browser, so it looks like you. Until it's known, it rotates. Settings → User agent also
+offers random rotation (every hour or day) or one fixed entry, and lists the whole library:
+Chrome, Chromium, Firefox (including ESR) and iPhone Safari releases from the last two years.
+
+### Where searches and sites come from
+
+| Source | What it is |
 |---|---|
-| **search** | A realistic query on a weighted mix of engines. About 60% of the time the persona then **clicks a result** (top results more often), and sometimes follows one more link on that site. |
-| **crawl** | Opens a popular real site (or a configured seed, or a site reached earlier via search) and wanders a few links deep, skipping anchors, images, logins and edit pages. |
-| **dns** | Looks up a **real, popular domain** (Tranco ranking) through the resolver you choose (below). DNS-over-HTTPS on the Tor lane. Invented domains are never used: a stream of failed lookups would itself stand out. |
-| **onion** | Tor only. See above. |
+| Live trends | Google Trends, Wikipedia's most-read articles, BBC headlines |
+| Real past searches | A random sample of real queries (MS MARCO, GooAQ) |
+| Built-in topics, dictionary words | A small minority, and the offline fallback |
+| Popular sites | The Tranco list, re-ranked by what real Chrome users load most (CrUX) |
+| My List | Your own sites, when turned on |
+| Interests | A few steady themes at a time, when turned on |
 
-### DNS: which resolver answers the noise
+These lists ship with the app, so it never contacts those services for you unless you ask it to
+refresh them (Settings → Realism).
+
+**Safety filter.** Searches and sites are screened so the noise never visits anything
+embarrassing or risky to have on your connection: adult, gambling, weapons, drugs, violence,
+self-harm, hacking and government sites are blocked by word, by known-bad host lists and by
+name patterns.
+
+## My List
+
+Your own sites. When it's on, most visits and DNS lookups come from them, with a share of other
+sites mixed in (30% by default). Add them by hand (paste as many as you like), or find them:
+
+- **Scan your browser history** (Chrome, Edge, Brave, Chromium, Firefox), read on this computer only
+- **Import bookmarks** from your browsers
+- **Import a file**: a bookmarks export (.html), a network log (.har: press F12, open the Network
+  tab, browse a while, then "Export HAR"), Google Takeout history (`BrowserHistory.json`), or any
+  list of addresses
+- **Record** for 12, 24 or 48 hours: it counts only visits inside that window
+
+Only site names and visit counts are read. You approve every site and choose how often each is
+visited.
+
+## ML: can your traffic be told apart from the noise?
+
+The ML tab compares your real browsing (your browsers' history, read on this computer only) with
+the noise, using only what your ISP or DNS provider could see: hour, weekday, rhythm, how popular
+each site is, revisits and domain endings. A classifier tries to separate them, and you get:
+
+- the **ROC AUC** (50% = can't tell them apart, 100% = trivial) with a 95% interval and per-fold scores
+- the ROC curve, confusion matrix, accuracy, precision, recall, F1 and log loss
+- which signals give the noise away, the specific values behind them, and the setting that fixes each
+- when you browse versus when the noise runs, hour by hour
+- a score history, an optional daily automatic run, and a quick "would this look like noise?" check
+
+Nothing is sent anywhere; only the scores are kept.
+
+## DNS
 
 | Setting | What it does |
 |---|---|
-| **Your normal DNS** | Uses your computer's own resolver: your router, ISP or VPN DNS, or whatever encrypted DNS your system uses. The noise lands exactly where your real lookups do, so whoever can see your real DNS sees the noise mixed in. |
-| **Secure resolvers only** | OpenNIC servers that pass OpenNIC's own checks, keep no logs (preferred, picked 3× as often) or anonymized logs, and offer DNSCrypt, DoH or DoT (20 shipped, taken from servers.opennic.org), optionally Quad9 (`9.9.9.9`, `149.112.112.112`), plus any resolver IPs you add. |
-| **Mix** (default) | Switches between the two in random 10–60 minute blocks, spending a share of the time you set (default 70%) on your normal DNS. Default setup: Mix with only OpenNIC ticked (Quad9 and your own resolvers off). |
+| **Mix** (default) | Switches between your normal DNS and the secure resolvers in random 10–60 minute blocks, half the time each (adjustable) |
+| **Your normal DNS** | Your computer's own resolver: router, ISP, VPN or your system's encrypted DNS |
+| **Secure resolvers only** | OpenNIC servers that pass OpenNIC's checks, keep no logs (preferred) or anonymized logs, and offer DNSCrypt, DoH or DoT; optionally Quad9 and your own |
 
-Why normal DNS is the default: sending noise to resolvers you never otherwise use
-would hide nothing from whoever sees your real lookups, and would itself be an
-unusual pattern on your connection.
+Each lookup in Activity shows which resolver answered it.
 
-Every lookup in Activity reads like `www.reddit.com [via your normal DNS]` or
-`www.bbc.com [via OpenNIC ns1.ca (148.113.235.58)]`.
+## Extras (Settings)
 
-### Behaving like a person (real-browser mode)
+All optional:
 
-When Chrome, Edge, Brave or Chromium is installed (most computers), noisyCricket
-drives it in the background instead of sending plain HTTP requests. A plain HTTP
-client can't scroll, run JavaScript or load images, and its network fingerprint
-isn't a browser's no matter what it claims. With a real browser each visit:
+- **Active hours:** only make noise between set times
+- **Your own activity:** pause while you're using the connection, or run mostly while you're active
+- **Interests:** a few steady themes at a time, changing every so often
+- **Household:** noise from 2–5 virtual people with their own devices, browsers and hours
+- **Search engines:** how often each is used
+- **More typos** in searches, **polite mode** (no site twice within a minute), **low-data mode**,
+  a **daily data cap**, **Prometheus metrics** at `/metrics`
+- **Browser-like DNS** (on by default): also asks for IPv6 and HTTPS records
 
-- waits for the page to settle, then **scrolls in bursts** (eased like a wheel or trackpad; real finger **swipes** for phone personas)
-- **pauses to read** between bursts (log-normal; now and then a long "got distracted" pause), sometimes **scrolls back up**
-- reads to a varied depth: most visits skim the top, some read to the end
-- **moves the mouse** along curved paths, hovers, then **clicks** (or **taps**) the search result
-- **downloads** a linked document now and then (about 3% of visits), through the browser, then discards it; nothing is saved
-- **User agents (plain-HTTP lane):** built from real release calendars for the last two years: every Chrome, Chromium and Firefox (incl. ESR) major, weighted so the newest two or three dominate. About 51% Chrome, 29% Firefox, 5% Chromium, 15% Android Chrome. Only real browsers: no command-line clients. Edge and Safari are not used. Rebuild the list with `python tools/build_ua_catalog.py`. In **Settings → User agent** you can pick: your own browser's user agent (recommended), random changing every hour (default) or every day, or one library entry (not recommended). The library with every entry and its share is listed there. The onion lane always uses Tor Browser's fixed user agent, and the real-browser lane keeps its own.
-- **Real browser lane:** desktop identities present the installed browser as a normal window (headless mode no longer says "HeadlessChrome"). Phone identities (55% by default) get the phone's screen, touch input and its own browser's user agent: an **iPhone 13 with Safari** by default (no Chrome-only client hints), or iPhone 15, iPhone SE, Pixel 7, Galaxy S24, or a mix of phones. It still runs on Chromium underneath, so a site that checks deeply can tell.
-- **Traffic mix (Settings):** relative amounts of real-browser pages, plain-HTTP pages and Tor .onion sites, and how the mix changes over time: **Drift** (default, recommended: shares wander through the day), **Blend** (same every hour) or **Alternate** (one kind at a time for 1–3 hours). Ordinary web noise never goes through Tor in these mixes.
+## Tor (optional)
 
-Settings → Realism has the on/off switch and a "show the browser window" option
-so you can watch it work. Activity shows what happened on each visit, for example
-`click 🖥, 6 scrolls, 41% depth, 18s reading, 1 scroll-back`.
-
-### Where searches come from
-
-No single list dominates, because any fixed list would be hit far more often
-than real users hit it, which is itself detectable.
-
-| Source | Share | What it is |
+| Switch | Default | What it does |
 |---|---|---|
-| Live trends | ~40% | Google Trends daily searches, Wikipedia's most-read articles, BBC headlines turned into keyword searches. |
-| Real past searches | ~35% | A random sample of real queries from **MS MARCO** (Bing) and **GooAQ** (Google autocomplete). |
-| Built-in topics | ~10% | A small hand-written list, also the offline fallback. If a big source runs dry, its share goes to the other real sources, never to this list. |
-| Dictionary words | ~4% | Occasional `define …` / `… meaning` lookups. |
+| **Tor** | off | When on, noisyCricket runs its own private Tor (it finds `tor` on your computer or downloads and verifies the official Tor Expert Bundle). Your own Tor and Tor Browser are never touched. |
+| **🧅 Onion sites** | on when Tor is on | Visits real v3 `.onion` addresses: official mirrors of lawful public sites, plus links found on them. Uses Tor Browser's uniform headers so it blends in. |
+| **Ordinary web through Tor** | off | Not recommended: it burdens exit relays and is an unusual pattern. |
 
-On top of that: about 1 in 5 searches is a natural **refinement** of the previous one
-(`… reviews`, `… news`), question marks are mostly dropped and text is mostly
-lowercase (as people type), there are rare typos, and recent queries aren't repeated.
+Many `.onion` sites are offline at any moment. Those show in Activity as "site offline" and are
+skipped for a while; this is normal and doesn't mean Tor is broken.
 
-**Safety filter.** Queries and sites are screened so the noise never goes anywhere
-embarrassing or risky: adult, gambling, weapons, drugs, violence, self-harm and
-hacking terms are blocked, along with the StevenBlack adult/gambling/fake-news
-host list and government domains.
+- **Restart** stops and starts Tor itself, reconnecting to the network from scratch.
+- **New identity** keeps Tor running and switches to fresh circuits.
 
-**No lookups on your behalf.** These lists ship with noisyCricket as a snapshot
-(`data/feeds/snapshot.json.gz`, about 1 MB: 7,600 real queries, 4,000 sites, current trends and
-headlines, and the safety blocklist). The maintainer fetches it once with
-`tools/build_feed_snapshot.py`, so your copy never contacts Google Trends, Wikimedia, BBC,
-Hugging Face or Tranco unless you choose to. Settings → Realism shows each list's age and
-lets you refresh by hand, or opt in to an automatic refresh when lists are about 3 months old.
-Sources and their terms: `data/feeds/README.md`.
+**Bridges** hide from your network that you use Tor: add them on the Tor tab, or generate a
+Snowflake client configuration with `cricket relay gen-client --type snowflake`.
 
-### The shape of the traffic
+**Contribute to Tor** with `cricket relay gen`, which writes a middle-relay or bridge
+configuration. It never runs an exit.
 
-```text
-simulated day: one profile, both lanes, 360 hits/day total budget
-each bar = expected hits that local hour ('#'+clearnet, 'c'+tor lane)
+## Privacy
 
-00:00 |#################ccccccccccccccccc                        |  15.4
-01:00 |#############ccccccccccccc                                |  11.5
-02:00 |#########ccccccccc                                        |   8.6
-03:00 |#######ccccccc                                            |   6.8
-04:00 |#######ccccccc                                            |   6.0
-05:00 |######cccccc                                              |   5.8
-06:00 |#######ccccccc                                            |   6.1
-07:00 |########cccccccc                                          |   6.9
-08:00 |#########ccccccccc                                        |   8.1
-09:00 |##########cccccccccc                                      |   9.5
-10:00 |############cccccccccccc                                  |  11.0
-11:00 |##############cccccccccccccc                              |  12.6
-12:00 |################cccccccccccccccc                          |  14.2
-13:00 |#################ccccccccccccccccc                        |  15.6
-14:00 |###################ccccccccccccccccccc                    |  16.9
-15:00 |####################cccccccccccccccccccc                  |  18.2
-16:00 |#####################ccccccccccccccccccccc                |  19.6
-17:00 |#######################ccccccccccccccccccccccc            |  21.3
-18:00 |##########################cccccccccccccccccccccccccc      |  23.5
-19:00 |############################cccccccccccccccccccccccccccc  |  25.6
-20:00 |#############################ccccccccccccccccccccccccccccc|  26.4
-21:00 |#############################ccccccccccccccccccccccccccccc|  26.4
-22:00 |##########################cccccccccccccccccccccccccc      |  24.0
-23:00 |######################cccccccccccccccccccccc              |  19.9
+- The live log and Activity are kept in memory only and cleared when the app quits; no log file
+  is written.
+- History, bookmarks and files you import are read on your computer; only site names and counts
+  are used, and nothing is kept until you approve it.
+- The dashboard is reachable only from your own computer.
+
+## Command line
+
+```
+cricket ui [--no-browser] [--port N]      # the dashboard
+cricket run --profile profiles/example.yaml [--verbose] [--once] [--dry-run]
+cricket doctor --profile profiles/example.yaml
+cricket tor status|start|install|newnym   # the app's private Tor
+cricket relay bridges | gen-client | gen  # bridges and relay configurations
 ```
 
-```text
-inter-hit delay distribution (Pacer, 4000 samples per pace persona)
-seconds between hits; lognormal body, burst-suppressed at min_gap
+## Development
 
-  fast pace (0.6x):
-      0-4  s |################################################|  1916
-      5-9  s |#############################                   |  1147
-     10-14 s |############                                    |   466
-     15-24 s |########                                        |   324
-     25-39 s |###                                             |   111
-     40-64 s |#                                               |    28
-     65-99 s |                                                |     5
-    100-159s |                                                |     3
-    160-249s |                                                |     0
-    250-400s |                                                |     0
-
-  normal pace (1.0x):
-      0-4  s |###########################                     |  1084
-      5-9  s |#############################                   |  1155
-     10-14 s |#################                               |   669
-     15-24 s |################                                |   621
-     25-39 s |########                                        |   302
-     40-64 s |###                                             |   129
-     65-99 s |#                                               |    30
-    100-159s |                                                |     7
-    160-249s |                                                |     3
-    250-400s |                                                |     0
-
-  slow pace (1.8x):
-      0-4  s |###########                                     |   422
-      5-9  s |#####################                           |   840
-     10-14 s |################                                |   654
-     15-24 s |######################                          |   875
-     25-39 s |###############                                 |   616
-     40-64 s |#########                                       |   368
-     65-99 s |####                                            |   163
-    100-159s |#                                               |    46
-    160-249s |                                                |    12
-    250-400s |                                                |     4
-```
-
-## Tor vs clearnet — separate logic on purpose
-
-- **tor lane** (only exists when Tor is enabled; carries `onion`, and clearnet
-  engines only if you opted in): one local SOCKS daemon; per-identity circuit isolation
-  (SOCKS5 user:pass or `NEWNYM` via control port); remote DNS resolution
-  only, your local resolver never sees a hostname.
-- **clearnet lane**: direct or a proxy pool; identity pinned to a proxy +
-  UA + language for its lifetime; dead proxies dim instead of failing a lane.
-
-## Tor visibility, diagnostics & resilience
-
-noisyCricket provides full visibility into Tor health — in the dashboard's Tor tab
-(live) and on the CLI:
-
-* **Live Health Check (`cricket doctor`)**: Probes the local Tor SOCKS daemon
-  (`127.0.0.1:9050`) and Control port (`127.0.0.1:9051`), reporting bootstrap
-  phase, Tor version, and authentication state. If Tor is offline, it provides
-  actionable start commands and troubleshooting tips.
-* **Circuit Isolation**: Each identity uses distinct SOCKS5 credentials
-  (`ident-<id>-<seed>`), leveraging Tor's `IsolateSOCKSAuth` so that different
-  personas never share circuits, cookies, or TLS state.
-* **Manual & Automated Reconnects**:
-  - `cricket run --reconnect-tor`: sends `AUTHENTICATE` + `signal NEWNYM` to the
-    control port to build fresh circuits across the board before starting.
-  - **Consecutive-Failure Self-Healing**: If an identity encounters 3 consecutive
-    network/HTTP blocks (403/429/timeout), noisyCricket automatically retires
-    the burned identity, resets circuit seeds, and acquires fresh circuits.
-* **Transport Dimming**: When a transport encounters blocks or disconnects, it is
-  automatically dimmed (selection weight reduced by 90%) so traffic dynamically
-  routes through healthy lanes rather than failing the schedule.
-
-## Censorship circumvention: Tor bridges & Pluggable Transports
-
-If Tor's public directory is blocked or monitored by your ISP/network firewall,
-you can run Tor via **Bridges** (unlisted relays):
-
-1. **View Bundled Bridges**:
-   ```bash
-   cricket relay bridges
-   ```
-   Inspects collected bridge configurations stored in `data/bridges/bridges.example.txt`,
-   including official Tor Project **Snowflake** bridges (WebRTC with Fastly/Cloudflare
-   domain fronting, no registration required), **obfs4** templates, and **WebTunnel**
-   templates.
-
-2. **Generate a Client Bridge torrc**:
-   ```bash
-   cricket relay gen-client --type snowflake --out torrc.client
-   ```
-   Generates a ready-to-run client configuration with Snowflake pluggable transport
-   pre-configured. Start Tor with it via:
-   ```bash
-   tor -f torrc.client
-   ```
-
-3. **Verify Connection**:
-   ```bash
-   cricket doctor --profile profiles/example.yaml
-   ```
-
-## Community contribution — never an exit
-
-`cricket relay gen` emits a **middle-relay or bridge** torrc with
-`ExitPolicy reject *:*` and `ExitPolicy reject6 *:*` pinned, with `SocksPort 0`
-and safe `DirPort` configuration (`DirPort 0` enforced for bridges to prevent IP
-enumeration). Tor has no "DNS node" role, so the community-minded equivalent of
-"a DNS node" is exactly this non-exit relay: it carries every end-to-end DNS
-resolution that exits perform, without ever exiting plaintext. See `docs/DESIGN.md`.
-
-## Stealth strategies
-
-The header-level persona below applies to plain-HTTP mode. In real-browser mode the browser's own headers, TLS and JavaScript fingerprint are used unchanged, so they always agree.
-
-Per-identity consistent fingerprints, refreshed against live traffic in 2026:
-a real frequency-weighted UA pool (several Chrome majors circulate at once in
-real populations — 152/156/157 — plus ESR Firefox stragglers, not just the
-newest version), Accept-Language pinned, low-entropy **client hints
-(`Sec-CH-UA`, `Sec-CH-UA-Platform`) emitted only on Chromium personas** —
-Firefox and Safari never send them, so hinting on their UAs would be an
-instant tell — fetch-metadata navigation headers (`Sec-Fetch-*`), **no DNT**
-(removed from Firefox in v135 and Safari; still sending it marks you),
-`Sec-GPC` opt-in at realistic low rates pinned per identity. On top of that:
-diurnal activity curve peaking around 20:00–21:00 local (below), lognormal hit cadence with
-burst suppression, exponential backoff on 403/429/timeouts, proxy-health
-dimming, and hard `daily_max_failures` stops.
-
-```text
-noisyCricket diurnal activity model
-activity weight by local hour (scheduler divides hit delays by this)
-
-00:00 |##################################                        | 0.93
-01:00 |#########################                                 | 0.69
-02:00 |###################                                       | 0.52
-03:00 |###############                                           | 0.41
-04:00 |#############                                             | 0.36
-05:00 |#############                                             | 0.35
-06:00 |#############                                             | 0.37
-07:00 |###############                                           | 0.42
-08:00 |##################                                        | 0.49
-09:00 |#####################                                     | 0.57
-10:00 |########################                                  | 0.67
-11:00 |############################                              | 0.76
-12:00 |###############################                           | 0.86
-13:00 |##################################                        | 0.95
-14:00 |#####################################                     | 1.02
-15:00 |########################################                  | 1.10
-16:00 |###########################################               | 1.18
-17:00 |###############################################           | 1.29
-18:00 |###################################################       | 1.42
-19:00 |########################################################  | 1.55
-20:00 |##########################################################| 1.60  <-- peak
-21:00 |##########################################################| 1.60  <-- peak
-22:00 |#####################################################     | 1.45
-23:00 |############################################              | 1.21
-```
-
-## Roadmap — local AI for human-indistinguishable activity (planned, not yet built)
-
-The largest remaining statistical tell in v2 is that queries and clicks are
-random draws from word lists: the distributions mix well, but sequences lack
-human semantic structure — refiners, follow-ups, typos, and the relationship
-between what a page shows and what gets clicked next. The future work is
-**local AI models** used for:
-- **Query generation**: a small quantized LLM (1–8B via llama.cpp/Ollama,
-  run entirely on-device) turns each identity's query taste into coherent,
-  locally-plausible query sequences with natural refiners and misspellings.
-- **Session plausibility**: dwell time, link choice, and crawl depth sampled
-  from learned human browsing patterns — including page-content reactivity —
-  instead of hand-tuned curves.
-- **Persona memory**: durable per-identity local interest profiles so each
-  identity's long-run history looks like a person's topical life, not
-  independent random draws.
-
-Hard constraints for anything in this lane: inference is fully offline and
-local (routing noise queries through a hosted LLM would add a fresh, highly
-reportable signal and defeat the point), no telemetry, and model downloads
-themselves should go over the tor lane.
-
-Tests: `python3 run_tests.py` (the real-browser test is skipped when no browser is found). CI runs them on every pull request. Run: `pip install . && cricket --help`.
-Legacy Java prototype preserved in `legacy-src/`.
-
-The plots above live in `docs/plots/*.txt` and are generated from the
-actual package code (seeded, offline): `python3 docs/plots/gen_plots.py`.
+Tests: `python3 run_tests.py`. The real-browser test is skipped when no browser is found.
+Maintainer tools: `tools/build_feed_snapshot.py` rebuilds the bundled lists, and
+`tools/build_ua_catalog.py` rebuilds the user-agent library from the official release calendars.
+Design notes: [docs/DESIGN.md](docs/DESIGN.md). Legacy Java prototype: `legacy-src/`.

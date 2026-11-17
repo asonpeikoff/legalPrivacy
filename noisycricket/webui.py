@@ -181,6 +181,11 @@ class UIServer:
                         return self._json(ctl.estimate())
                     if u.path == "/api/tools/selftest":
                         return self._json(ctl.selftest(float((q.get("days") or ["14"])[0])))
+                    if u.path == "/api/ml":
+                        return self._json(ctl.ml_state())
+                    if u.path == "/api/ml/predict":
+                        g = lambda k, d: (q.get(k) or [d])[0]                     # noqa: E731
+                        return self._json(ctl.ml_predict(g("site", ""), int(g("hour", "12")), int(g("weekday", "2"))))
                     if u.path == "/api/tools/privacy":
                         return self._json({"checks": ctl.privacy_check()})
                     if u.path == "/api/interests":

@@ -47,7 +47,8 @@ def wipe_old_log_files() -> None:
 
 
 APP_DEFAULTS = {"autostart": False, "open_browser": True, "port": 8765, "intensity": "normal",
-                "auto_refresh_sources": False}   # off: use the snapshot shipped with the app (no lookups)
+                "auto_refresh_sources": False,   # off: use the snapshot shipped with the app (no lookups)
+                "ml_auto": False, "ml_history": []}
 
 
 class Controller:
@@ -55,6 +56,7 @@ class Controller:
         wipe_old_log_files()                      # older versions wrote cricket.log to disk
         self.log = EventLog()                     # live log is memory-only (never written to disk)
         self._save_lock = threading.RLock()       # autosave: concurrent saves are serialised
+        threading.Thread(target=self._ml_auto_loop, daemon=True, name="ml-auto").start()
         self.profile_path = profile_path or str(config_path())
         self.first_run = not Path(self.profile_path).exists()
         self.app: dict[str, Any] = dict(APP_DEFAULTS)
@@ -140,7 +142,7 @@ class Controller:
         return self.state()
 
     def update_app(self, raw: dict[str, Any]) -> None:
-        for k in ("autostart", "open_browser", "auto_refresh_sources"):
+        for k in ("autostart", "open_browser", "auto_refresh_sources", "ml_auto"):
             if k in raw:
                 self.app[k] = bool(raw[k])
         self._save()
@@ -258,9 +260,42 @@ class Controller:
         ranks = {d: i for i, d in enumerate(self.feeds.items("tranco"))}
         res = evaluate(real["events"], [(t, s.removeprefix("www.")) for t, s in noise if s], ranks)
         res.update({"real_visits": len(real["events"]), "noise_events": len(noise), "noise_source": source,
-                    "days": days, "errors": real["errors"]})
+                    "days": days, "errors": real["errors"], "ran_at": now})
+        model = res.pop("_model", None)
+        if model is not None:
+            self._ml_model, self._ml_ranks = model, ranks
+            hist = list(self.app.get("ml_history") or [])[-29:] + [[round(now), res["score"]]]
+            self.app["ml_history"] = hist             # scores only: no browsing data is kept
+            self._save()
+        self._ml_last = res
         self.log.info("tools", f"Self-test: {res.get('score', '—')}% ({res.get('verdict', res.get('error', ''))}).")
         return res
+
+    def ml_state(self) -> dict:
+        return {"last": getattr(self, "_ml_last", None), "history": self.app.get("ml_history") or [],
+                "auto": bool(self.app.get("ml_auto")), "can_predict": getattr(self, "_ml_model", None) is not None}
+
+    def ml_predict(self, site: str, hour: int, weekday: int) -> dict:
+        from .history import site_of
+        from .selftest import predict
+        if getattr(self, "_ml_model", None) is None:
+            raise ConfigError("Run the test once first: predictions use its model.")
+        host = site_of(site if "://" in site else "https://" + site) or ""
+        if not host:
+            raise ConfigError("Enter a site like example.com")
+        return {"site": host, "hour": hour, "weekday": weekday,
+                "noise_probability": predict(self._ml_model, host, int(hour) % 24, int(weekday) % 7, self._ml_ranks)}
+
+    def _ml_auto_loop(self) -> None:
+        """Settings → ML → run automatically: once a day, in the background."""
+        while True:
+            time.sleep(600)
+            try:
+                hist = self.app.get("ml_history") or []
+                if self.app.get("ml_auto") and (not hist or time.time() - hist[-1][0] > 86400):
+                    self.selftest(14)
+            except Exception as exc:  # keep the loop alive; report
+                self.log.warn("tools", f"Automatic self-test failed: {exc}")
 
     def privacy_check(self) -> list[dict]:
         from .nettools import privacy_check
@@ -562,6 +597,7 @@ class Controller:
         return {
             "version": __version__, "first_run": self.first_run, "running": self.running,
             "paused": stats.get("paused", False), "uptime": stats.get("uptime", 0) if self.running else 0,
+            "current": stats.get("current") if self.running else None,
             "lanes": stats["lanes"], "app": self.app,
             "bytes_today": stats.get("bytes_today", 0) if self.running else 0,
             "data_cap_mb": self.profile.extras.daily_data_mb,
