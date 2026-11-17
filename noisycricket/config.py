@@ -97,12 +97,26 @@ class RelayConfig:
             )
 
 
+RECOMMENDED_RESOLVERS = [
+    {"ip": "80.152.203.134", "name": "OpenNIC ns2.de", "role": "primary", "enabled": True,
+     "note": "OpenNIC, Germany (admin keke); anonymized logs"},
+    {"ip": "193.31.24.55", "name": "OpenNIC ns3.de", "role": "primary", "enabled": True,
+     "note": "OpenNIC, Germany (admin Koby, sponsored by n4x2.com)"},
+    {"ip": "80.153.146.105", "name": "OpenNIC ns4.de", "role": "primary", "enabled": True,
+     "note": "OpenNIC, Germany"},
+    {"ip": "9.9.9.9", "name": "Quad9", "role": "fallback", "enabled": True,
+     "note": "Used only if the primaries are down or slow. Blocks malware domains, DNSSEC"},
+]
+
+
 @dataclass
 class DnsConfig:
     """Which resolver the DNS noise uses. See noisycricket/dnsplan.py."""
-    mode: str = "mix"             # mix (default: blocks on your normal DNS + OpenNIC) | system | secure
-    opennic: bool = True          # include OpenNIC no-log servers in the "secure" set
-    quad9: bool = False           # include Quad9 (9.9.9.9 / 149.112.112.112) in the "secure" set
+    mode: str = "mix"             # mix (default: blocks on your normal DNS + the resolver table) | system | secure
+    resolvers: list[dict] = field(default_factory=lambda: [dict(r) for r in RECOMMENDED_RESOLVERS])
+    slow_ms: int = 250            # a primary slower than this counts as "not working fast"
+    opennic: bool = False         # extra: the whole OpenNIC no-log directory as primaries
+    quad9: bool = False           # extra: Quad9 (9.9.9.9 / 149.112.112.112) as primaries
     custom: list[str] = field(default_factory=list)   # extra resolver IPs, your choice
     system_share: float = 0.5     # mix mode: share of time on your normal DNS
     block_minutes: list[int] = field(default_factory=lambda: [10, 60])   # mix mode: switch every 10-60 min
@@ -118,6 +132,19 @@ class DnsConfig:
                 raise ConfigError(f"dns.custom: '{ip}' is not an IP address") from exc
         if not 0 <= self.system_share <= 1:
             raise ConfigError("dns.system_share must be between 0 and 1")
+        clean = []
+        for r in self.resolvers:
+            ip = str(r.get("ip", "")).strip()
+            try:
+                ipaddress.ip_address(ip)
+            except ValueError as exc:
+                raise ConfigError(f"DNS resolver '{ip}' is not an IP address") from exc
+            role = r.get("role", "primary")
+            if role not in ("primary", "fallback"):
+                raise ConfigError("DNS resolver role must be primary or fallback")
+            clean.append({"ip": ip, "name": str(r.get("name") or ip)[:40], "role": role,
+                          "enabled": bool(r.get("enabled", True)), "note": str(r.get("note", ""))[:160]})
+        self.resolvers = clean
 
 
 @dataclass
@@ -371,6 +398,8 @@ def apply_overrides(profile: Profile, raw: dict[str, Any]) -> Profile:
         merged = profile.dns.__dict__ | p["dns"]
         if isinstance(merged.get("custom"), str):
             merged["custom"] = [x.strip() for x in merged["custom"].replace(",", "\n").splitlines() if x.strip()]
+        if merged.get("reset_resolvers"):
+            merged["resolvers"] = [dict(r) for r in RECOMMENDED_RESOLVERS]
         profile.dns = DnsConfig(**{k: v for k, v in merged.items() if k in DnsConfig.__dataclass_fields__})
         profile.dns.system_share = float(profile.dns.system_share)
         profile.dns.validate()

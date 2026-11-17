@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import platform
+import random
 import socket
 import sys
 import threading
@@ -168,12 +169,7 @@ class Controller:
     def resolvers_check(self) -> dict:
         from . import nettools
         dns = self.profile.dns
-        secure: list[str] = []
-        if dns.opennic:
-            secure += [x.split("|")[0] for x in self.feeds.items("opennic")]
-        if dns.quad9:
-            secure += ["9.9.9.9", "149.112.112.112"]
-        secure += list(dns.custom)
+        secure = [r["ip"] for r in DnsPlan(random.Random(), dns, self.feeds.items("opennic")).configured()]
         return nettools.dns_leak_check(secure)
 
     def speed_start(self) -> dict:
