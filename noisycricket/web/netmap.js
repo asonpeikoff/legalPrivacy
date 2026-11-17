@@ -39,7 +39,7 @@
       '.nm-wrap svg{display:block;width:100%;background:transparent;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}' +
       '.nm-node{cursor:pointer}' +
       '.nm-pulse{animation:nm-pulse 1.6s ease-out infinite;pointer-events:none}' +
-      '@keyframes nm-pulse{0%{transform:scale(1);opacity:.7}100%{transform:scale(2.3);opacity:0}}' +
+      '@keyframes nm-pulse{0%{transform:scale(1);opacity:.7}100%{transform:scale(1.9);opacity:0}}' +
       '@media (prefers-reduced-motion:reduce){.nm-pulse{animation:none;display:none}}' +
       '.nm-tip{position:absolute;z-index:3;max-width:260px;padding:6px 9px;border-radius:7px;font-size:12px;line-height:1.35;' +
       'pointer-events:none;box-shadow:0 2px 10px rgba(0,0,0,.18);border:1px solid;white-space:pre-wrap;word-break:break-word}' +
@@ -180,16 +180,27 @@
     this.svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
     this.cx = w / 2;
     this.cy = h / 2;
-    this.R = 0.38 * Math.min(w, h);
     // Stretch the ring into an ellipse on wide/tall containers so space is used.
-    this.sx = w > h ? Math.min(w / h, 1.9) : 1;
-    this.sy = h > w ? Math.min(h / w, 1.9) : 1;
+    this.sx = w > h ? Math.min(w / h, 2.2) : 1;
+    this.sy = h > w ? Math.min(h / w, 2.2) : 1;
+    this._fitRing();
     this.centerCircle.setAttribute('cx', this.cx);
     this.centerCircle.setAttribute('cy', this.cy);
     this.centerLabel.setAttribute('x', this.cx);
     this.centerLabel.setAttribute('y', this.cy + CENTER_R + 15);
     this.emptyText.setAttribute('x', this.cx);
     this.emptyText.setAttribute('y', this.cy + CENTER_R + 40);
+  };
+
+  // Ring rest radius: ~38% of min(w,h), reduced so the outer edge of the
+  // node band (plus the largest node) stays inside the canvas.
+  NetMap.prototype._fitRing = function () {
+    var w = this.width, h = this.height;
+    var half = 0.5 * Math.min(this.spread || 0.1, 0.75) + 0.04;
+    var pad = (this.rMax || R_MAX) + 8;
+    this.R = Math.max(40, Math.min(0.38 * Math.min(w, h),
+      (w / 2 - pad) / (this.sx * (1 + half)),
+      (h / 2 - pad) / (this.sy * (1 + half))));
   };
 
   NetMap.prototype._bind = function () {
@@ -357,6 +368,16 @@
     var maxW = 0;
     for (i = 0; i < clean.length; i++) if (clean[i].weight > maxW) maxW = clean[i].weight;
     var sMax = Math.sqrt(maxW) || 1;
+    // Area budget: shrink radii when many nodes would overcrowd the canvas.
+    var area = 0;
+    for (i = 0; i < clean.length; i++) {
+      var r0 = R_MIN + (R_MAX - R_MIN) * Math.sqrt(clean[i].weight) / sMax;
+      area += Math.PI * (r0 + 3) * (r0 + 3);
+    }
+    var budget = 0.18 * this.width * this.height;
+    var shrink = area > budget ? Math.sqrt(budget / area) : 1;
+    var rMin = Math.max(2.5, R_MIN * Math.min(1, shrink * 1.4));
+    var rMax = Math.max(rMin + 3, Math.min(R_MAX * shrink, Math.min(this.width, this.height) / 15));
 
     var keep = Object.create(null), added = 0, self = this;
     for (i = 0; i < clean.length; i++) {
@@ -371,7 +392,7 @@
       n.detail = d.detail;
       n.text = d.label || d.id;
       var t = Math.sqrt(d.weight) / sMax;
-      n.rt = R_MIN + (R_MAX - R_MIN) * t;
+      n.rt = rMin + (rMax - rMin) * t;
       n.lwt = W_MIN + (W_MAX - W_MIN) * t;
       if (n.active !== d.active) {
         n.active = d.active;
@@ -387,7 +408,9 @@
 
     // Pick the label set: heaviest MAX_LABELS live nodes.
     var live = clean.slice().sort(function (a, b) { return b.weight - a.weight || (a.id < b.id ? -1 : 1); });
-    this.labelIds = live.slice(0, MAX_LABELS).map(function (x) { return x.id; });
+    // Fewer permanent labels on small canvases.
+    var maxLabels = Math.min(MAX_LABELS, Math.max(6, Math.floor(this.width * this.height / 9000)));
+    this.labelIds = live.slice(0, maxLabels).map(function (x) { return x.id; });
 
     // Accessibility summary.
     var counts = {you: 0, noise: 0, tor: 0, dns: 0, other: 0};
@@ -401,6 +424,10 @@
       : 'Network map: no connections yet');
     this.emptyText.style.display = clean.length ? 'none' : '';
     this.count = clean.length;
+
+    this.rMax = rMax;
+    this.spread = Math.min(0.75, 0.1 + clean.length / 140);
+    this._fitRing();
 
     if (this.hoverId !== null && this.nodes.has(this.hoverId)) {
       var hn = this.nodes.get(this.hoverId);
@@ -475,8 +502,7 @@
     var N = arr.length, i, j, a, b;
     if (!N) return;
     var heat = this.heat;
-    // Spread nodes into a band whose thickness grows with the node count.
-    var spread = Math.min(0.75, 0.1 + N / 140);
+    var spread = this.spread || 0.1; // band thickness, grows with node count
     var fx = new Float64Array(N), fy = new Float64Array(N);
 
     for (i = 0; i < N; i++) {
@@ -558,55 +584,65 @@
     this._drawLabels();
   };
 
-  // Labels for the heaviest nodes (+ hovered one), placed radially outward,
-  // flipped to stay on-canvas, and skipped if they would collide.
+  // Labels for the heaviest nodes (+ hovered one). Each label tries a few
+  // positions (outward side first) and takes the one that stays on-canvas,
+  // never overlaps another label and covers the fewest other nodes.
   NetMap.prototype._drawLabels = function () {
     var ids = (this.labelIds || []).slice();
     if (this.hoverId !== null && ids.indexOf(this.hoverId) < 0) ids.unshift(this.hoverId);
-    var want = Object.create(null), placed = [], w = this.width, h = this.height, self = this;
+    var want = Object.create(null), placed = [], w = this.width, h = this.height;
+    var others = [];
+    this.nodes.forEach(function (n) { if (!n.removing) others.push(n); });
     // Reserve the center label and legend areas.
     placed.push({x0: this.cx - 48, x1: this.cx + 48, y0: this.cy - CENTER_R - 2, y1: this.cy + CENTER_R + 20});
     placed.push({x0: 0, x1: 110, y0: 0, y1: 74});
+
+    function overlaps(b, p) { return b.x0 < p.x1 && b.x1 > p.x0 && b.y0 < p.y1 && b.y1 > p.y0; }
 
     for (var i = 0; i < ids.length; i++) {
       var n = this.nodes.get(ids[i]);
       if (!n || n.removing) continue;
       var txt = truncate(n.text, LABEL_CHARS);
-      var tw = txt.length * CHAR_W, th = 12;
-      var dx = n.x - this.cx, dy = n.y - this.cy;
-      var dl = Math.sqrt(dx * dx + dy * dy) || 1;
-      var off = n.r + 4;
-      var right = dx >= 0;
-      var lx = n.x + dx / dl * off * 0.6 + (right ? off * 0.5 : -off * 0.5);
-      var ly = n.y + dy / dl * off * 0.6 + 4;
-      // Flip side if the text would leave the canvas.
-      if (right && lx + tw > w - 2) { right = false; lx = n.x - off; }
-      else if (!right && lx - tw < 2) { right = true; lx = n.x + off; }
-      ly = clamp(ly, th, h - 3);
-      var box = right ? {x0: lx, x1: lx + tw, y0: ly - th + 2, y1: ly + 3}
-                      : {x0: lx - tw, x1: lx, y0: ly - th + 2, y1: ly + 3};
-      var hovered = n.id === this.hoverId, hit = false;
-      if (!hovered) {
-        for (var j = 0; j < placed.length; j++) {
-          var p = placed[j];
-          if (box.x0 < p.x1 && box.x1 > p.x0 && box.y0 < p.y1 && box.y1 > p.y0) { hit = true; break; }
+      var tw = txt.length * CHAR_W, th = 12, off = n.r + 3;
+      var outR = n.x >= this.cx;
+      // Candidate boxes: [x0, y0] of the text box; anchor derived from x.
+      var cands = [
+        outR ? [n.x + off, n.y - th / 2] : [n.x - off - tw, n.y - th / 2],
+        outR ? [n.x - off - tw, n.y - th / 2] : [n.x + off, n.y - th / 2],
+        [n.x - tw / 2, n.y - off - th],
+        [n.x - tw / 2, n.y + off]
+      ];
+      var best = null, bestScore = Infinity, hovered = n.id === this.hoverId;
+      for (var c = 0; c < cands.length; c++) {
+        var b = {x0: cands[c][0], y0: cands[c][1]};
+        b.x1 = b.x0 + tw; b.y1 = b.y0 + th;
+        if (b.x0 < 2 || b.x1 > w - 2 || b.y0 < 2 || b.y1 > h - 2) continue;
+        var bad = false;
+        for (var j = 0; j < placed.length && !bad; j++) bad = overlaps(b, placed[j]);
+        if (bad && !hovered) continue;
+        var score = c * 0.5 + (bad ? 100 : 0);
+        for (j = 0; j < others.length; j++) {
+          var o = others[j];
+          if (o === n) continue;
+          var qx = clamp(o.x, b.x0, b.x1), qy = clamp(o.y, b.y0, b.y1);
+          var ex = o.x - qx, ey = o.y - qy;
+          if (ex * ex + ey * ey < o.r * o.r) score += 1 + o.r / 10;
         }
+        if (score < bestScore) { bestScore = score; best = b; }
+        if (score === 0) break;
       }
-      if (hit) continue;
-      placed.push(box);
+      if (!best) continue;
+      placed.push(best);
       want[n.id] = 1;
       if (!n.label) {
-        n.label = el('text', {'font-size': 11, fill: this.colors.ink}, this.gLabels);
-        n.label.setAttribute('paint-order', 'stroke');
-        n.label.setAttribute('stroke-linejoin', 'round');
+        n.label = el('text', {'font-size': 11, 'paint-order': 'stroke', 'stroke-linejoin': 'round',
+          'stroke-width': 3, 'stroke-opacity': 0.8}, this.gLabels);
       }
       if (n.labelText !== txt) { n.label.textContent = txt; n.labelText = txt; }
+      n.label.setAttribute('fill', this.colors.ink);
       n.label.setAttribute('stroke', this.colors.panel);
-      n.label.setAttribute('stroke-width', 3);
-      n.label.setAttribute('stroke-opacity', 0.75);
-      n.label.setAttribute('x', lx.toFixed(1));
-      n.label.setAttribute('y', ly.toFixed(1));
-      n.label.setAttribute('text-anchor', right ? 'start' : 'end');
+      n.label.setAttribute('x', best.x0.toFixed(1));
+      n.label.setAttribute('y', (best.y1 - 2.5).toFixed(1));
       n.label.setAttribute('opacity', n.alpha.toFixed(3));
       n.label.setAttribute('font-weight', hovered ? 600 : 400);
       n.label.style.display = '';
@@ -614,7 +650,6 @@
     this.nodes.forEach(function (n) {
       if (n.label && !want[n.id]) n.label.style.display = 'none';
     });
-    void self;
   };
 
   /** Stop animation, remove listeners and DOM. */
