@@ -36,6 +36,41 @@ SEARCH_ENGINE_TIERS: list[tuple[str, float]] = [
 ]
 SEARCH_ENDPOINTS = [url for url, _ in SEARCH_ENGINE_TIERS]
 SEARCH_WEIGHTS = [w for _, w in SEARCH_ENGINE_TIERS]
+ENGINE_NAMES = ["Google", "DuckDuckGo", "Bing", "Brave", "Startpage", "Ecosia", "Mojeek", "Qwant", "DuckDuckGo Lite"]
+# Settings → Search engines: relative weights by name. Empty = the defaults above.
+SEARCH_OPTIONS: dict = {"weights": {}, "typos": False}
+
+
+def configure_search(weights: dict | None = None, typos: bool = False) -> None:
+    SEARCH_OPTIONS["weights"] = dict(weights or {})
+    SEARCH_OPTIONS["typos"] = bool(typos)
+
+
+def _current_weights() -> list[float]:
+    custom = SEARCH_OPTIONS["weights"]
+    if not custom:
+        return list(SEARCH_WEIGHTS)
+    return [float(custom.get(n, 0.0)) for n in ENGINE_NAMES]
+
+
+def add_typo(rng, query: str) -> str:
+    """One small, human slip in one word: swapped, doubled or dropped letter."""
+    words = query.split(" ")
+    idx = [i for i, w in enumerate(words) if len(w) >= 5 and w.isalpha()]
+    if not idx:
+        return query
+    i = rng.choice(idx)
+    w = words[i]
+    j = rng.randint(1, len(w) - 2)
+    kind = rng.random()
+    if kind < 0.45 and w[j] != w[j + 1]:
+        w = w[:j] + w[j + 1] + w[j] + w[j + 2:]          # swap two letters
+    elif kind < 0.75:
+        w = w[:j] + w[j] + w[j:]                         # double a letter
+    else:
+        w = w[:j] + w[j + 1:]                            # drop a letter
+    words[i] = w
+    return " ".join(words)
 
 # No search engine gets more than this many searches from us in any hour, whatever the
 # level: well under the volume that triggers CAPTCHAs or rate limits for one address.
@@ -51,9 +86,11 @@ def pick_search_endpoint(rng, now: float | None = None) -> str:
     with _ENGINE_LOCK:
         for hits in _ENGINE_HITS.values():
             hits[:] = [t for t in hits if now - t < 3600]
-        allowed = [(ep, w) for ep, w in zip(SEARCH_ENDPOINTS, SEARCH_WEIGHTS)
-                   if len(_ENGINE_HITS.get(ep, [])) < MAX_SEARCHES_PER_ENGINE_PER_HOUR]
-        pool = allowed or list(zip(SEARCH_ENDPOINTS, SEARCH_WEIGHTS))
+        weights = _current_weights()
+        allowed = [(ep, w) for ep, w in zip(SEARCH_ENDPOINTS, weights)
+                   if w > 0 and len(_ENGINE_HITS.get(ep, [])) < MAX_SEARCHES_PER_ENGINE_PER_HOUR]
+        pool = allowed or [(ep, w) for ep, w in zip(SEARCH_ENDPOINTS, weights) if w > 0] \
+            or list(zip(SEARCH_ENDPOINTS, SEARCH_WEIGHTS))
         ep = rng.choices([p for p, _ in pool], weights=[w for _, w in pool])[0]
         _ENGINE_HITS.setdefault(ep, []).append(now)
         return ep
@@ -199,6 +236,8 @@ class SearchTargetFactory:
         if self.html_mode and "duckduckgo.com/?q=" in endpoint and "lite." not in endpoint:
             endpoint = "https://html.duckduckgo.com/html/?q="     # the JS-free results page
         query, origin = self.queries.next(identity)
+        if SEARCH_OPTIONS["typos"] and self.rng.random() < 0.08:
+            query = add_typo(self.rng, query)
         return Target(url=endpoint + urllib.parse.quote_plus(query), note=origin, role="search")
 
     def result_target(self, html: str, search_url: str) -> Target | None:
@@ -276,12 +315,15 @@ def _looks_like_page(p) -> bool:
 
 
 
-def build_dns_query(domain: str, qid: int) -> bytes:
-    """One A-record DNS question, header + punctuated labels."""
+QTYPE = {"A": 1, "AAAA": 28, "HTTPS": 65}
+
+
+def build_dns_query(domain: str, qid: int, qtype: str = "A") -> bytes:
+    """One DNS question (A by default; AAAA or HTTPS too), header + punctuated labels."""
     header = struct.pack(">HHHHHH", qid, 0x0100, 1, 0, 0, 0)
     q = b"".join(bytes([len(part)]) + part.encode("ascii", "ignore")
                  for part in domain.split(".") if part) + b"\x00"
-    return header + q + struct.pack(">HH", 1, 1)
+    return header + q + struct.pack(">HH", QTYPE[qtype], 1)
 
 
 def parse_dns_names(answer: bytes) -> list[str]:

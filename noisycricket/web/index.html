@@ -92,6 +92,7 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
     <div class="card"><h3>Failures</h3><div class="big" id="kFail">0</div><div class="small mute">network errors / blocks</div></div>
     <div class="card"><h3>Running for</h3><div class="big" id="kUp">—</div><div class="small mute" id="kPace"></div></div>
     <div class="card"><h3>Last hit</h3><div class="big" id="kLast">—</div><div class="small mute" id="kLastSub"></div></div>
+    <div class="card"><h3>Data today</h3><div class="big" id="kData">—</div><div class="small mute" id="kDataSub">approximate</div></div>
   </div>
   <div class="card"><h3>Hits per minute (last 30 min)</h3><svg id="spark" class="spark" viewBox="0 0 300 60" preserveAspectRatio="none"></svg></div>
   <div id="lanes"></div>
@@ -106,6 +107,7 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
     <label class="chk" style="margin:0"><input type="checkbox" id="aErr"> errors only</label>
     <input type="text" id="aQ" placeholder="filter URL…" style="flex:1;min-width:140px">
     <span class="mute small" id="aCount"></span>
+    <button id="aCsv" title="Download this session's activity">⬇ CSV</button><button id="aJson" title="Download this session's activity">⬇ JSON</button>
   </div>
   <div class="scroll"><table><thead><tr><th>Time</th><th>Lane</th><th>Engine</th><th>URL</th><th>Via / behaviour</th><th>Result</th><th>ms</th></tr></thead><tbody id="aBody"></tbody></table></div>
 </section>
@@ -229,6 +231,19 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
       <div class="scroll" style="max-height:340px"><table><thead><tr><th>Group</th><th>Platform</th><th>Release</th><th>Share</th><th>User agent</th><th></th></tr></thead><tbody id="uBody"></tbody></table></div>
       <div class="small mute" style="margin-top:6px">Shares are how often each entry is picked when random. They are modelled from release age, not measured.</div>
     </details>
+  </div>
+  <div class="card"><h3>Extras</h3>
+    <div class="small mute">Optional additions, several borrowed from similar projects. None of them changes anything above unless you turn it on.</div>
+    <label class="chk"><input type="checkbox" id="eHours"><span><b>Only make noise during these hours</b> <span class="mute">(off by default; noise outside your waking hours can look odd, so this helps if your days are regular)</span></span></label>
+    <div class="row">from <select id="eFrom"></select> to <select id="eTo"></select> <span class="small mute">your local time</span></div>
+    <label class="chk"><input type="checkbox" id="eDns"><span><b>Look sites up like a browser does</b> <span class="mute">(recommended, on) — also asks for IPv6 (AAAA) and HTTPS records, not just the address</span></span></label>
+    <label class="chk"><input type="checkbox" id="eTypos"><span><b>Occasional typos in searches</b> <span class="mute">(off by default) — about 1 search in 12 has a small slip, as people make</span></span></label>
+    <label class="chk"><input type="checkbox" id="ePolite"><span><b>Polite mode</b> <span class="mute">(off by default) — never the same site twice within a minute</span></span></label>
+    <label class="chk"><input type="checkbox" id="eLow"><span><b>Low-data mode</b> <span class="mute">(off by default) — the real browser skips images, video and fonts. Saves data, but real browsers load images, so it looks less real</span></span></label>
+    <div class="row">Daily data cap <input type="number" id="eCap" min="0" step="10" style="width:90px"> MB <span class="small mute">(0 = no cap, recommended unless your data is metered)</span></div>
+    <div style="margin-top:8px"><b>Search engines</b> <span class="small mute">— how often each is used, relative to the others. Every engine also has a hard limit of 8 searches an hour.</span></div>
+    <div id="eEngines"></div>
+    <div class="row"><button id="eEngReset">Back to defaults</button> <span class="small mute">(defaults recommended: mostly Google and DuckDuckGo, like real people)</span></div>
   </div>
   <div class="card"><h3>General</h3>
     <div class="row">Speed <input type="number" id="sScale" step="0.1" min="0.05" style="width:90px"> <span class="small mute">1.0 = human pace; lower = faster (for testing)</span></div>
@@ -414,6 +429,7 @@ function render(){
   s.lanes.forEach(l=>{hitsT+=l.hits;failT+=l.failures;if(l.last_hit_ts&&l.last_hit_ts>last){last=l.last_hit_ts;lastSub=l.name}});
   $('#kHits').textContent=hitsT;$('#kFail').textContent=failT;
   $('#kUp').textContent=s.running?fmtDur(s.uptime):'—';
+  $('#kData').textContent=s.running?fmtB(s.bytes_today||0):'—';$('#kDataSub').textContent=s.data_cap_mb>0?`cap ${s.data_cap_mb} MB a day`:'approximate; no cap';
   $('#kPace').textContent=(s.hour_target!=null?`this hour: ~${s.hour_target} planned · `:'')+`${s.profile.rate.mode} · level ${s.profile.rate.level}`;
   $('#kLast').textContent=last?fmtDur(Date.now()/1000-last)+' ago':'—';$('#kLastSub').textContent=lastSub;
   let note='';
@@ -609,6 +625,12 @@ function fillSettings(force){
   $('#dOpenN').textContent=(S.opennic||[]).length;$('#dOpenList').innerHTML=(S.opennic||[]).map(o=>esc(o[1]+' '+o[0]+' ('+(o[2]||'?')+')'+(o[3]?' · '+(o[3]==='none'?'no logs':'anonymized logs')+' · '+(o[4]||''):''))).join('<br>')+'<div style="margin-top:4px">Noise lookups to these servers are ordinary (unencrypted) DNS, like most lookups; the encryption requirement is a quality bar for the servers.</div>';
   $('#sScale').value=p.realtime_scale;$('#sMaxF').value=p.daily_max_failures;$('#sProxy').value=p.transports.clearnet.proxy||'';
   $('#sClear').checked=p.transports.clearnet.enabled;loadUA();
+  const ex=p.extras||{};const hrs=[...Array(24).keys()].map(h=>`<option value="${h}">${String(h).padStart(2,'0')}:00</option>`).join('');
+  $('#eFrom').innerHTML=hrs;$('#eTo').innerHTML=hrs;$('#eFrom').value=ex.active_from??8;$('#eTo').value=ex.active_to??23;
+  $('#eHours').checked=!!ex.active_hours;$('#eDns').checked=ex.browser_dns!==false;$('#eTypos').checked=!!ex.typos;
+  $('#ePolite').checked=!!ex.polite;$('#eLow').checked=!!ex.low_data;$('#eCap').value=ex.daily_data_mb||0;
+  renderEngines(ex.search_engines||{});
+  ['#eFrom','#eTo'].forEach(id=>$(id).onchange=()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'});
   const tr=p.traffic||{};(document.querySelector(`input[name=xpat][value=${tr.pattern||'drift'}]`)||{}).checked=true;
   const torOn2=!!(p.transports.tor&&p.transports.tor.enabled);
   $('#xOnionRow').style.display=torOn2?'':'none';$('#xOnionOff').style.display=torOn2?'none':'';
@@ -631,10 +653,27 @@ $('#sSave').onclick=async()=>{
       queries:{live:$('#qLive').checked,dataset:$('#qData').checked,builtin:$('#qBuiltin').checked,words:$('#qWords').checked},
       traffic:{pattern:(document.querySelector('input[name=xpat]:checked')||{}).value||'drift',browser:parseFloat($('#xBrowser').value||0)*10,
                plain:parseFloat($('#xPlain').value||0)*10,onion:parseFloat($('#xOnion').value||0)*10,
-               mobile_share:parseInt($('#xMobile').value||0)/100,device:$('#xDevice').value}});
+               mobile_share:parseInt($('#xMobile').value||0)/100,device:$('#xDevice').value},
+      extras:{active_hours:$('#eHours').checked,active_from:parseInt($('#eFrom').value),active_to:parseInt($('#eTo').value),
+              browser_dns:$('#eDns').checked,typos:$('#eTypos').checked,polite:$('#ePolite').checked,low_data:$('#eLow').checked,
+              daily_data_mb:parseFloat($('#eCap').value||0),search_engines:engWeights()}});
     await api('/api/app',{autostart:$('#sAuto').checked});dirty.set=false;$('#sSaved').textContent='saved ✓ '+(S&&S.running?'(Stop → Start to apply)':'');toast('Settings saved');poll()}catch(e){toast(e.message,1)}
 };
 $('#sWiz').onclick=()=>showWiz();
+// search engines: relative sliders; untouched = defaults (saved as {})
+let engTouched=false;
+function renderEngines(custom){
+  const names=S.engine_names||[], def=S.engine_defaults||{}, mx=Math.max(...Object.values(def),1);
+  engTouched=Object.keys(custom).length>0;
+  const val=n=>engTouched?(custom[n]??0):(def[n]>0?Math.max(1,Math.round(10*def[n]/mx)):0);   // engines on by default never start at 0
+  $('#eEngines').innerHTML=names.map(n=>`<div class="row"><span style="width:140px">${esc(n)}</span><input type="range" min="0" max="10" step="1" data-se="${esc(n)}" value="${val(n)}" style="flex:1;max-width:220px"> <span class="small" data-sep="${esc(n)}"></span></div>`).join('');
+  const upd=()=>{const v={};$$('[data-se]').forEach(i=>v[i.dataset.se]=+i.value);const t=Object.values(v).reduce((a,b)=>a+b,0)||1;$$('[data-sep]').forEach(s=>s.textContent=Math.round(100*v[s.dataset.sep]/t)+'%')};
+  $$('[data-se]').forEach(i=>i.addEventListener('input',()=>{engTouched=true;upd();dirty.set=true;$('#sSaved').textContent='unsaved changes'}));upd();
+}
+function engWeights(){if(!engTouched)return {};const v={};$$('[data-se]').forEach(i=>v[i.dataset.se]=+i.value);return v}
+$('#eEngReset').onclick=()=>{renderEngines({});dirty.set=true;$('#sSaved').textContent='unsaved changes — defaults restored'};
+$('#aCsv').onclick=()=>dlAct('csv');$('#aJson').onclick=()=>dlAct('json');
+function dlAct(kind){fetch('/api/hits.'+kind,{headers:{'X-Token':TOKEN}}).then(r=>r.blob()).then(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='noisycricket-activity.'+kind;a.click()})}
 function randInfo(){
   const v=parseInt($('#sRand').value||0);
   $('#sRandInfo').innerHTML=v===0?'<b>Steady</b>: about the same amount every hour.':

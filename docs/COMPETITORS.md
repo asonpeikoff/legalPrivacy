@@ -30,15 +30,15 @@ or filtered OpenNIC resolvers; a local dashboard with live activity.
 
 | Feature | Where | noisyCricket | Status |
 |---|---|---|---|
-| Active hours (only run between set times) | phantom-noise, NoisyCompany | Optional schedule in Settings | next |
-| Search engine on/off and relative weights | phantom-noise | Optional, in Settings | next |
-| Occasional typos in queries | phantom-noise | Optional, off by default | next |
-| Hover and text selection while reading | phantom-noise | Part of human behaviour | next |
-| Low-data mode: no images or video | isp-data-pollution, NoisyCompany | Optional, off by default (real browsers load images) | next |
-| Daily data cap and data-used counter | NoisyCompany, isp-data-pollution (GB/month) | Optional cap; usage on the dashboard | next |
-| Export activity as JSON / CSV | phantom-noise | Activity tab download | next |
-| Polite mode: per-site minimum gap, robots.txt | madereddy/noisy, NoisyCompany, isp-data-pollution | Optional, off by default | next |
-| Browser-like DNS (AAAA and HTTPS records too) | NoisyCompany | Optional, on by default | next |
+| Active hours (only run between set times) | phantom-noise, NoisyCompany | Optional schedule in Settings | **added** |
+| Search engine on/off and relative weights | phantom-noise | Optional, in Settings | **added** |
+| Occasional typos in queries | phantom-noise | Optional, off by default | **added** |
+| Hover and text selection while reading | phantom-noise | Part of human behaviour | **added** |
+| Low-data mode: no images or video | isp-data-pollution, NoisyCompany | Optional, off by default (real browsers load images) | **added** |
+| Daily data cap and data-used counter | NoisyCompany, isp-data-pollution (GB/month) | Optional cap; usage on the dashboard | **added** |
+| Export activity as JSON / CSV | phantom-noise | Activity tab download | **added** |
+| Polite mode: per-site minimum gap, robots.txt | madereddy/noisy, NoisyCompany, isp-data-pollution | Optional, off by default | **added** |
+| Browser-like DNS (AAAA and HTTPS records too) | NoisyCompany | Optional, on by default | **added** |
 | Interest personas (coherent themes, rotated) | NoisyCompany, phantom-noise categories | Optional, alongside My List | planned |
 | Household masking (2–5 virtual people with their own hours) | NoisyCompany | Optional | planned |
 | Follow your real activity (blend with your traffic volume, or back off when you're busy) | DNoiSe, NoisyCompany netwatch | Optional | planned |

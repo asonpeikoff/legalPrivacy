@@ -94,7 +94,7 @@ class HumanDriver:
         self.rng, self.act, self.scale = rng, act, max(0.01, scale)
         self.pos: tuple[float, float] = (rng.uniform(200, 600), rng.uniform(200, 500))
         self.stats = {"scrolls": 0, "pauses": 0, "back_scrolls": 0, "re_reads": 0, "moves": 0,
-                      "depth": 0.0, "seconds": 0.0}
+                      "hovers": 0, "selections": 0, "depth": 0.0, "seconds": 0.0}
 
     # -- primitives --------------------------------------------------------
     def pause(self, seconds: float) -> None:
@@ -157,6 +157,17 @@ class HumanDriver:
                 rp2 = lognormal_clipped(rng, 4.0, 0.5, 1.5, 12.0)
                 spent += rp2
                 self.pause(rp2)
+            if not act.mobile and rng.random() < 0.12:                    # hover over something, linger
+                self.move_to(rng.uniform(0.15, 0.85) * w, rng.uniform(0.2, 0.8) * h)
+                self.pause(lognormal_clipped(rng, 0.9, 0.5, 0.3, 3.0))
+                self.stats["hovers"] += 1
+            select = getattr(act, "select_text", None)
+            if select is not None and not act.mobile and rng.random() < 0.05:   # highlight a line while reading
+                x, y = rng.uniform(0.2, 0.5) * w, rng.uniform(0.3, 0.7) * h
+                self.move_to(x, y)
+                if select(x, y, rng.uniform(80, 260)):
+                    self.stats["selections"] += 1
+                    self.pause(lognormal_clipped(rng, 1.2, 0.5, 0.4, 4.0))
             if rng.random() < 0.25:                                        # fidget with the mouse
                 self.move_to(rng.uniform(0.1, 0.9) * w, rng.uniform(0.15, 0.85) * h)
             if act.page_height() - h <= 0:

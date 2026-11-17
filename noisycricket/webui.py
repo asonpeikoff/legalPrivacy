@@ -160,6 +160,20 @@ class UIServer:
                         return self._json(ctl.ua_state())
                     if u.path == "/api/tools/speed":
                         return self._json(ctl.speed_status())
+                    if u.path in ("/api/hits.json", "/api/hits.csv"):
+                        rows = ctl.hits(0)
+                        if u.path.endswith(".json"):
+                            return self._send(200, json.dumps(rows, indent=1).encode(), "application/json",
+                                              {"Content-Disposition": "attachment; filename=noisycricket-activity.json"})
+                        import csv
+                        import io
+                        buf = io.StringIO()
+                        cols = ["seq", "ts", "lane", "engine", "url", "status", "ok", "latency_ms", "note", "role", "detail", "error"]
+                        w = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
+                        w.writeheader()
+                        w.writerows(rows)
+                        return self._send(200, buf.getvalue().encode(), "text/csv; charset=utf-8",
+                                          {"Content-Disposition": "attachment; filename=noisycricket-activity.csv"})
                     if u.path == "/api/doctor":
                         return self._json({"checks": ctl.doctor()})
                 except Exception as exc:

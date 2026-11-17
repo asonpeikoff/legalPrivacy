@@ -20,7 +20,7 @@ import yaml
 from . import __version__
 from .config import (ConfigError, Profile, apply_overrides, load_profile,
                      profile_to_dict, save_profile)
-from .engines import load_wordlist
+from .engines import ENGINE_NAMES, SEARCH_WEIGHTS, load_wordlist
 from .dnsplan import DnsPlan
 from .domains import DomainPool
 from .rate import RatePlanner, describe as describe_rate
@@ -316,6 +316,7 @@ class Controller:
             return None
         from .browser import BrowserTransport
         return BrowserTransport(proxy=cfg.proxy, headless=not cfg.browser_visible, executable=info["detail"],
+                                low_data=self.profile.extras.low_data,
                                 stop_event=stop, scale=lambda: self.profile.realtime_scale,
                                 on_event=lambda lvl, msg: self.log.add(lvl, "browser", msg))
 
@@ -443,6 +444,9 @@ class Controller:
             "version": __version__, "first_run": self.first_run, "running": self.running,
             "paused": stats.get("paused", False), "uptime": stats.get("uptime", 0) if self.running else 0,
             "lanes": stats["lanes"], "app": self.app,
+            "bytes_today": stats.get("bytes_today", 0) if self.running else 0,
+            "data_cap_mb": self.profile.extras.daily_data_mb,
+            "engine_names": ENGINE_NAMES, "engine_defaults": dict(zip(ENGINE_NAMES, SEARCH_WEIGHTS)),
             "profile": profile_to_dict(self.profile)["profile"],
             "tor": self.tor_state(), "log_last_id": self.log.last_id(),
             "builtin_onion_seeds": [{"name": n, "url": u} for n, u in BUILTIN_ONION_SEEDS],

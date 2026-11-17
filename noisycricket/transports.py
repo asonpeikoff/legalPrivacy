@@ -44,6 +44,7 @@ class HitResult:
         self.error = error
         self.latency_ms: float | None = None
         self.detail: str | None = None       # e.g. "click, 4 scrolls, 38% depth" from the browser
+        self.bytes: int = 0                  # approximate data moved (0 = use len(html))
 
     @property
     def ok(self) -> bool:

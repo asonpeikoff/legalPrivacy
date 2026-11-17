@@ -134,6 +134,35 @@ class IdentityConfig:
 
 
 @dataclass
+class ExtrasConfig:
+    """Optional extras (most adopted from similar projects; see docs/COMPETITORS.md)."""
+    active_hours: bool = False    # only make noise between active_from and active_to (local time)
+    active_from: int = 8
+    active_to: int = 23
+    search_engines: dict = field(default_factory=dict)   # engine -> relative weight 0..10; {} = defaults
+    typos: bool = False           # occasionally misspell a word in a search, as people do
+    low_data: bool = False        # real browser skips images, video and fonts
+    daily_data_mb: float = 0.0    # stop for the day after this much data; 0 = no cap
+    polite: bool = False          # at least a minute between visits to the same site
+    browser_dns: bool = True      # look names up like a browser: A, plus AAAA and HTTPS records
+
+    def validate(self) -> None:
+        from .engines import ENGINE_NAMES
+        for k in ("active_from", "active_to"):
+            if not 0 <= int(getattr(self, k)) <= 23:
+                raise ConfigError(f"extras.{k} must be an hour from 0 to 23")
+        if self.daily_data_mb < 0:
+            raise ConfigError("extras.daily_data_mb must be 0 or more")
+        for name, w in self.search_engines.items():
+            if name not in ENGINE_NAMES:
+                raise ConfigError(f"extras.search_engines: unknown engine '{name}'")
+            if float(w) < 0:
+                raise ConfigError("extras.search_engines weights must be 0 or more")
+        if self.search_engines and not any(float(w) > 0 for w in self.search_engines.values()):
+            raise ConfigError("Leave at least one search engine on.")
+
+
+@dataclass
 class TrafficConfig:
     """What kinds of noise run, in what proportions, and how the mix changes over time.
 
@@ -210,6 +239,7 @@ class Profile:
     identity: "IdentityConfig" = field(default_factory=lambda: IdentityConfig())
     mylist: "MyListConfig" = field(default_factory=lambda: MyListConfig())
     traffic: "TrafficConfig" = field(default_factory=lambda: TrafficConfig())
+    extras: "ExtrasConfig" = field(default_factory=lambda: ExtrasConfig())
 
     def active_engines(self, transport: str) -> list[str]:
         """Engines a lane runs. Onion is Tor-only; clearnet engines run on Tor
@@ -258,6 +288,7 @@ def profile_to_dict(profile: Profile) -> dict[str, Any]:
         "identity": asdict(profile.identity),
         "mylist": asdict(profile.mylist),
         "traffic": asdict(profile.traffic),
+        "extras": asdict(profile.extras),
     }}
 
 
@@ -314,6 +345,14 @@ def apply_overrides(profile: Profile, raw: dict[str, Any]) -> Profile:
         profile.identity = IdentityConfig(**{k: str(v) for k, v in merged.items()
                                              if k in IdentityConfig.__dataclass_fields__})
         profile.identity.validate()
+    if p.get("extras"):
+        m = profile.extras.__dict__ | p["extras"]
+        profile.extras = ExtrasConfig(
+            active_hours=bool(m["active_hours"]), active_from=int(m["active_from"]), active_to=int(m["active_to"]),
+            search_engines={str(k): float(v) for k, v in (m.get("search_engines") or {}).items()},
+            typos=bool(m["typos"]), low_data=bool(m["low_data"]), daily_data_mb=float(m["daily_data_mb"]),
+            polite=bool(m["polite"]), browser_dns=bool(m["browser_dns"]))
+        profile.extras.validate()
     if p.get("traffic"):
         merged = profile.traffic.__dict__ | p["traffic"]
         profile.traffic = TrafficConfig(
