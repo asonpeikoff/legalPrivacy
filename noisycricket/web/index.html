@@ -74,6 +74,9 @@ table.dns td{vertical-align:middle}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin:8px 0}
 .kpi{background:var(--code);border-radius:8px;padding:8px 10px}.kpi b{display:block;font-size:20px;color:var(--ink)}.kpi span{font-size:11px;color:var(--mute)}
 .cm{border-collapse:collapse}.cm td,.cm th{border:1px solid var(--line);padding:6px 10px;text-align:center}
+#t-proof{--you:#2a9d8f;--you-map:#2a9d8f}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) #t-proof{--you:#3fb8a9;--you-map:#3fb8a9}}
+:root[data-theme=dark] #t-proof{--you:#3fb8a9;--you-map:#3fb8a9}
 .mlgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
 .lgd{display:inline-flex;align-items:center;gap:6px;margin-right:12px;font-size:12px;color:var(--mute)}.lgd i{width:10px;height:10px;border-radius:2px;display:inline-block}
 .mixbar{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--line);margin:6px 0 10px}
