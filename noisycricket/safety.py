@@ -28,6 +28,15 @@ _INFRA_PARTS = ("akamai", "cloudfront", "amazonaws", "googleapis", "gstatic", "d
                 "apple-dns", "aaplimg", "skype.com", "msedge.net", "office.net", "live.com",
                 "microsoftonline", "mozilla.net", "sentry", "cloudflare", "fastly", "akadns", "nflxvideo")
 _BAD_TLDS = (".gov", ".mil", ".xxx", ".adult", ".porn", ".sex", ".bet", ".casino", ".poker")
+# Name patterns for betting, lottery and adult sites that a word list misses (e.g. betano, crocobet,
+# 1xbet, dpboss, faphouse). Checked per label, with a few common words that merely contain "bet".
+_BAD_LABEL_RE = re.compile(
+    r"(^\d*x?bet(?!ter|h|a$|a\d|ween)|bet\d*$|bet\d+|^bet[a-z]{2,}$|satta|matka|dpboss|lott(o|ery)|jackpot|"
+    r"slots?\d*$|^slots?(\d|online|gacor|game|club)|slotter|togel|toto\d|bets?$|bet-|apuesta|casino|poker|bingo|wager|sportsbook|^stake|1win|1xbet|mostbet|melbet|parimatch|"
+    r"fap|nsfw|hentai|xvideo|xnxx|xhamster|spankbang|eporner|rule34|chaturbate|stripchat|bongacam|livejasmin|"
+    r"camsoda|onlyfans|^jav|jav$|livecam|camrips|pussy|desi18|18plus|^18av|fansly|brazzers|redtube|youporn|tube8|javhd|jav[a-z]*\d|escort|hookup|nude|milf)")
+_LABEL_OK = {"alphabet", "tibet", "betterhelp", "better", "betterment", "beta", "bethesda", "bethel",
+             "betty", "elizabeth", "between", "cabinet", "sorbet", "barbet", "abet", "quibet"}
 
 
 def safe_query(q: str) -> bool:
@@ -44,6 +53,8 @@ def safe_domain(domain: str, denylist: set[str] | None = None) -> bool:
     if not d or d.endswith(_BAD_TLDS) or any(p in d for p in _BAD_DOMAIN_PARTS):
         return False
     if any(p in d for p in _INFRA_PARTS):
+        return False
+    if any(_BAD_LABEL_RE.search(lbl) for lbl in d.split(".") if lbl not in _LABEL_OK):
         return False
     if denylist:
         parts = d.split(".")

@@ -51,6 +51,7 @@ class DomainPool:
         self.my_weights = my_weights or {}
         self.interests = None              # Interests (optional personas)
         self.interest_share = 0.0
+        self.site_list = "both"            # both | crux | tranco
         self._recent: deque[str] = deque(maxlen=60)
         self._seen_good: deque[str] = deque(maxlen=300)    # sites reached by clicking search results
 
@@ -81,6 +82,20 @@ class DomainPool:
         ranked = [d for d in ranked if safe_domain(d, deny)]
         return ranked or FALLBACK_DOMAINS
 
+    def _crux_boost(self) -> dict[str, float]:
+        """How much more often to pick a site that real Chrome users load a lot (CrUX).
+        CrUX is never a source on its own (the global list holds too much adult and gambling
+        content to filter reliably): it only re-ranks sites already on the filtered Tranco list."""
+        if self.site_list != "both" or not self.store:
+            return {}
+        if getattr(self, "_boost_cache", None) is None:
+            boost = {}
+            for it in self.store.items("crux"):
+                host, _, rank = it.partition("|")
+                boost[host.removeprefix("www.")] = 3.0 if rank == "1000" else 1.5
+            self._boost_cache = boost
+        return self._boost_cache
+
     def pick(self, browsable: bool = False) -> str:
         """Zipf-weighted draw: popular sites dominate, like real browsing, but the tail still appears.
         browsable=True restricts to things people open in a browser (DNS lookups use everything)."""
@@ -91,7 +106,8 @@ class DomainPool:
         ranked = self._ranked()
         if browsable:
             ranked = [x for x in ranked[:1500] if looks_browsable(x)] or FALLBACK_DOMAINS
-        weights = [1.0 / (i + 8) for i in range(len(ranked))]
+        boost = self._crux_boost()
+        weights = [boost.get(x, 1.0) / (i + 8) for i, x in enumerate(ranked)]
         for _ in range(6):
             d = self.rng.choices(ranked, weights=weights)[0]
             if d not in self._recent:

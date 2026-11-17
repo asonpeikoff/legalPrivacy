@@ -192,3 +192,34 @@ def test_estimate_and_privacy_check_have_the_expected_shape():
     assert c.estimate()["mb_per_day"] <= 1
     names = {x["name"] for x in c.privacy_check()}
     assert {"Content blocker", "VPN", "Encrypted DNS", "Real browser for noise"} <= names
+
+
+def test_betting_and_adult_names_are_filtered_without_blocking_lookalikes():
+    from noisycricket.safety import safe_domain
+    for bad in ("www.betano.pe", "crocobet.com", "1xbet.com", "dpbossnet.me", "hi.faphouse2.com",
+                "javwow.com", "olxtoto818.com", "slots77.com", "livecamrips.to"):
+        assert not safe_domain(bad), bad
+    for ok in ("www.betterhelp.com", "alphabet.com", "www.tibet.net", "beta.nptel.ac.in", "hindi.news18.com",
+               "slotted.example.com", "www.youtube.com", "dictionary.cambridge.org"):
+        assert safe_domain(ok), ok
+
+
+def test_crux_only_reranks_sites_already_on_the_safe_list():
+    from noisycricket.domains import DomainPool
+    from noisycricket.feeds import parse_crux
+
+    class Store:
+        def items(self, name):
+            return {"tranco": ["alpha-example.com", "beta-example.org", "gamma-example.net"],
+                    "crux": ["gamma-example.net|1000", "only-in-crux.example|1000"]}.get(name, [])
+        def denylist(self):
+            return set()
+    pool = DomainPool(random.Random(1), Store())
+    picks = [pool.pick() for _ in range(3000)]
+    assert "only-in-crux.example" not in picks                   # never a source on its own
+    assert picks.count("gamma-example.net") > picks.count("beta-example.org")   # boosted by real browsing
+    pool.site_list = "tranco"
+    pool._boost_cache = None
+    assert pool._crux_boost() == {}
+    assert parse_crux("origin,rank\nhttps://www.example.com,1000\nhttps://www.betano.pe,1000\nhttps://x.example,100000\n") \
+        == ["www.example.com|1000"]

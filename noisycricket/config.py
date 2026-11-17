@@ -155,6 +155,7 @@ class ExtrasConfig:
     activity: str = "off"         # your own activity: off | backoff | follow
     busy_kbps: int = 400          # backoff: pause while your own traffic is above this
     metrics: bool = False         # Prometheus metrics at /metrics (needs the dashboard token)
+    site_list: str = "both"       # both = Tranco re-ranked by Chrome's real browsing (CrUX), default | tranco
 
     def validate(self) -> None:
         from .engines import ENGINE_NAMES
@@ -182,6 +183,8 @@ class ExtrasConfig:
             raise ConfigError("extras.interest_share must be between 0 and 1")
         if self.activity not in ("off", "backoff", "follow"):
             raise ConfigError("extras.activity must be off, backoff or follow")
+        if self.site_list not in ("both", "tranco"):
+            raise ConfigError("extras.site_list must be both or tranco")
         if int(self.busy_kbps) < 10:
             raise ConfigError("extras.busy_kbps must be at least 10")
 
@@ -379,7 +382,8 @@ def apply_overrides(profile: Profile, raw: dict[str, Any]) -> Profile:
             interests=bool(m["interests"]), interest_list=[str(x) for x in (m.get("interest_list") or [])],
             interest_active=int(m["interest_active"]), interest_rotate_days=int(m["interest_rotate_days"]),
             interest_share=float(m["interest_share"]), interest_salt=str(m.get("interest_salt") or ""),
-            activity=str(m["activity"]), busy_kbps=int(m["busy_kbps"]), metrics=bool(m["metrics"]))
+            activity=str(m["activity"]), busy_kbps=int(m["busy_kbps"]), metrics=bool(m["metrics"]),
+            site_list="tranco" if m.get("site_list") == "tranco" else "both")
         if profile.extras.interests and not profile.extras.interest_salt:
             import secrets as _s
             profile.extras.interest_salt = _s.token_hex(8)

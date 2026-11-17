@@ -241,6 +241,8 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
     <label class="chk"><input type="checkbox" id="eTypos"><span><b>More typos in searches</b> <span class="mute">(off by default) — a few searches always have a small slip; this makes it about 1 in 9</span></span></label>
     <label class="chk"><input type="checkbox" id="ePolite"><span><b>Polite mode</b> <span class="mute">(off by default) — never the same site twice within a minute</span></span></label>
     <label class="chk"><input type="checkbox" id="eLow"><span><b>Low-data mode</b> <span class="mute">(off by default) — the real browser skips images, video and fonts. Saves data, but real browsers load images, so it looks less real</span></span></label>
+    <div class="row">Popular sites come from <select id="eSites"><option value="both">Tranco, re-ranked by real Chrome browsing (recommended, default)</option><option value="tranco">Tranco only</option></select></div>
+    <div class="small mute">CrUX is Google's list of the sites real Chrome users load most. Its global list holds too much adult and gambling content to use on its own, so it only decides which of the already-filtered Tranco sites come up more often.</div>
     <div class="row">Daily data cap <input type="number" id="eCap" min="0" step="10" style="width:90px"> MB <span class="small mute">(0 = no cap, recommended unless your data is metered)</span></div>
     <div style="margin-top:10px"><b>Interests</b> <span class="small mute">— a person has a few steady interests, not random everything</span></div>
     <label class="chk"><input type="checkbox" id="iOn"><span><b>Follow a few themes at a time</b> <span class="mute">(off by default) — a share of visits and searches stays on the active themes, which change every so often</span></span></label>
@@ -697,7 +699,7 @@ function fillSettings(force){
   $('#iShare').value=Math.round((ex.interest_share??0.3)*100);$('#iShareP').textContent=$('#iShare').value+'%';
   $('#iShare').addEventListener('input',()=>{$('#iShareP').textContent=$('#iShare').value+'%'});
   (document.querySelector(`input[name=iact][value=${ex.activity||'off'}]`)||{}).checked=true;$('#iBusy').value=ex.busy_kbps||400;
-  $('#eMetrics').checked=!!ex.metrics;
+  $('#eMetrics').checked=!!ex.metrics;$('#eSites').value=ex.site_list||'both';
   api('/api/interests').then(d=>{
     const allowed=(ex.interest_list&&ex.interest_list.length)?ex.interest_list:d.themes;
     $('#iN').innerHTML=d.themes.map((_,i)=>`<option value="${i+1}">${i+1}</option>`).join('');$('#iN').value=ex.interest_active||3;
@@ -736,7 +738,7 @@ async function saveSettings(auto){
               interest_share:parseInt($('#iShare').value||30)/100,
               interest_list:(()=>{const all=$$('[data-th]'),on=all.filter(c=>c.checked).map(c=>c.dataset.th);return on.length===all.length?[]:on})(),
               activity:(document.querySelector('input[name=iact]:checked')||{}).value||'off',busy_kbps:parseInt($('#iBusy').value||400),
-              metrics:$('#eMetrics').checked}});
+              metrics:$('#eMetrics').checked,site_list:$('#eSites').value}});
     await api('/api/app',{autostart:$('#sAuto').checked});dirty.set=false;$('#sSaved').textContent='Saved ✓ '+(S&&S.running?'(applies the next time noise starts)':'');poll()}catch(e){$('#sSaved').textContent='Not saved: '+e.message;if(!auto)toast(e.message,1)}
 }
 $('#sSave').onclick=()=>saveSettings(false);
@@ -837,7 +839,7 @@ $('#sBrowser').oninput=$('#sWin').oninput=()=>{dirty.set=true;$('#sSaved').textC
 function renderRealism(){
   const b=S.browser;
   $('#sBrowserInfo').innerHTML=b.active?`<span class="ok">✓ using ${esc(b.detail.split(/[\\/]/).pop())}</span>`:b.setting==='off'?'<span class="mute">off</span>':`<span class="warnc">⚠ ${esc(b.detail)}</span>`;
-  const label={deny:'Safety blocklist',trends:'Google Trends',wiki:'Wikipedia most-read',news:'BBC headlines',dataset:'Real past searches',tranco:'Popular sites (Tranco)',opennic:'OpenNIC resolvers'};
+  const label={deny:'Safety blocklist',trends:'Google Trends',wiki:'Wikipedia most-read',news:'BBC headlines',dataset:'Real past searches',tranco:'Popular sites (Tranco)',opennic:'OpenNIC resolvers',crux:'Popular sites (Chrome / CrUX)'};
   $('#fBody').innerHTML=S.feeds.map(f=>`<tr><td>${esc(label[f.name]||f.name)}</td><td>${f.count.toLocaleString()}</td><td class="small">${esc(f.origin||'')}</td><td>${f.updated?fmtDur(Date.now()/1000-f.updated)+' ago':'—'}</td><td class="${f.error?'warnc':f.count&&!f.stale?'ok':'mute'}">${esc(f.error?'unavailable — '+f.error.slice(0,60):f.count?(f.stale?'old — consider refreshing':'ok'):'missing')}</td></tr>`).join('');
   $('#fNote').textContent=S.feeds_refreshing?'refreshing…':'';
   if(document.activeElement!==$('#fAuto'))$('#fAuto').checked=!!S.app.auto_refresh_sources;

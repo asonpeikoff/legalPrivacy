@@ -196,6 +196,7 @@ class Controller:
         pool = DomainPool(_r.Random(), self.feeds, my_sites=ml.sites if ml.enabled else None,
                           random_share=ml.random_share, my_weights=ml.weights)
         pool.interests, pool.interest_share = self._interests(), self.profile.extras.interest_share
+        pool.site_list = self.profile.extras.site_list
         return pool
 
     def interests_state(self) -> dict:
