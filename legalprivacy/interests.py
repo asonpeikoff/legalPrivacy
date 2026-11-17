@@ -16,6 +16,20 @@ import time
 
 # Mainstream, safe sites and everyday searches per theme.
 CATEGORIES: dict[str, dict[str, list[str]]] = {
+    "Data science": {"sites": ["kaggle.com", "towardsdatascience.com", "stackoverflow.com", "stats.stackexchange.com",
+                               "github.com", "pypi.org", "scikit-learn.org", "pandas.pydata.org", "numpy.org",
+                               "pytorch.org", "huggingface.co", "arxiv.org", "docs.python.org", "jupyter.org",
+                               "matplotlib.org", "seaborn.pydata.org", "plotly.com", "cran.r-project.org",
+                               "machinelearningmastery.com", "kdnuggets.com", "statsmodels.org", "mlflow.org"],
+                     "queries": ["{t}", "{t} example", "how to {t}", "{t} python", "{t} explained", "{t} pandas",
+                                 "{t} stack overflow", "{t} vs", "best way to {t}"],
+                     "topics": ["pandas groupby", "random forest hyperparameters", "train test split", "cross validation",
+                                "logistic regression", "xgboost vs lightgbm", "pca explained", "confusion matrix",
+                                "roc auc", "time series forecasting", "fine tune transformers", "sql window functions",
+                                "numpy broadcasting", "matplotlib subplots", "bayesian inference", "a/b test sample size",
+                                "feature engineering", "k-means clustering", "gradient descent", "jupyter shortcuts",
+                                "polars vs pandas", "data leakage", "shap values", "imbalanced classes",
+                                "duckdb parquet", "scikit-learn pipeline", "pytorch dataloader", "embedding similarity"]},
     "News": {"sites": ["reuters.com", "apnews.com", "bbc.com", "npr.org", "theguardian.com", "aljazeera.com",
                        "dw.com", "pbs.org"],
              "queries": ["latest {t} news", "{t} update today", "what happened with {t}", "{t} explained"],
@@ -98,4 +112,37 @@ class Interests:
 
     def query(self) -> str:
         cat = CATEGORIES[self.rng.choice(self.active())]
+        return self.rng.choice(cat["queries"]).format(t=self.rng.choice(cat["topics"]))
+
+
+# A persona is who the noise mostly looks like: a fixed mix of themes. It's followed
+# "mostly" (Settings sets how much); the rest of the noise stays varied.
+PERSONAS: dict[str, dict[str, float]] = {
+    "Data scientist": {"Data science": 0.65, "Technology": 0.2, "Science": 0.15},
+    "Developer": {"Technology": 0.6, "Data science": 0.2, "Science": 0.1, "Books": 0.1},
+    "Sports fan": {"Sports": 0.7, "Fitness": 0.15, "Movies & TV": 0.15},
+    "Student": {"Science": 0.3, "Books": 0.25, "Technology": 0.2, "Movies & TV": 0.15, "Personal finance": 0.1},
+    "Home cook and gardener": {"Cooking": 0.5, "Gardening": 0.35, "Home & DIY": 0.15},
+    "Traveller": {"Travel": 0.6, "News": 0.15, "Cooking": 0.15, "Personal finance": 0.1},
+}
+
+
+class Persona:
+    """Same interface as Interests (site, query, active), from a fixed weighted theme mix."""
+
+    def __init__(self, rng: random.Random, name: str):
+        self.rng, self.name = rng, name
+        self.mix = PERSONAS.get(name, {})
+
+    def active(self) -> list[str]:
+        return list(self.mix)
+
+    def _theme(self) -> dict:
+        return CATEGORIES[self.rng.choices(list(self.mix), weights=list(self.mix.values()))[0]]
+
+    def site(self) -> str:
+        return self.rng.choice(self._theme()["sites"])
+
+    def query(self) -> str:
+        cat = self._theme()
         return self.rng.choice(cat["queries"]).format(t=self.rng.choice(cat["topics"]))

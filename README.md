@@ -199,6 +199,8 @@ All optional:
 
 - **Active hours:** only make noise between set times
 - **Your own activity:** pause while you're using the connection, or run mostly while you're active
+- **Persona:** who the noise mostly looks like (Data scientist, Developer, Sports fan, Student, Home cook and
+  gardener, Traveller), followed mostly but not perfectly (60% by default)
 - **Interests:** a few steady themes at a time, changing every so often
 - **Household:** noise from 2–5 virtual people with their own devices, browsers and hours
 - **Search engines:** how often each is used

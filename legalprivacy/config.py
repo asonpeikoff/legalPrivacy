@@ -193,6 +193,8 @@ class ExtrasConfig:
     busy_kbps: int = 400          # backoff: pause while your own traffic is above this
     metrics: bool = False         # Prometheus metrics at /metrics (needs the dashboard token)
     site_list: str = "both"       # both = Tranco re-ranked by Chrome's real browsing (CrUX), default | tranco
+    persona: str = ""             # who the noise mostly looks like ("" = nobody in particular), e.g. "Data scientist"
+    persona_share: float = 0.6    # how closely the persona is followed (share of visits and searches)
     household: bool = False       # noise from a virtual household of several people
     household_size: int = 3       # 2..5 people, member 1 = you
 
@@ -222,6 +224,11 @@ class ExtrasConfig:
             raise ConfigError("extras.interest_share must be between 0 and 1")
         if self.activity not in ("off", "backoff", "follow"):
             raise ConfigError("extras.activity must be off, backoff or follow")
+        from .interests import PERSONAS
+        if self.persona and self.persona not in PERSONAS:
+            raise ConfigError(f"extras.persona: unknown persona '{self.persona}'")
+        if not 0 <= float(self.persona_share) <= 1:
+            raise ConfigError("extras.persona_share must be between 0 and 1")
         if not 2 <= int(self.household_size) <= 5:
             raise ConfigError("extras.household_size must be 2 to 5")
         if self.site_list not in ("both", "tranco"):
@@ -430,7 +437,8 @@ def apply_overrides(profile: Profile, raw: dict[str, Any]) -> Profile:
             interest_share=float(m["interest_share"]), interest_salt=str(m.get("interest_salt") or ""),
             activity=str(m["activity"]), busy_kbps=int(m["busy_kbps"]), metrics=bool(m["metrics"]),
             site_list="tranco" if m.get("site_list") == "tranco" else "both",
-            household=bool(m.get("household")), household_size=int(m.get("household_size") or 3))
+            household=bool(m.get("household")), household_size=int(m.get("household_size") or 3),
+            persona=str(m.get("persona") or ""), persona_share=float(m.get("persona_share", 0.6)))
         if (profile.extras.interests or profile.extras.household) and not profile.extras.interest_salt:
             import secrets as _s
             profile.extras.interest_salt = _s.token_hex(8)
