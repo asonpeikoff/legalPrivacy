@@ -173,8 +173,10 @@ table.dns td{vertical-align:middle}
     <div class="small mute" id="tInstallNote"></div>
     <label class="chk"><input type="checkbox" id="tEnable"><span><b>Use Tor</b> — turn the Tor lane on. Starting noise will automatically start (and if needed, install) Tor.</span></label>
     <label class="chk"><input type="checkbox" id="tOnion"><span><b>🧅 Visit onion sites</b> (darknet noise) — only .onion addresses, never leaves the Tor network.</span></label>
-    <label class="chk"><input type="checkbox" id="tClear"><span><b>Also route clearnet noise through Tor</b> — <span class="warnc">not recommended</span>: exit relays carry the load and Tor-to-clearnet search patterns are distinctive. Leave off unless you know why you want it.</span></label>
     <label class="chk"><input type="checkbox" id="tManage"><span><b>Let noisyCricket manage Tor</b> (recommended, default). Untick to use an existing Tor at the address below instead.</span></label>
+    <details class="small" style="margin-top:4px"><summary class="mute">Advanced</summary>
+    <label class="chk"><input type="checkbox" id="tClear"><span><b>Also route ordinary web noise through Tor</b> — <b class="bad">not recommended</b>. Ordinary sites would see visits from Tor exits, a distinctive pattern that also burdens volunteer exit relays. Leave this off.</span></label>
+    </details>
     <div class="row" id="tExt" style="display:none">SOCKS <input type="text" id="tSocks" size="16"> Control <input type="text" id="tCtl" size="16"></div>
     <div class="row"><button id="tSave" style="display:none" class="pri">Save Tor settings</button><span class="small mute" id="tSaved"></span></div>
   </div>
@@ -184,9 +186,10 @@ table.dns td{vertical-align:middle}
   </div>
   <div class="grid">
     <div class="card"><h3>Onion seed sites</h3>
-      <div class="small mute">One URL per line. Every address is checked offline (v3 checksum) before use. Leave empty to use the built-in list of official mirrors.</div>
+      <div class="small mute">One onion address per line — the recommended list is filled in; add, remove or edit freely. Every address is checked offline (v3 checksum) before use.</div>
       <textarea id="tSeeds" rows="6" placeholder="http://example…56chars….onion/"></textarea>
-      <details class="small"><summary>Built-in seeds</summary><div id="tBuiltin" class="mute"></div></details>
+      <div class="row" style="margin-top:4px"><button id="tSeedsReset">Reset to the recommended list</button>
+        <details class="small"><summary>Where these come from</summary><div class="mute">Official onion addresses of lawful public sites (news, privacy services, software, search), from the curated lists at dark.fail and tor.taxi, kept only when both agree on the address. Markets, leak and exploit forums, adult, piracy, imageboard and government/law-enforcement sites are left out. Every address is checked offline (v3 checksum) before use.</div><div id="tBuiltin" class="mute"></div></details></div>
     </div>
     <div class="card"><h3>Bridges <details class="why"><summary>ⓘ</summary><div>Bridges are unlisted entry points into Tor. You only need them if your network blocks Tor or you don't want your provider to see that you use Tor. <b>obfs4</b> disguises Tor as random-looking traffic; <b>Snowflake</b> goes through volunteers' browsers and looks like a video call; <b>meek</b> looks like ordinary visits to a big website (slow). The built-in ones come with the official Tor bundle and are shared by many people, so they get blocked more often than your own.</div></details></h3>
       <label class="opt"><input type="radio" name="bmode" value="off"> <b>No bridges</b> <span class="mute">— connect to Tor directly (fine for most people)</span></label>
@@ -730,6 +733,7 @@ function renderBridges(t){
   $('#bNow').textContent=t.bridge_mode&&t.bridge_mode!==cfg&&t.state!=='stopped'?`Right now Tor is using the built-in ${t.bridge_mode} bridges because a direct connection didn't work.`:
     (t.bridges?`Tor is using ${t.bridges} bridge(s).`:'');
 }
+$('#tSeedsReset').onclick=()=>{$('#tSeeds').value=S.builtin_onion_seeds.map(b=>b.url).join('\n');dirty.tor=true;$('#tSaved').textContent='unsaved changes';toast('Recommended onion sites restored — they save automatically or with Save')};
 function renderTorStatus(){
   const t=S.tor;
   renderBridges(t);
@@ -747,9 +751,9 @@ function renderTorStatus(){
 }
 function fillTor(force){
   if(!S||(dirty.tor&&!force))return;const c=S.profile.transports.tor;
-  $('#tEnable').checked=c.enabled;$('#tOnion').checked=c.onion;$('#tClear').checked=c.clearnet_via_tor;$('#tManage').checked=c.manage;
+  $('#tEnable').checked=c.enabled;$('#tOnion').checked=c.onion;$('#tClear').checked=c.clearnet_via_tor;if(c.clearnet_via_tor)$('#tClear').closest('details').open=true;$('#tManage').checked=c.manage;
   $('#tSocks').value=c.socks;$('#tCtl').value=c.control||'';$('#tExt').style.display=c.manage?'none':'flex';
-  $('#tSeeds').value=(c.onion_seeds||[]).join('\n');$('#tBridges').value=(c.bridges||[]).join('\n');
+  $('#tSeeds').value=((c.onion_seeds&&c.onion_seeds.length)?c.onion_seeds:S.builtin_onion_seeds.map(b=>b.url)).join('\n');$('#tBridges').value=(c.bridges||[]).join('\n');
   (document.querySelector(`input[name=bmode][value=${c.bridge_mode||'off'}]`)||{}).checked=true;$('#bAuto').checked=c.bridge_auto!==false;
   $('#tBuiltin').innerHTML=S.builtin_onion_seeds.map(b=>`<div>${esc(b.name)}: <code>${esc(b.url)}</code></div>`).join('');
   dirty.tor=false;
