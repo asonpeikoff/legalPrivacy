@@ -186,3 +186,29 @@ def test_client_hints_match_chrome_chromium_and_are_absent_for_firefox_and_tools
     ff = Identity(id=3, persona="desktop-firefox", user_agent=pool["desktop-firefox"][0]["ua"],
                   accept_language="en-US", pace="normal", query_taste=[])
     assert _client_hints(ff) == {}
+
+
+def test_chooser_rotates_per_hour_or_day_and_pins_on_request():
+    import random
+    from noisycricket.config import IdentityConfig
+    from noisycricket.useragents import UaChooser, library
+    clock = {"t": 1_800_000_000.0}
+    cfg = IdentityConfig(ua_mode="rotate", rotate_every="hour")
+    ch = UaChooser(random.Random(1), cfg, clock=lambda: clock["t"])
+    first = ch.choose()
+    assert ch.choose() is first                      # same hour: same browser
+    clock["t"] += 3700
+    assert ch.choose() is not None                   # next hour: a fresh draw
+    own = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Safari/537.36"
+    pin_own = UaChooser(random.Random(2), IdentityConfig(ua_mode="pin", ua_pin="own", own_ua=own))
+    assert pin_own.choose()["ua"] == own
+    lib_id = library()[0]["id"]
+    pin_lib = UaChooser(random.Random(3), IdentityConfig(ua_mode="pin", ua_pin=lib_id))
+    assert pin_lib.choose()["id"] == lib_id
+
+
+def test_identity_settings_round_trip_and_validate():
+    from noisycricket.config import Profile, apply_overrides, profile_to_dict, ConfigError
+    p = Profile(name="t")
+    apply_overrides(p, {"identity": {"ua_mode": "pin", "ua_pin": "own", "own_ua": "Mozilla/5.0 X"}})
+    assert p.identity.ua_mode == "pin" and profile_to_dict(p)["profile"]["identity"]["own_ua"] == "Mozilla/5.0 X"

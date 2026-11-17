@@ -117,6 +117,23 @@ class DnsConfig:
 
 
 @dataclass
+class IdentityConfig:
+    """Which user agent the plain-HTTP noise sends. See noisycricket/useragents.py."""
+    ua_mode: str = "rotate"       # rotate (default) | pin
+    rotate_every: str = "hour"    # hour | day   (rotate mode: how often the choice changes)
+    ua_pin: str = ""              # pin mode: "own" or a library id
+    own_ua: str = ""              # your browser's user agent (stored only on this computer)
+
+    def validate(self) -> None:
+        if self.ua_mode not in ("rotate", "pin"):
+            raise ConfigError("identity.ua_mode must be rotate or pin")
+        if self.rotate_every not in ("hour", "day"):
+            raise ConfigError("identity.rotate_every must be hour or day")
+        if len(self.own_ua) > 600:
+            raise ConfigError("identity.own_ua is too long")
+
+
+@dataclass
 class QuerySources:
     """Where search queries come from (mixed; none dominates). See queries.py."""
     live: bool = True        # Google Trends, Wikipedia most-read, BBC headlines (refreshed daily)
@@ -144,6 +161,7 @@ class Profile:
     queries: "QuerySources" = field(default_factory=lambda: QuerySources())
     rate: "RateConfig" = field(default_factory=lambda: RateConfig())
     dns: "DnsConfig" = field(default_factory=lambda: DnsConfig())
+    identity: "IdentityConfig" = field(default_factory=lambda: IdentityConfig())
 
     def active_engines(self, transport: str) -> list[str]:
         """Engines a lane runs. Onion is Tor-only; clearnet engines run on Tor
@@ -189,6 +207,7 @@ def profile_to_dict(profile: Profile) -> dict[str, Any]:
         "queries": asdict(profile.queries),
         "rate": asdict(profile.rate),
         "dns": asdict(profile.dns),
+        "identity": asdict(profile.identity),
     }}
 
 
@@ -239,6 +258,11 @@ def apply_overrides(profile: Profile, raw: dict[str, Any]) -> Profile:
         profile.dns = DnsConfig(**{k: v for k, v in merged.items() if k in DnsConfig.__dataclass_fields__})
         profile.dns.system_share = float(profile.dns.system_share)
         profile.dns.validate()
+    if p.get("identity"):
+        merged = profile.identity.__dict__ | p["identity"]
+        profile.identity = IdentityConfig(**{k: str(v) for k, v in merged.items()
+                                             if k in IdentityConfig.__dataclass_fields__})
+        profile.identity.validate()
     if "daily_max_failures" in p:
         profile.daily_max_failures = int(p["daily_max_failures"])
     for name, eng in profile.engines.items():

@@ -182,6 +182,34 @@ class Controller:
         threading.Thread(target=work, daemon=True).start()
         return self._speed
 
+    # ── user agents (Settings) ─────────────────────────────────────────────
+    def ua_state(self) -> dict:
+        from .useragents import library
+        ident = self.profile.identity
+        rows = [{"id": e["id"], "ua": e["ua"], "group": e["group"], "platform": e["platform"],
+                 "release": e["release"], "share": e["share"]} for e in library()]
+        return {"mode": ident.ua_mode, "rotate_every": ident.rotate_every, "pin": ident.ua_pin,
+                "own_ua": ident.own_ua, "library": rows, "running": self.running,
+                "applies_to": "Plain-HTTP lane. The real-browser lane always sends its own browser's "
+                              "user agent, and the onion lane always uses Tor Browser's fixed one."}
+
+    def ua_save(self, body: dict) -> dict:
+        allowed = {k: str(body[k]) for k in ("ua_mode", "rotate_every", "ua_pin", "own_ua") if k in body}
+        cur = self.profile.identity
+        mode = allowed.get("ua_mode", cur.ua_mode)
+        pin = allowed.get("ua_pin", cur.ua_pin)
+        own = allowed.get("own_ua", cur.own_ua).strip()
+        if mode == "pin" and not pin:
+            raise ConfigError("Choose what to pin to first.")
+        if mode == "pin" and pin == "own" and not own:
+            raise ConfigError("Paste or detect your browser's user agent first.")
+        self.apply_config({"identity": allowed})
+        return self.ua_state()
+
+    def ua_detect(self) -> dict:
+        from .useragents import detect_own_ua
+        return detect_own_ua()
+
     def speed_status(self) -> dict:
         return getattr(self, "_speed", None) or {"state": "idle"}
 

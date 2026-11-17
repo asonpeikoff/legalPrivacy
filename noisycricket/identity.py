@@ -106,11 +106,18 @@ def _query_taste(rng: random.Random, wordlist: list[str], size: int = 12) -> lis
     return rng.sample(pool, min(size, len(pool)))
 
 
-def make_identity(rng: random.Random, ident_id: int, wordlist: list[str]) -> Identity:
-    """Build one pinned identity from the shared RNG."""
-    persona = rng.choices(PERSONA_CLASSES, weights=[PERSONA_WEIGHTS[x] for x in PERSONA_CLASSES])[0]
-    pool = UA_POOL[persona]
-    entry = rng.choices(pool, weights=[e["weight"] for e in pool])[0]
+def make_identity(rng: random.Random, ident_id: int, wordlist: list[str],
+                  entry: dict | None = None) -> Identity:
+    """Build one pinned identity from the shared RNG.
+
+    `entry` is the user agent chosen by the UaChooser (rotation or pin). Without it, a
+    user agent is drawn from the library the same way the chooser does.
+    """
+    if entry is None:
+        persona = rng.choices(PERSONA_CLASSES, weights=[PERSONA_WEIGHTS[x] for x in PERSONA_CLASSES])[0]
+        pool = UA_POOL[persona]
+        entry = rng.choices(pool, weights=[e["weight"] for e in pool])[0]
+    persona = entry.get("persona", "own")
     return Identity(
         id=ident_id,
         persona=persona,

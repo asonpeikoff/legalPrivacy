@@ -12,6 +12,7 @@ from typing import Callable
 
 from .config import Profile
 from .identity import Identity, make_identity
+from .useragents import UaChooser
 from .events import EventLog
 from .pacing import Budget, Pacer, SessionPacer
 from .transports import ClearnetTransport, HitResult, Target, TorTransport, Transport
@@ -132,6 +133,7 @@ class Runner:
         self.hour_target = 0.0
         self._pace: tuple[float, float] | None = None   # (min_delay, max_delay) for this hour
         self._sessions = SessionPacer(self.rng)          # app mode: irregular "sittings"
+        self._ua = UaChooser(self.rng, self.profile.identity)
         self._hour_end = 0.0
 
     def _emit(self, level: str, source: str, msg: str, **data) -> None:
@@ -252,7 +254,8 @@ class Runner:
         limit = getattr(lane.transport, "identities_per_circuit", None) or 10
         if lane.identity is None or lane.hits_by_identity >= limit:
             self._ident_counter += 1
-            lane.identity = make_identity(self.rng, self._ident_counter, self.wordlist)
+            lane.identity = make_identity(self.rng, self._ident_counter, self.wordlist,
+                                          entry=self._ua.choose())
             lane.pacer = Pacer(self.rng,
                                pace_multiplier=lane.identity.pace_multiplier,
                                realtime_scale=self.profile.realtime_scale)
