@@ -55,7 +55,7 @@ def total_bytes() -> int | None:
 
 
 class NetWatch:
-    """Your own traffic rate, minus what noisyCricket itself moved."""
+    """Your own traffic rate, minus what legalPrivacy itself moved."""
 
     def __init__(self, reader=total_bytes, clock=time.monotonic):
         self.reader, self.clock = reader, clock

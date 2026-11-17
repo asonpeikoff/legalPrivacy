@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "noisycricket"
-version = "2.8.1"
-description = "noisyCricket — privacy noise generator with optional Tor/onion mode, a local dashboard, and community relay contribution"
+name = "legalprivacy"
+version = "2.9.0"
+description = "legalPrivacy — privacy noise generator with optional Tor/onion mode, a local dashboard, and community relay contribution"
 requires-python = ">=3.10"
 dependencies = [
   "requests[socks]>=2.31",
@@ -15,14 +15,16 @@ dependencies = [
 ]
 
 [project.scripts]
-cricket = "noisycricket.cli:main"
-cricket-launch = "noisycricket.launcher:main"
+legalprivacy = "legalprivacy.cli:main"
+legalprivacy-launch = "legalprivacy.launcher:main"
+cricket = "legalprivacy.cli:main"                 # old names, kept so existing setups keep working
+cricket-launch = "legalprivacy.launcher:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 
 [tool.setuptools.packages.find]
-include = ["noisycricket*"]
+include = ["legalprivacy*"]
 
 [tool.setuptools.package-data]
-noisycricket = ["web/*.html", "web/*.js"]
+legalprivacy = ["web/*.html", "web/*.js"]

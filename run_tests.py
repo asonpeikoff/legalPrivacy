@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""noisyCricket test runner — runs the full test suite without external dependencies."""
+"""legalPrivacy test runner — runs the full test suite without external dependencies."""
 
 import inspect
 import sys

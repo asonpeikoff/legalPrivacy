@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .config import ConfigError
 from .controller import Controller
+from .paths import getenv
 from .paths import resource_root
 
 _INDEX = None
@@ -22,7 +23,7 @@ def _index_html() -> bytes:
     global _INDEX
     if _INDEX is None:
         for cand in (Path(__file__).parent / "web" / "index.html",
-                     resource_root() / "noisycricket" / "web" / "index.html"):
+                     resource_root() / "legalprivacy" / "web" / "index.html"):
             if cand.exists():
                 _INDEX = cand.read_bytes()
                 js = cand.parent / "netmap.js"          # inlined: a <script src> can't carry the token
@@ -30,7 +31,7 @@ def _index_html() -> bytes:
                     _INDEX = _INDEX.replace(b"<!--NETMAP-->", b"<script>" + js.read_bytes() + b"</script>")
                 break
         else:
-            _INDEX = b"<h1>noisyCricket UI files missing</h1>"
+            _INDEX = b"<h1>legalPrivacy UI files missing</h1>"
     return _INDEX
 
 
@@ -66,9 +67,9 @@ class UIServer:
     def _bind(port: int) -> ThreadingHTTPServer:
         for p in (port, 0):
             try:
-                # CRICKET_BIND=0.0.0.0 is only for running inside a container, whose port is then
+                # LEGALPRIVACY_BIND=0.0.0.0 is only for running inside a container, whose port is then
                 # published to 127.0.0.1 on the host (see docs/DOCKER.md). Default: this computer only.
-                srv = ThreadingHTTPServer((os.environ.get("CRICKET_BIND", "127.0.0.1"), p), BaseHTTPRequestHandler)
+                srv = ThreadingHTTPServer((getenv("BIND", "127.0.0.1"), p), BaseHTTPRequestHandler)
                 srv.daemon_threads = True
                 return srv
             except OSError:
@@ -96,7 +97,7 @@ class UIServer:
         srv = self
 
         class H(BaseHTTPRequestHandler):
-            server_version = "noisyCricket"
+            server_version = "legalPrivacy"
 
             def log_message(self, *a):       # silence default stderr logging
                 pass
@@ -134,7 +135,7 @@ class UIServer:
                     return self._json({"error": "bad host"}, 403)
                 if u.path == "/":
                     if not self._auth(q):
-                        return self._send(403, b"<h3>Open noisyCricket using the full link it printed "
+                        return self._send(403, b"<h3>Open legalPrivacy using the full link it printed "
                                           b"(it includes a one-time token).</h3>", "text/html")
                     return self._send(200, _index_html(), "text/html; charset=utf-8",
                                       {"Content-Security-Policy":
@@ -172,7 +173,7 @@ class UIServer:
                         rows = ctl.hits(0)
                         if u.path.endswith(".json"):
                             return self._send(200, json.dumps(rows, indent=1).encode(), "application/json",
-                                              {"Content-Disposition": "attachment; filename=noisycricket-activity.json"})
+                                              {"Content-Disposition": "attachment; filename=legalprivacy-activity.json"})
                         import csv
                         import io
                         buf = io.StringIO()
@@ -181,7 +182,7 @@ class UIServer:
                         w.writeheader()
                         w.writerows(rows)
                         return self._send(200, buf.getvalue().encode(), "text/csv; charset=utf-8",
-                                          {"Content-Disposition": "attachment; filename=noisycricket-activity.csv"})
+                                          {"Content-Disposition": "attachment; filename=legalprivacy-activity.csv"})
                     if u.path == "/api/tools/estimate":
                         return self._json(ctl.estimate())
                     if u.path == "/api/tools/selftest":
@@ -199,11 +200,11 @@ class UIServer:
                         if not ctl.profile.extras.metrics:
                             return self._json({"error": "metrics are off (Settings → Extras)"}, 404)
                         st = ctl.state()
-                        lines = ["# noisyCricket metrics", f"noisycricket_running {int(bool(st['running']))}",
-                                 f"noisycricket_bytes_today {st.get('bytes_today', 0)}"]
+                        lines = ["# legalPrivacy metrics", f"legalprivacy_running {int(bool(st['running']))}",
+                                 f"legalprivacy_bytes_today {st.get('bytes_today', 0)}"]
                         for ln in st["lanes"]:
-                            lines += [f'noisycricket_hits_total{{lane="{ln["name"]}"}} {ln["hits"]}',
-                                      f'noisycricket_failures_total{{lane="{ln["name"]}"}} {ln["failures"]}']
+                            lines += [f'legalprivacy_hits_total{{lane="{ln["name"]}"}} {ln["hits"]}',
+                                      f'legalprivacy_failures_total{{lane="{ln["name"]}"}} {ln["failures"]}']
                         return self._send(200, ("\n".join(lines) + "\n").encode(), "text/plain; version=0.0.4")
                     if u.path == "/api/doctor":
                         return self._json({"checks": ctl.doctor()})
@@ -293,7 +294,7 @@ def run_ui(profile_path: str | None = None, port: int | None = None, open_browse
     """Start controller + dashboard; block until Quit. Returns exit code."""
     ctl = Controller(profile_path)
     srv = UIServer(ctl, port or int(ctl.app.get("port", 8765)))
-    print_fn(f"\n  🦗 noisyCricket dashboard: {srv.url}\n  (keep this window open; use Quit in the page, or Ctrl+C, to stop)\n")
+    print_fn(f"\n  ⚖️ legalPrivacy dashboard: {srv.url}\n  (keep this window open; use Quit in the page, or Ctrl+C, to stop)\n")
     ctl.log.info("app", f"Dashboard listening on 127.0.0.1:{srv.port}")
     ctl._start_feed_timer()
     if ctl.app.get("observe", True):

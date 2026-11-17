@@ -76,7 +76,7 @@ class Controller:
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._lock = threading.RLock()
-        self.log.info("app", f"noisyCricket {__version__} on {platform.system()} {platform.release()} "
+        self.log.info("app", f"legalPrivacy {__version__} on {platform.system()} {platform.release()} "
                              f"(Python {platform.python_version()})")
         self.log.info("app", f"Config: {self.profile_path}")
 
@@ -641,7 +641,7 @@ class Controller:
                                  rate=RatePlanner(_r.Random(), prof.rate),
                                  dns_plan=self._fresh_dns_plan(),
                                  mix=True)
-            self._thread = threading.Thread(target=self._run_loop, daemon=True, name="cricket-runner")
+            self._thread = threading.Thread(target=self._run_loop, daemon=True, name="legalprivacy-runner")
             self._thread.start()
             self.log.info("app", "Started: lanes = " + ", ".join(
                 f"{l.name}[{'/'.join(l.engines)}]" for l in lanes))
@@ -689,7 +689,7 @@ class Controller:
                 self.log.error("scheduler", str(exc))
             finally:
                 r.close()
-        threading.Thread(target=_go, daemon=True, name="cricket-once").start()
+        threading.Thread(target=_go, daemon=True, name="legalprivacy-once").start()
 
     # ── state / diagnostics ─────────────────────────────────────────────────
     def state(self) -> dict:
@@ -739,7 +739,7 @@ class Controller:
                 __import__(lib)
                 add(f"Python library: {lib}", "ok", "installed")
             except ImportError:
-                add(f"Python library: {lib}", "fail", "missing — reinstall noisyCricket")
+                add(f"Python library: {lib}", "fail", "missing — reinstall legalPrivacy")
         wl = next((e.wordlist for e in self.profile.engines.values() if e.enabled and e.wordlist), None)
         if wl:
             path = resolve_resource(wl)
@@ -771,7 +771,7 @@ class Controller:
                     "enabled — not recommended: adds load to exit relays and is a distinctive pattern")
             if port_open("127.0.0.1", 9150) or port_open("127.0.0.1", 9050):
                 add("Other Tor on this PC", "info",
-                    "A system Tor/Tor Browser is running. noisyCricket's own Tor uses different ports and won't touch it.")
+                    "A system Tor/Tor Browser is running. legalPrivacy's own Tor uses different ports and won't touch it.")
         bi = self.browser_info()
         add("Real browser", "ok" if bi["active"] else ("warn" if bi["setting"] != "off" else "info"),
             (f"in use: {bi['detail']}" if bi["active"] else
@@ -789,11 +789,11 @@ class Controller:
         except ImportError:
             add("Connection watching (Proof tab)", "warn",
                 "the psutil package is missing, so the Proof tab's map and timeline stay empty. "
-                "Close noisyCricket and start it again with the start script (it now installs what's "
+                "Close legalPrivacy and start it again with the start script (it now installs what's "
                 "missing), or run: pip install psutil")
         from pathlib import Path as _P
         nm = _P(__file__).parent / "web" / "netmap.js"
         add("Network map", "ok" if nm.exists() else "warn",
-            "ready" if nm.exists() else "the map's file (netmap.js) is missing from this install; reinstall noisyCricket")
+            "ready" if nm.exists() else "the map's file (netmap.js) is missing from this install; reinstall legalPrivacy")
         add("Data folder", "ok", str(app_dir()))
         return checks

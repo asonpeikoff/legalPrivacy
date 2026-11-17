@@ -13,12 +13,12 @@ except ImportError:
     pytest = types.ModuleType("pytest")
     pytest.raises = _RaisesContext
 
-from noisycricket.relay import (RelayConfigError, RelaySpec, generate_torrc,
+from legalprivacy.relay import (RelayConfigError, RelaySpec, generate_torrc,
                                 warn_if_exit_requested)
 
 
 def test_middle_torrc_rejects_all_exits():
-    spec = RelaySpec(mode="middle", nickname="mycricket", or_port=9001)
+    spec = RelaySpec(mode="middle", nickname="mylegalprivacy", or_port=9001)
     torrc = generate_torrc(spec)
     assert "ExitPolicy reject *:*" in torrc
     assert "BridgeRelay 0" in torrc
@@ -65,7 +65,7 @@ def test_exit_scanner_defense():
 
 
 def test_generate_client_torrc_snowflake():
-    from noisycricket.relay import generate_client_torrc
+    from legalprivacy.relay import generate_client_torrc
     torrc = generate_client_torrc(bridge_type="snowflake")
     assert "UseBridges 1" in torrc
     assert "ClientTransportPlugin snowflake" in torrc
@@ -74,7 +74,7 @@ def test_generate_client_torrc_snowflake():
 
 
 def test_tor_transport_check_status_handles_offline_gracefully():
-    from noisycricket.transports import TorTransport
+    from legalprivacy.transports import TorTransport
     # Non-existent port to test offline status handling
     tor = TorTransport(socks="127.0.0.1:1", control="127.0.0.1:2")
     status = tor.check_status()

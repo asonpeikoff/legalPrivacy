@@ -90,7 +90,7 @@ class TransportConfig:
 class RelayConfig:
     enabled: bool = False
     mode: str = "middle"              # middle | bridge — NEVER an exit
-    nickname: str = "noisycricket"
+    nickname: str = "legalprivacy"
     contact: str | None = None
     bandwidth_rate: str = "5Mbit"
     or_port: int = 9001
@@ -100,7 +100,7 @@ class RelayConfig:
         if self.mode not in ("middle", "bridge"):
             raise ConfigError(
                 "contribute.relay.mode must be 'middle' or 'bridge'; "
-                "noisyCricket v2 never runs an exit node"
+                "legalPrivacy v2 never runs an exit node"
             )
 
 
@@ -118,7 +118,7 @@ RECOMMENDED_RESOLVERS = [
 
 @dataclass
 class DnsConfig:
-    """Which resolver the DNS noise uses. See noisycricket/dnsplan.py."""
+    """Which resolver the DNS noise uses. See legalprivacy/dnsplan.py."""
     mode: str = "mix"             # mix (default: blocks on your normal DNS + the resolver table) | system | secure
     resolvers: list[dict] = field(default_factory=lambda: [dict(r) for r in RECOMMENDED_RESOLVERS])
     slow_ms: int = 250            # a primary slower than this counts as "not working fast"
@@ -156,7 +156,7 @@ class DnsConfig:
 
 @dataclass
 class IdentityConfig:
-    """Which user agent the plain-HTTP noise sends. See noisycricket/useragents.py."""
+    """Which user agent the plain-HTTP noise sends. See legalprivacy/useragents.py."""
     ua_mode: str = "pin"          # pin (default: your own browser's, recommended) | rotate
     rotate_every: str = "hour"    # hour | day   (rotate mode: how often the choice changes)
     ua_pin: str = "own"           # pin mode: "own" or a library id. "own" with no UA yet = rotate until known

@@ -1,7 +1,7 @@
-noisyCricket v2 - one scheduler, two transports, three engines
+legalPrivacy v2 - one scheduler, two transports, three engines
 
               ----------------------------
-              |        cricket CLI       |
+              |        legalprivacy CLI       |
               |   run / doctor / relay   |
               ----------------------------
                         |

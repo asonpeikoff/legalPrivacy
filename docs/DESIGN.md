@@ -1,4 +1,4 @@
-# noisyCricket v2 — Design
+# legalPrivacy v2 — Design
 
 Conversation-driven web-noise generator: one scheduler, identity-realistic
 behavior, and fully separate logic for Tor and clearnet traffic. Built fresh;
@@ -6,7 +6,7 @@ the 2016 Java prototype lives on in `legacy-src/`.
 
 ## What it does
 
-noisyCricket v2 generates realistic, privacy-preserving web noise so that
+legalPrivacy v2 generates realistic, privacy-preserving web noise so that
 mass bulk analysis of any one person's browsing is less useful. It mixes
 three engine families over two transports, with per-identity consistent
 fingerprints and human-cadence pacing.
@@ -28,10 +28,10 @@ no periodic signature.
 ## Interface
 
 ```
-cricket run [--profile PROFILE] [--once] [--dry-run] [--verbose]
-cricket doctor [--profile PROFILE]
-cricket relay gen --bandwidth 5Mbit --nickname mycricket [--bridge]
-cricket relay install --config OUT --restart-tor
+legalprivacy run [--profile PROFILE] [--once] [--dry-run] [--verbose]
+legalprivacy doctor [--profile PROFILE]
+legalprivacy relay gen --bandwidth 5Mbit --nickname mylegalprivacy [--bridge]
+legalprivacy relay install --config OUT --restart-tor
 ```
 
 Profile YAML reference:
@@ -66,12 +66,12 @@ profile:
       socks: 127.0.0.1:9050
       control: 127.0.0.1:9051     # optional, enables new-circuit control
       identities_per_circuit: 8
-      control_password: null      # prompts via CRICKET_TOR_CONTROL_PW if needed
+      control_password: null      # prompts via LEGALPRIVACY_TOR_CONTROL_PW if needed
   contribute:
     relay:
       enabled: false              # community middle/bridge relay, NEVER an exit
       mode: middle                # middle | bridge
-      nickname: mycricket
+      nickname: mylegalprivacy
       contact: you@example.com
       bandwidth_rate: 5Mbit
       or_port: 9001
@@ -108,7 +108,7 @@ profile:
 
 ## Community contribution — relay, NEVER an exit
 
-`cricket relay gen` emits a **middle-relay or bridge** torrc: `ORPort` +
+`legalprivacy relay gen` emits a **middle-relay or bridge** torrc: `ORPort` +
 `DirPort` + `ExitPolicy reject *:*`. The generator refuses any exit-policy
 request. Contributing bandwidth back keeps Tor fast for everyone and is the
 community-minded counterpart to consuming it.

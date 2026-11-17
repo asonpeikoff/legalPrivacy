@@ -32,7 +32,7 @@ from .events import EventLog
 from .paths import app_dir
 from .safety import safe_domain, safe_query
 
-UA = "noisyCricket/2.4 (privacy noise generator; +https://github.com/asonpeikoff/noisyCricket)"
+UA = "legalPrivacy/2.4 (privacy noise generator; +https://github.com/asonpeikoff/noisyCricket)"
 TRENDS_URL = "https://trends.google.com/trending/rss?geo={geo}"
 WIKI_URL = "https://wikimedia.org/api/rest_v1/metrics/pageviews/top/en.wikipedia/all-access/{d}"
 NEWS_FEEDS = [f"https://feeds.bbci.co.uk/news/{p}rss.xml" for p in

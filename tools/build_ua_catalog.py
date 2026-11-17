@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Maintainer tool: rebuild noisycricket/ua_catalog.py from the official release calendars.
+"""Maintainer tool: rebuild legalprivacy/ua_catalog.py from the official release calendars.
 
 Sources (fetched live when you run this):
   Chrome    https://chromiumdash.appspot.com/fetch_releases  (Stable, Windows, per milestone)
@@ -23,11 +23,11 @@ FIREFOX_DECAY = 0.60
 CHROMIUM_SHARE = 0.10           # Chromium-branded builds, relative to Chrome
 FIREFOX_ESR_SHARE = 0.25        # ESR is common in organisations, relative to Firefox stable
 WEIGHT_FLOOR = 0.004            # every release in the window stays possible, the old ones rarely
-OUT = Path(__file__).resolve().parents[1] / "noisycricket" / "ua_catalog.py"
+OUT = Path(__file__).resolve().parents[1] / "legalprivacy" / "ua_catalog.py"
 
 
 def _get(url: str):
-    req = urllib.request.Request(url, headers={"User-Agent": "noisyCricket-maintainer"})
+    req = urllib.request.Request(url, headers={"User-Agent": "legalPrivacy-maintainer"})
     with urllib.request.urlopen(req, timeout=60) as r:
         return json.load(r)
 

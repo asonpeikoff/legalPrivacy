@@ -5,9 +5,9 @@ import sys
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from noisycricket.config import Profile, apply_overrides  # noqa: E402
-from noisycricket.domains import DomainPool  # noqa: E402
-from noisycricket.selftest import auc, evaluate, simulate_noise  # noqa: E402
+from legalprivacy.config import Profile, apply_overrides  # noqa: E402
+from legalprivacy.domains import DomainPool  # noqa: E402
+from legalprivacy.selftest import auc, evaluate, simulate_noise  # noqa: E402
 
 SITES = ["news.example.com", "mail.example.org", "shop.example.net", "forum.example.io", "video.example.com"]
 
@@ -60,7 +60,7 @@ def test_simulation_respects_active_hours_and_window():
 
 
 def test_ml_report_has_the_numbers_a_data_scientist_expects_and_predicts():
-    from noisycricket.selftest import predict
+    from legalprivacy.selftest import predict
     rng = random.Random(3)
     real = _person(rng)
     noise = sorted((t - (t % 86400) + rng.uniform(2, 8) * 3600, f"site{rng.randint(0, 5000)}.example.com")

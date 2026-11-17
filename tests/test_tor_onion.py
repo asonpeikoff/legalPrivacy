@@ -7,15 +7,15 @@ import tempfile
 import threading
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-os.environ.setdefault("CRICKET_HOME", tempfile.mkdtemp(prefix="cricket-test-"))
+os.environ.setdefault("LEGALPRIVACY_HOME", tempfile.mkdtemp(prefix="legalprivacy-test-"))
 
-from noisycricket.config import (Profile, apply_overrides, load_profile,  # noqa: E402
+from legalprivacy.config import (Profile, apply_overrides, load_profile,  # noqa: E402
                                  profile_to_dict, save_profile)
-from noisycricket.onion import (BUILTIN_ONION_SEEDS, OnionTargetFactory,  # noqa: E402
+from legalprivacy.onion import (BUILTIN_ONION_SEEDS, OnionTargetFactory,  # noqa: E402
                                 clean_seed_list, is_onion_url, is_valid_v3_onion)
-from noisycricket.scheduler import Runner, build_lanes  # noqa: E402
-from noisycricket.transports import HitResult, TOR_BROWSER_HEADERS  # noqa: E402
-from noisycricket.torcontrol import TorControl  # noqa: E402
+from legalprivacy.scheduler import Runner, build_lanes  # noqa: E402
+from legalprivacy.transports import HitResult, TOR_BROWSER_HEADERS  # noqa: E402
+from legalprivacy.torcontrol import TorControl  # noqa: E402
 
 WORDS = ["weather", "news", "books"]
 GOOD = BUILTIN_ONION_SEEDS[0][1]
@@ -246,8 +246,8 @@ def test_tor_routine_new_circuits():
 
 def test_bridges_from_bundle_pt_config(tmp=None):
     import json
-    from noisycricket.events import EventLog
-    from noisycricket.tormanager import TorManager
+    from legalprivacy.events import EventLog
+    from legalprivacy.tormanager import TorManager
     d = tempfile.mkdtemp()
     pt = os.path.join(d, "tor", "pluggable_transports")
     os.makedirs(pt)
@@ -268,7 +268,7 @@ def test_bridges_from_bundle_pt_config(tmp=None):
 
 
 def test_bridge_mode_validated():
-    from noisycricket.config import ConfigError
+    from legalprivacy.config import ConfigError
     try:
         apply_overrides(Profile(name="t"), {"transports": {"tor": {"bridge_mode": "weird"}}})
         raise AssertionError("accepted a bad bridge mode")

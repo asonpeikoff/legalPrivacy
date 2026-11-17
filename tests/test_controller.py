@@ -7,11 +7,11 @@ import urllib.error
 import urllib.request
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-os.environ.setdefault("CRICKET_HOME", tempfile.mkdtemp(prefix="cricket-test-"))
+os.environ.setdefault("LEGALPRIVACY_HOME", tempfile.mkdtemp(prefix="legalprivacy-test-"))
 
-from noisycricket.config import ConfigError  # noqa: E402
-from noisycricket.controller import Controller  # noqa: E402
-from noisycricket.webui import UIServer  # noqa: E402
+from legalprivacy.config import ConfigError  # noqa: E402
+from legalprivacy.controller import Controller  # noqa: E402
+from legalprivacy.webui import UIServer  # noqa: E402
 
 GOOD = "http://2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion/"
 
@@ -94,7 +94,7 @@ def test_web_api_requires_token_and_serves_state():
         except urllib.error.HTTPError as e:
             assert e.code == 403
         with urllib.request.urlopen(base + "/?t=" + srv.token, timeout=5) as r:
-            assert b"noisyCricket" in r.read()
+            assert b"legalPrivacy" in r.read()
     finally:
         srv.httpd.shutdown()
 
@@ -102,7 +102,7 @@ def test_web_api_requires_token_and_serves_state():
 def test_live_log_is_memory_only_and_clearable():
     import tempfile
     from pathlib import Path
-    from noisycricket.events import EventLog
+    from legalprivacy.events import EventLog
     d = Path(tempfile.mkdtemp())
     log = EventLog()                       # no file_path: nothing ever touches disk
     log.info("app", "hello")
@@ -112,7 +112,7 @@ def test_live_log_is_memory_only_and_clearable():
 
 
 def test_network_tools_report_errors_without_crashing_and_leak_check_has_shape():
-    from noisycricket.nettools import dns_leak_check, speed_test
+    from legalprivacy.nettools import dns_leak_check, speed_test
     res = speed_test(proxy="http://127.0.0.1:9", timeout=5)      # nothing listens there
     assert res["down_mbps"] is None and res["up_mbps"] is None and len(res["errors"]) == 2
     leak = dns_leak_check(["9.9.9.9"])

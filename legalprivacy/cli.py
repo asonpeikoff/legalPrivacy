@@ -1,11 +1,11 @@
-"""noisyCricket v2 CLI.
+"""legalPrivacy v2 CLI.
 
-    cricket run [--profile P] [--once] [--dry-run] [--verbose]
-    cricket doctor [--profile P]
-    cricket relay gen --bandwidth 5Mbit --nickname mycricket [--bridge]
-    cricket relay doctor
-    cricket ui [--no-browser] [--port N]        dashboard (same as double-clicking)
-    cricket tor status|start|stop|install|newnym
+    legalprivacy run [--profile P] [--once] [--dry-run] [--verbose]
+    legalprivacy doctor [--profile P]
+    legalprivacy relay gen --bandwidth 5Mbit --nickname mylegalprivacy [--bridge]
+    legalprivacy relay doctor
+    legalprivacy ui [--no-browser] [--port N]        dashboard (same as double-clicking)
+    legalprivacy tor status|start|stop|install|newnym
 """
 
 from __future__ import annotations
@@ -19,11 +19,11 @@ from .relay import RelayConfigError, RelaySpec, generate_torrc, warn_if_exit_req
 from .scheduler import MaxFailuresExceeded, Runner, build_lanes
 
 
-def _init_random(seed_env: str = "CRICKET_SEED") -> int:
+def _init_random(seed_env: str = "LEGALPRIVACY_SEED") -> int:
     """Deterministic seed for reproducible test runs, random otherwise."""
     import os
     import random
-    env = os.environ.get(seed_env)
+    env = os.environ.get(seed_env) or os.environ.get("CRICKET_SEED")
     return random.Random(int(env)) if env else random.Random()
 
 
@@ -190,11 +190,11 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             print(f"  [+] Tor SOCKS daemon ({tor_status['socks_host']}:{tor_status['socks_port']}): CONNECTED")
         else:
             if tor_cfg.manage:
-                print("  [i] Tor: not running yet — noisyCricket starts (and installs, if needed) its own private Tor automatically.")
+                print("  [i] Tor: not running yet — legalPrivacy starts (and installs, if needed) its own private Tor automatically.")
             else:
                 warnings.append(f"Tor SOCKS daemon offline at {tor_status['socks_host']}:{tor_status['socks_port']}")
                 print(f"  [-] Tor SOCKS daemon ({tor_status['socks_host']}:{tor_status['socks_port']}): OFFLINE")
-                print("      Action: start your Tor, or set transports.tor.manage: true to let noisyCricket run its own")
+                print("      Action: start your Tor, or set transports.tor.manage: true to let legalPrivacy run its own")
 
         print(f"  [+] Tor modes: onion={'on' if tor_cfg.onion else 'off'}, "
               f"clearnet-via-tor={'ON (not recommended)' if tor_cfg.clearnet_via_tor else 'off'}")
@@ -233,7 +233,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 def cmd_relay(args: argparse.Namespace) -> int:
     if args.relay_command == "gen":
         spec = RelaySpec(mode="bridge" if args.bridge else "middle",
-                         nickname=args.nickname or "noisycricket",
+                         nickname=args.nickname or "legalprivacy",
                          contact=args.contact,
                          bandwidth_rate=args.bandwidth)
         torrc = generate_torrc(spec)
@@ -275,7 +275,7 @@ def cmd_relay(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="cricket", description=__doc__)
+    parser = argparse.ArgumentParser(prog="legalprivacy", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_run = sub.add_parser("run", help="run a noise schedule")
@@ -288,7 +288,7 @@ def main(argv: list[str] | None = None) -> int:
                        help="signal NEWNYM to rotate Tor circuits before running")
     p_run.set_defaults(func=cmd_run)
 
-    p_ui = sub.add_parser("ui", help="open the dashboard (same as double-clicking cricket-launch)")
+    p_ui = sub.add_parser("ui", help="open the dashboard (same as double-clicking legalprivacy-launch)")
     p_ui.add_argument("--profile", help="profile YAML path")
     p_ui.add_argument("--port", type=int)
     p_ui.add_argument("--no-browser", action="store_true")

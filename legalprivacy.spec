@@ -1,11 +1,11 @@
-# cricket.spec — PyInstaller build spec for noisyCricket
-# Produces a single-file executable: cricket-launch (Linux/macOS) or cricket-launch.exe (Windows)
+# legalprivacy.spec — PyInstaller build spec for legalPrivacy
+# Produces a single-file executable: legalprivacy-launch (Linux/macOS) or legalprivacy-launch.exe (Windows)
 #
 # Build locally:
 #   pip install pyinstaller
-#   pyinstaller cricket.spec
+#   pyinstaller legalprivacy.spec
 #
-# Output: dist/cricket-launch  (or dist/cricket-launch.exe on Windows)
+# Output: dist/legalprivacy-launch  (or dist/legalprivacy-launch.exe on Windows)
 
 import sys
 from pathlib import Path
@@ -16,39 +16,39 @@ pw_datas, pw_binaries, pw_hidden = collect_all('playwright')
 block_cipher = None
 
 a = Analysis(
-    ['cricket_entry.py'],
+    ['legalprivacy_entry.py'],
     pathex=['.'],
     binaries=pw_binaries,
     datas=[
         ('data', 'data'),               # bridges, example configs
         ('profiles', 'profiles'),       # optional — omit if dir absent
-        ('noisycricket/web', 'noisycricket/web'),   # dashboard UI
+        ('legalprivacy/web', 'legalprivacy/web'),   # dashboard UI
     ] + pw_datas + [
     ],
     hiddenimports=[
-        'noisycricket.cli',
-        'noisycricket.controller',
-        'noisycricket.browser',
-        'noisycricket.domains',
-        'noisycricket.feeds',
-        'noisycricket.humanize',
-        'noisycricket.queries',
-        'noisycricket.safety',
-        'noisycricket.events',
-        'noisycricket.onion',
-        'noisycricket.observe',
+        'legalprivacy.cli',
+        'legalprivacy.controller',
+        'legalprivacy.browser',
+        'legalprivacy.domains',
+        'legalprivacy.feeds',
+        'legalprivacy.humanize',
+        'legalprivacy.queries',
+        'legalprivacy.safety',
+        'legalprivacy.events',
+        'legalprivacy.onion',
+        'legalprivacy.observe',
         'psutil',
-        'noisycricket.paths',
-        'noisycricket.torcontrol',
-        'noisycricket.tormanager',
-        'noisycricket.webui',
-        'noisycricket.config',
-        'noisycricket.engines',
-        'noisycricket.identity',
-        'noisycricket.pacing',
-        'noisycricket.relay',
-        'noisycricket.scheduler',
-        'noisycricket.transports',
+        'legalprivacy.paths',
+        'legalprivacy.torcontrol',
+        'legalprivacy.tormanager',
+        'legalprivacy.webui',
+        'legalprivacy.config',
+        'legalprivacy.engines',
+        'legalprivacy.identity',
+        'legalprivacy.pacing',
+        'legalprivacy.relay',
+        'legalprivacy.scheduler',
+        'legalprivacy.transports',
         'yaml',
         'requests',
         'urllib3',
@@ -76,7 +76,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='cricket-launch',
+    name='legalprivacy-launch',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

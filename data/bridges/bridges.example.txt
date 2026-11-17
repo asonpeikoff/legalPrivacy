@@ -1,5 +1,5 @@
 # ==============================================================================
-# noisyCricket Tor Bridges Collection
+# legalPrivacy Tor Bridges Collection
 # ==============================================================================
 # Bridges are private Tor relays that help bypass censorship, DPI blocking,
 # and ISP monitoring of Tor traffic.
@@ -11,7 +11,7 @@
 # 3. WebTunnel: Wraps Tor inside standard HTTPS web browsing.
 #
 # To use with Tor:
-# Append these lines to your /etc/tor/torrc (or use `cricket relay gen-client --type snowflake`).
+# Append these lines to your /etc/tor/torrc (or use `legalprivacy relay gen-client --type snowflake`).
 # ==============================================================================
 
 # --- 1. Real Official Snowflake Bridges (Tor Project Official - Worldwide) ---

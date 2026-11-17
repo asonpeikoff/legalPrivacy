@@ -1,5 +1,5 @@
 /*
- * netmap.js - EtherApe-style live network map for the noisyCricket dashboard.
+ * netmap.js - EtherApe-style live network map for the legalPrivacy dashboard.
  *
  * Usage:
  *   const map = new NetMap(containerElement, {height: 420});
@@ -24,9 +24,9 @@
   var CENTER_R = 17;            // center node: always larger than any remote node (max 16)
   var CHAR_W = 6.2;             // estimated width of one 11px character
   var LEGEND = [
-    ['you', 'Your apps'], ['noise', 'noisyCricket'], ['tor', 'Tor'], ['dns', 'DNS']
+    ['you', 'Your apps'], ['noise', 'legalPrivacy'], ['tor', 'Tor'], ['dns', 'DNS']
   ];
-  var KIND_NAMES = {you: 'your apps', noise: 'noisyCricket', tor: 'Tor', dns: 'DNS', other: 'other'};
+  var KIND_NAMES = {you: 'your apps', noise: 'legalPrivacy', tor: 'Tor', dns: 'DNS', other: 'other'};
   var FALLBACK = {acc: '#2f7d4f', tor: '#7a3fb0', warn: '#b7791f', mute: '#6b7488', ink: '#1c2230', panel: '#ffffff', line: '#e2e5ec'};
 
   // One shared stylesheet for the pulse animation and tooltip.

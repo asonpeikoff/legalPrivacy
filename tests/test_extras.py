@@ -6,13 +6,13 @@ import struct
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from noisycricket import engines  # noqa: E402
-from noisycricket.config import ConfigError, Profile, apply_overrides  # noqa: E402
-from noisycricket.engines import ENGINE_NAMES, add_typo, build_dns_query, pick_search_endpoint  # noqa: E402
-from noisycricket.humanize import HumanDriver  # noqa: E402
-from noisycricket.rate import RatePlanner  # noqa: E402
-from noisycricket.scheduler import Runner, build_lanes  # noqa: E402
-from noisycricket.transports import HitResult  # noqa: E402
+from legalprivacy import engines  # noqa: E402
+from legalprivacy.config import ConfigError, Profile, apply_overrides  # noqa: E402
+from legalprivacy.engines import ENGINE_NAMES, add_typo, build_dns_query, pick_search_endpoint  # noqa: E402
+from legalprivacy.humanize import HumanDriver  # noqa: E402
+from legalprivacy.rate import RatePlanner  # noqa: E402
+from legalprivacy.scheduler import Runner, build_lanes  # noqa: E402
+from legalprivacy.transports import HitResult  # noqa: E402
 
 
 def _runner(extras, probe=None):
@@ -32,7 +32,7 @@ def test_active_hours_rest_outside_the_window_and_wrap_past_midnight():
 
 
 def test_daily_data_cap_pauses_until_tomorrow():
-    from noisycricket.scheduler import MaxFailuresExceeded
+    from legalprivacy.scheduler import MaxFailuresExceeded
     r = _runner({"daily_data_mb": 0.002})               # 2 kB
     r.plan_hour(12)
     hit_cap = False
@@ -100,7 +100,7 @@ def test_reading_includes_hovers_and_occasional_text_selection():
 
 
 def test_polite_mode_avoids_the_same_site_within_a_minute():
-    from noisycricket.transports import Target
+    from legalprivacy.transports import Target
     got = []
     r = _runner({"polite": True}, lambda lane, ident, target: (got.append(target.url), HitResult(200, ""))[1])
     r.plan_hour(12)
@@ -122,7 +122,7 @@ def test_polite_mode_avoids_the_same_site_within_a_minute():
 
 
 def test_interest_personas_are_stable_within_a_period_and_change_after():
-    from noisycricket.interests import CATEGORIES, Interests
+    from legalprivacy.interests import CATEGORIES, Interests
     t = [0.0]
     it = Interests(random.Random(1), None, 3, 10, "salt", clock=lambda: t[0])
     first = it.active()
@@ -142,9 +142,9 @@ def test_interest_personas_are_stable_within_a_period_and_change_after():
 
 
 def test_interest_share_steers_sites_and_searches():
-    from noisycricket.domains import DomainPool
-    from noisycricket.interests import CATEGORIES, Interests
-    from noisycricket.queries import QuerySource
+    from legalprivacy.domains import DomainPool
+    from legalprivacy.interests import CATEGORIES, Interests
+    from legalprivacy.queries import QuerySource
     it = Interests(random.Random(3), ["Gardening"], 1, 10, "s")
     pool = DomainPool(random.Random(4), None)
     pool.interests, pool.interest_share = it, 0.5
@@ -158,7 +158,7 @@ def test_interest_share_steers_sites_and_searches():
 
 
 def test_netwatch_rate_excludes_our_own_bytes_and_tracks_idle():
-    from noisycricket.netwatch import NetWatch, total_bytes
+    from legalprivacy.netwatch import NetWatch, total_bytes
     vals, t = [1_000_000, 1_000_000 + 250_000], [0.0]
     nw = NetWatch(reader=lambda: vals.pop(0), clock=lambda: t[0])
     nw.sample()
@@ -170,7 +170,7 @@ def test_netwatch_rate_excludes_our_own_bytes_and_tracks_idle():
 
 def test_backoff_pauses_while_busy():
     r = _runner({"activity": "backoff", "busy_kbps": 100})
-    from noisycricket.netwatch import NetWatch
+    from legalprivacy.netwatch import NetWatch
     nw = NetWatch(reader=lambda: 0)
     nw.rate_kbps = 900.0
     r._netwatch, r._nw_next, r._nw_bytes, r._nw_said = nw, 1e18, 0, ""
@@ -183,8 +183,8 @@ def test_backoff_pauses_while_busy():
 
 def test_estimate_and_privacy_check_have_the_expected_shape():
     import tempfile
-    os.environ["CRICKET_HOME"] = tempfile.mkdtemp()
-    from noisycricket.controller import Controller
+    os.environ["LEGALPRIVACY_HOME"] = tempfile.mkdtemp()
+    from legalprivacy.controller import Controller
     c = Controller()
     e = c.estimate()
     assert e["mb_per_day"] >= 0 and e["gb_per_month"] >= 0 and e["hours_per_day"] == 15.0
@@ -195,7 +195,7 @@ def test_estimate_and_privacy_check_have_the_expected_shape():
 
 
 def test_betting_and_adult_names_are_filtered_without_blocking_lookalikes():
-    from noisycricket.safety import safe_domain
+    from legalprivacy.safety import safe_domain
     for bad in ("www.betano.pe", "crocobet.com", "1xbet.com", "dpbossnet.me", "hi.faphouse2.com",
                 "javwow.com", "olxtoto818.com", "slots77.com", "livecamrips.to"):
         assert not safe_domain(bad), bad
@@ -205,8 +205,8 @@ def test_betting_and_adult_names_are_filtered_without_blocking_lookalikes():
 
 
 def test_crux_only_reranks_sites_already_on_the_safe_list():
-    from noisycricket.domains import DomainPool
-    from noisycricket.feeds import parse_crux
+    from legalprivacy.domains import DomainPool
+    from legalprivacy.feeds import parse_crux
 
     class Store:
         def items(self, name):
@@ -226,8 +226,8 @@ def test_crux_only_reranks_sites_already_on_the_safe_list():
 
 
 def test_household_members_keep_their_devices_and_follow_their_hours():
-    from noisycricket.household import Household
-    from noisycricket.useragents import sample_entry
+    from legalprivacy.household import Household
+    from legalprivacy.useragents import sample_entry
     t = [1_800_000_000.0]
     hh = Household(4, "salt", clock=lambda: t[0], sample_entry=sample_entry)
     ms = hh.members()
@@ -254,8 +254,8 @@ def test_household_identities_come_from_several_browsers():
 
 
 def test_top_result_is_clicked_about_half_the_time():
-    import noisycricket.engines as E
-    from noisycricket.engines import SearchTargetFactory
+    import legalprivacy.engines as E
+    from legalprivacy.engines import SearchTargetFactory
     real = E.extract_result_links
     E.extract_result_links = lambda html, u: [f"https://r{i}.example.com/" for i in range(10)]
     try:
@@ -267,7 +267,7 @@ def test_top_result_is_clicked_about_half_the_time():
 
 
 def test_offline_onion_sites_are_quiet_and_rested():
-    from noisycricket.scheduler import _onion_offline
+    from legalprivacy.scheduler import _onion_offline
     r = _runner({})
     assert _onion_offline(HitResult(None, error="SOCKS error: Host unreachable"))
     assert not _onion_offline(HitResult(None, error="HTTP 500"))

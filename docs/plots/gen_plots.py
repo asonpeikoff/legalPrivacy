@@ -1,6 +1,6 @@
-"""Generate ASCII .txt plots for the noisyCricket README.
+"""Generate ASCII .txt plots for the legalPrivacy README.
 
-All data comes from the real noisycricket package (seeded, offline).
+All data comes from the real legalprivacy package (seeded, offline).
 Run from repo root: python3 docs/plots/gen_plots.py
 """
 
@@ -11,7 +11,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from noisycricket.pacing import Pacer, diurnal_factor  # noqa: E402
+from legalprivacy.pacing import Pacer, diurnal_factor  # noqa: E402
 
 OUT = os.path.dirname(os.path.abspath(__file__))
 WIDTH = 58
@@ -25,7 +25,7 @@ def hbar(value: float, max_value: float, width: int = WIDTH, char: str = "#") ->
 
 def diurnal_plot() -> str:
     lines = [
-        "noisyCricket diurnal activity model",
+        "legalPrivacy diurnal activity model",
         "activity weight by local hour (scheduler divides hit delays by this)",
         "",
     ]
@@ -88,10 +88,10 @@ def daily_timeline_plot() -> str:
 
 
 ARCHITECTURE = r"""
-noisyCricket v2 - one scheduler, two transports, three engines
+legalPrivacy v2 - one scheduler, two transports, three engines
 
               ----------------------------
-              |        cricket CLI       |
+              |        legalprivacy CLI       |
               |   run / doctor / relay   |
               ----------------------------
                         |

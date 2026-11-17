@@ -6,13 +6,13 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-os.environ.setdefault("CRICKET_HOME", tempfile.mkdtemp(prefix="cricket-test-"))
+os.environ.setdefault("LEGALPRIVACY_HOME", tempfile.mkdtemp(prefix="legalprivacy-test-"))
 
-from noisycricket.domains import FALLBACK_DOMAINS, DomainPool, looks_browsable  # noqa: E402
-from noisycricket.engines import CrawlTargetFactory, extract_result_links  # noqa: E402
-from noisycricket.feeds import FeedStore  # noqa: E402
-from noisycricket.queries import QuerySource, headline_to_query  # noqa: E402
-from noisycricket.safety import safe_domain, safe_query  # noqa: E402
+from legalprivacy.domains import FALLBACK_DOMAINS, DomainPool, looks_browsable  # noqa: E402
+from legalprivacy.engines import CrawlTargetFactory, extract_result_links  # noqa: E402
+from legalprivacy.feeds import FeedStore  # noqa: E402
+from legalprivacy.queries import QuerySource, headline_to_query  # noqa: E402
+from legalprivacy.safety import safe_domain, safe_query  # noqa: E402
 
 CANNED = {
     "deny": lambda: ["badsite.example", "pornhub.com"],

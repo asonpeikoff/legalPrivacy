@@ -5,8 +5,8 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from noisycricket.browser import BrowserTransport, browser_support  # noqa: E402
-from noisycricket.transports import Target  # noqa: E402
+from legalprivacy.browser import BrowserTransport, browser_support  # noqa: E402
+from legalprivacy.transports import Target  # noqa: E402
 
 EVENTS = []
 PAGE = ("<html><body style='margin:0'>" + "".join(f"<p style='height:300px'>para {i}</p>" for i in range(40))
