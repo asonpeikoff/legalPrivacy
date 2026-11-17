@@ -167,11 +167,14 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
 <!-- SETTINGS -->
 <section id="t-set" class="tab">
   <div class="card"><h3>Amount of noise</h3>
-    <label class="opt"><input type="radio" name="srmode" value="random" checked> <b>Randomized</b> <span class="mute">(recommended) — changes every hour, busier in the evening, some hours nearly silent, like a real person</span></label>
-    <label class="opt"><input type="radio" name="srmode" value="steady"> <b>Steady</b> <span class="mute">— about the same amount every hour</span></label>
-    <div class="row" style="margin-top:10px"><span>Less</span><input type="range" id="sLevel" min="1" max="10" step="1" value="5" style="flex:1"><span>More</span></div>
+    <div><b>How much</b> <span class="small mute">— the average amount. It applies however random you make it.</span></div>
+    <div class="row"><span>Less</span><input type="range" id="sLevel" min="1" max="10" step="1" value="5" style="flex:1"><span>More</span></div>
     <div class="note small" id="sLevelInfo"></div>
-    <div style="margin-top:10px"><b>Mix of activity</b> <span class="small mute">— relative weights; the slider sets the total per hour</span></div>
+    <div style="margin-top:10px"><b>How random</b> <span class="small mute">— how much each hour varies around that average</span></div>
+    <div class="row"><span>Steady</span><input type="range" id="sRand" min="0" max="100" step="10" value="100" style="flex:1"><span>Random</span></div>
+    <div class="small" id="sRandInfo"></div>
+    <div class="small mute" style="margin-top:6px">Even the highest level stays below what gets one address rate-limited: no search engine gets more than 8 of our searches in any hour. More noise makes your real activity harder to pick out, though some argue a lot of extra traffic is a pattern of its own. It's a trade-off; the middle levels are a sensible start.</div>
+    <div style="margin-top:10px"><b>Mix of activity</b> <span class="small mute">— drag to set how much of each, relative to the others; the percentages show the result</span></div>
     <div id="engines"></div>
   </div>
   <div class="card"><h3>DNS lookups</h3>
@@ -179,7 +182,7 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
     <label class="opt"><input type="radio" name="dnsm" value="system"> <b>Your normal DNS</b> <span class="mute">(recommended) — whatever your router, ISP, VPN or system already uses, so the noise lands exactly where your real lookups do</span></label>
     <label class="opt"><input type="radio" name="dnsm" value="secure"> <b>Secure resolvers only</b> <span class="mute">— the servers ticked below</span></label>
     <label class="opt"><input type="radio" name="dnsm" value="mix"> <b>Mix</b> <span class="mute">— switch between the two in random 10–60 minute blocks, spending</span> <input type="number" id="dShare" min="0" max="100" style="width:64px"> <span class="mute">% of the time on your normal DNS</span></label>
-    <label class="chk"><input type="checkbox" id="dOpen"><span><b>OpenNIC</b> servers that anonymize logs (<span id="dOpenN">0</span>) <details style="display:inline"><summary class="small">list</summary><div class="small mute" id="dOpenList"></div></details></span></label>
+    <label class="chk"><input type="checkbox" id="dOpen"><span><b>OpenNIC</b> servers that pass OpenNIC's checks, keep no logs (preferred) or anonymized logs, and offer DNSCrypt, DoH or DoT (<span id="dOpenN">0</span>) <details style="display:inline"><summary class="small">list</summary><div class="small mute" id="dOpenList"></div></details></span></label>
     <label class="chk"><input type="checkbox" id="dQuad9"><span><b>Quad9</b> 9.9.9.9 and 149.112.112.112 <span class="mute">(blocks malware domains, DNSSEC)</span></span></label>
     <div class="row">Your own resolvers <input type="text" id="dCustom" placeholder="optional, e.g. 1.2.3.4, 5.6.7.8" style="flex:1;min-width:220px"></div>
   </div>
@@ -190,9 +193,10 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
     <label class="opt"><input type="radio" name="xpat" value="blend"> <b>Blend</b> <span class="mute">— the same mix every hour</span></label>
     <label class="opt"><input type="radio" name="xpat" value="alternate"> <b>Alternate</b> <span class="mute">— one kind at a time, switching every 1–3 hours (phone hours, computer hours, onion hours)</span></label>
     <div style="margin-top:8px"><b>How much of each</b> <span class="small mute">— relative amounts</span></div>
-    <div class="row">Web pages in a real browser <input type="number" id="xBrowser" min="0" style="width:80px"> <span class="small mute">(recommended: most of it — scrolls, runs pages, looks like a person)</span></div>
-    <div class="row">Web pages over plain HTTP <input type="number" id="xPlain" min="0" style="width:80px"> <span class="small mute">(0 recommended — no JavaScript or scrolling, easier to tell apart; used anyway when no browser is installed)</span></div>
-    <div class="row">Tor .onion sites <input type="number" id="xOnion" min="0" style="width:80px"> <span class="small mute">(15 recommended; only runs when Tor is on)</span></div>
+    <div class="row">Web pages in a real browser <input type="range" id="xBrowser" min="0" max="10" step="1" style="flex:1;max-width:220px"> <b class="small" id="xBrowserP"></b> <span class="small mute">(recommended: most of it — runs pages and scrolls like a person)</span></div>
+    <div class="row">Web pages over plain HTTP <input type="range" id="xPlain" min="0" max="10" step="1" style="flex:1;max-width:220px"> <b class="small" id="xPlainP"></b> <span class="small mute">(0 recommended — no JavaScript or scrolling, easier to tell apart; used anyway when no browser is installed)</span></div>
+    <div class="row" id="xOnionRow">Tor .onion sites <input type="range" id="xOnion" min="0" max="10" step="1" style="flex:1;max-width:220px"> <b class="small" id="xOnionP"></b> <span class="small mute">(about 1–2 recommended)</span></div>
+    <div class="small mute" id="xOnionOff">Onion sites join this mix automatically when Tor is on (🧅 Tor tab).</div>
     <div style="margin-top:8px"><b>Phones</b></div>
     <div class="row">Share of noise that is a phone <input type="number" id="xMobile" min="0" max="100" style="width:70px">% <span class="small mute">(35% recommended)</span></div>
     <div class="row">Phone to emulate <select id="xDevice">
@@ -593,15 +597,25 @@ $('#uDetect').onclick=async()=>{$('#uNote').textContent='Starting your browser b
 // settings
 function fillSettings(force){
   if(!S||(dirty.set&&!force))return;const p=S.profile;
-  $('#engines').innerHTML=Object.entries(p.engines).map(([n,e])=>`<div class="row"><label class="chk" style="margin:0;width:150px"><input type="checkbox" data-en="${n}" ${e.enabled?'checked':''}> ${n==='onion'?'🧅 onion':n}</label><input type="number" min="0" data-bud="${n}" value="${e.budget_per_day}" style="width:100px"> <span class="small mute">weight${n==='onion'?' (needs Tor)':''}</span></div>`).join('');
-  const r=p.rate||{mode:'random',level:5};document.querySelector(`input[name=srmode][value=${r.mode}]`).checked=true;$('#sLevel').value=r.level;rateInfo('sLevel','sLevelInfo');
+  const torOn=!!(p.transports.tor&&p.transports.tor.enabled);
+  const ENAME={search:'Searches',crawl:'Following links',dns:'DNS lookups',onion:'🧅 Onion sites'};
+  $('#engines').innerHTML=Object.entries(p.engines).filter(([n])=>n!=='onion'||torOn).map(([n,e])=>`<div class="row"><label class="chk" style="margin:0;width:170px"><input type="checkbox" data-en="${n}" ${e.enabled?'checked':''}> ${ENAME[n]||n}</label><input type="range" min="0" max="10" step="1" data-bud="${n}" value="${Math.min(10,Math.round(e.budget_per_day/20))}" style="flex:1;max-width:260px"> <span class="small" data-pct="${n}"></span></div>`).join('')+(torOn?'':'<div class="small mute">Onion sites join this mix automatically when Tor is on (🧅 Tor tab).</div>');
+  const updEng=()=>{const v={};$$('[data-bud]').forEach(i=>{const c=document.querySelector(`[data-en="${i.dataset.bud}"]`);v[i.dataset.bud]=(c&&c.checked)?+i.value:0});const t=Object.values(v).reduce((a,b)=>a+b,0)||1;$$('[data-pct]').forEach(sp=>sp.textContent=Math.round(100*v[sp.dataset.pct]/t)+'%')};
+  $$('[data-bud],[data-en]').forEach(i=>i.addEventListener('input',updEng));updEng();
+  const r=p.rate||{mode:'random',level:5,randomness:1};$('#sLevel').value=r.level;rateInfo('sLevel','sLevelInfo');
+  $('#sRand').value=r.mode==='steady'?0:Math.round((r.randomness??1)*100);randInfo();
   const d=p.dns||{};(document.querySelector(`input[name=dnsm][value=${d.mode||'mix'}]`)||{}).checked=true;
   $('#dShare').value=Math.round((d.system_share??0.7)*100);$('#dOpen').checked=d.opennic!==false;$('#dQuad9').checked=!!d.quad9;$('#dCustom').value=(d.custom||[]).join(', ');
-  $('#dOpenN').textContent=(S.opennic||[]).length;$('#dOpenList').innerHTML=(S.opennic||[]).map(o=>esc(o[1]+' '+o[0]+' ('+(o[2]||'?')+')')).join('<br>');
+  $('#dOpenN').textContent=(S.opennic||[]).length;$('#dOpenList').innerHTML=(S.opennic||[]).map(o=>esc(o[1]+' '+o[0]+' ('+(o[2]||'?')+')'+(o[3]?' · '+(o[3]==='none'?'no logs':'anonymized logs')+' · '+(o[4]||''):''))).join('<br>')+'<div style="margin-top:4px">Noise lookups to these servers are ordinary (unencrypted) DNS, like most lookups; the encryption requirement is a quality bar for the servers.</div>';
   $('#sScale').value=p.realtime_scale;$('#sMaxF').value=p.daily_max_failures;$('#sProxy').value=p.transports.clearnet.proxy||'';
   $('#sClear').checked=p.transports.clearnet.enabled;loadUA();
   const tr=p.traffic||{};(document.querySelector(`input[name=xpat][value=${tr.pattern||'drift'}]`)||{}).checked=true;
-  $('#xBrowser').value=tr.browser??100;$('#xPlain').value=tr.plain??0;$('#xOnion').value=tr.onion??15;
+  const torOn2=!!(p.transports.tor&&p.transports.tor.enabled);
+  $('#xOnionRow').style.display=torOn2?'':'none';$('#xOnionOff').style.display=torOn2?'none':'';
+  $('#xBrowser').value=Math.round((tr.browser??100)/10);$('#xPlain').value=Math.round((tr.plain??0)/10);$('#xOnion').value=Math.round((tr.onion??15)/10);
+  const updMix=()=>{const on=torOn2?+$('#xOnion').value:0, b=+$('#xBrowser').value, pl=+$('#xPlain').value, t=(b+pl+on)||1;
+    $('#xBrowserP').textContent=Math.round(100*b/t)+'%';$('#xPlainP').textContent=Math.round(100*pl/t)+'%';$('#xOnionP').textContent=Math.round(100*on/t)+'%';};
+  ['#xBrowser','#xPlain','#xOnion'].forEach(id=>$(id).addEventListener('input',updMix));updMix();
   $('#xMobile').value=Math.round((tr.mobile_share??0.35)*100);$('#xDevice').value=tr.device||'iPhone 13';
   $('#xDevice').onchange=()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'};
   $('#sBrowser').value=p.transports.clearnet.browser||'auto';$('#sVisible').checked=!!p.transports.clearnet.browser_visible;
@@ -609,17 +623,25 @@ function fillSettings(force){
   $$('#t-set input').forEach(i=>i.oninput=()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'});
 }
 $('#sSave').onclick=async()=>{
-  const engines={};$$('[data-en]').forEach(i=>engines[i.dataset.en]={enabled:i.checked});$$('[data-bud]').forEach(i=>engines[i.dataset.bud].budget_per_day=parseInt(i.value||0));
-  try{await api('/api/config',{realtime_scale:parseFloat($('#sScale').value),daily_max_failures:parseInt($('#sMaxF').value),engines,rate:{mode:document.querySelector('input[name=srmode]:checked').value,level:parseFloat($('#sLevel').value)},
+  const engines={};$$('[data-en]').forEach(i=>engines[i.dataset.en]={enabled:i.checked});$$('[data-bud]').forEach(i=>engines[i.dataset.bud].budget_per_day=parseInt(i.value||0)*20);
+  const rnd=parseInt($('#sRand').value||0)/100;
+  try{await api('/api/config',{realtime_scale:parseFloat($('#sScale').value),daily_max_failures:parseInt($('#sMaxF').value),engines,rate:{mode:rnd>0?'random':'steady',level:parseFloat($('#sLevel').value),randomness:rnd},
       dns:{mode:document.querySelector('input[name=dnsm]:checked').value,system_share:parseInt($('#dShare').value||70)/100,opennic:$('#dOpen').checked,quad9:$('#dQuad9').checked,custom:$('#dCustom').value},
       transports:{clearnet:{enabled:$('#sClear').checked,proxy:$('#sProxy').value||null,browser:$('#sBrowser').value,browser_visible:$('#sVisible').checked}},
       queries:{live:$('#qLive').checked,dataset:$('#qData').checked,builtin:$('#qBuiltin').checked,words:$('#qWords').checked},
-      traffic:{pattern:(document.querySelector('input[name=xpat]:checked')||{}).value||'drift',browser:parseFloat($('#xBrowser').value||0),
-               plain:parseFloat($('#xPlain').value||0),onion:parseFloat($('#xOnion').value||0),
+      traffic:{pattern:(document.querySelector('input[name=xpat]:checked')||{}).value||'drift',browser:parseFloat($('#xBrowser').value||0)*10,
+               plain:parseFloat($('#xPlain').value||0)*10,onion:parseFloat($('#xOnion').value||0)*10,
                mobile_share:parseInt($('#xMobile').value||0)/100,device:$('#xDevice').value}});
     await api('/api/app',{autostart:$('#sAuto').checked});dirty.set=false;$('#sSaved').textContent='saved ✓ '+(S&&S.running?'(Stop → Start to apply)':'');toast('Settings saved');poll()}catch(e){toast(e.message,1)}
 };
 $('#sWiz').onclick=()=>showWiz();
+function randInfo(){
+  const v=parseInt($('#sRand').value||0);
+  $('#sRandInfo').innerHTML=v===0?'<b>Steady</b>: about the same amount every hour.':
+    v===100?'<b>Fully random</b> (recommended): each hour varies like a person — busier evenings, quiet spells, some days heavier than others.':
+    `<b>${v}% random</b>: each hour is ${100-v}% steady and ${v}% random — the swings are gentler than fully random.`;
+}
+$('#sRand').addEventListener('input',()=>{randInfo();dirty.set=true;$('#sSaved').textContent='unsaved changes'});
 function rateInfo(sl,out){
   if(!S||!S.rate_info)return;const d=S.rate_info[parseInt($('#'+sl).value)-1];
   $('#'+out).innerHTML=`<b>Level ${d.level} — ${esc(d.name)}.</b> About <b>${d.searches_per_hour} searches an hour</b> (≈${d.actions_per_hour} actions an hour counting page visits and DNS lookups). Over a 15-hour waking day that's ≈${d.searches_per_day_awake} searches. For comparison, studies of typed Google searches find about 4 a day for an active US desktop user (SparkToro/Datos, 2024; the median is about 2), so this is about <b>${d.vs_average_person}×</b> that. That figure leaves out phones, apps, maps, YouTube and AI assistants, so real people look things up far more often than it suggests. Noise only hides you if it's at least comparable to your real activity.`;

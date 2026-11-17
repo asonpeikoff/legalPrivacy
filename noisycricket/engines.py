@@ -37,6 +37,27 @@ SEARCH_ENGINE_TIERS: list[tuple[str, float]] = [
 SEARCH_ENDPOINTS = [url for url, _ in SEARCH_ENGINE_TIERS]
 SEARCH_WEIGHTS = [w for _, w in SEARCH_ENGINE_TIERS]
 
+# No search engine gets more than this many searches from us in any hour, whatever the
+# level: well under the volume that triggers CAPTCHAs or rate limits for one address.
+MAX_SEARCHES_PER_ENGINE_PER_HOUR = 8
+_ENGINE_HITS: dict[str, list[float]] = {}
+_ENGINE_LOCK = __import__("threading").Lock()
+
+
+def pick_search_endpoint(rng, now: float | None = None) -> str:
+    """Weighted engine choice that skips any engine already at its hourly cap."""
+    import time as _t
+    now = _t.time() if now is None else now
+    with _ENGINE_LOCK:
+        for hits in _ENGINE_HITS.values():
+            hits[:] = [t for t in hits if now - t < 3600]
+        allowed = [(ep, w) for ep, w in zip(SEARCH_ENDPOINTS, SEARCH_WEIGHTS)
+                   if len(_ENGINE_HITS.get(ep, [])) < MAX_SEARCHES_PER_ENGINE_PER_HOUR]
+        pool = allowed or list(zip(SEARCH_ENDPOINTS, SEARCH_WEIGHTS))
+        ep = rng.choices([p for p, _ in pool], weights=[w for _, w in pool])[0]
+        _ENGINE_HITS.setdefault(ep, []).append(now)
+        return ep
+
 # Curated thematic pools of real internet search topics:
 REAL_INTERNET_THEMES: dict[str, list[str]] = {
     "tech": [
@@ -174,7 +195,7 @@ class SearchTargetFactory:
             self.queries = QuerySource(self.rng, None, words=self.words)
 
     def make(self, identity) -> Target:
-        endpoint = self.rng.choices(SEARCH_ENDPOINTS, weights=SEARCH_WEIGHTS)[0]
+        endpoint = pick_search_endpoint(self.rng)
         if self.html_mode and "duckduckgo.com/?q=" in endpoint and "lite." not in endpoint:
             endpoint = "https://html.duckduckgo.com/html/?q="     # the JS-free results page
         query, origin = self.queries.next(identity)

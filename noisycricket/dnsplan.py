@@ -22,18 +22,23 @@ class DnsPlan:
     def __init__(self, rng: random.Random, cfg, opennic: list[str] | None = None, clock=time.time):
         self.rng, self.cfg, self.clock = rng, cfg, clock
         self.opennic = []                      # [(ip, label)]
+        self._opennic_w = []                   # no-logs servers count 3x, anonymized-logs 1x
         for item in opennic or []:
-            ip, _, rest = item.partition("|")
-            name = rest.split("|")[0] if rest else ""
+            parts = item.split("|")
+            ip, name = parts[0], (parts[1] if len(parts) > 1 else "")
             self.opennic.append((ip, f"OpenNIC {name}".strip()))
+            self._opennic_w.append(3.0 if len(parts) > 3 and parts[3] == "none" else 1.0)
         self._block_until = 0.0
         self._block_mode = "system"
 
     def secure_servers(self) -> list[tuple[str, str]]:
-        out = list(self.opennic) if self.cfg.opennic else []
+        return [s for s, _ in self._secure_weighted()]
+
+    def _secure_weighted(self) -> list[tuple[tuple[str, str], float]]:
+        out = list(zip(self.opennic, self._opennic_w)) if self.cfg.opennic else []
         if self.cfg.quad9:
-            out += QUAD9
-        out += [(ip.strip(), "your server") for ip in self.cfg.custom if ip.strip()]
+            out += [(q, 1.0) for q in QUAD9]
+        out += [((ip.strip(), "your server"), 1.0) for ip in self.cfg.custom if ip.strip()]
         return out
 
     def current_mode(self) -> str:
@@ -50,8 +55,8 @@ class DnsPlan:
     def pick(self) -> tuple[str, str]:
         """(server, label). server == "system" means use the OS resolver."""
         if self.current_mode() == "secure":
-            servers = self.secure_servers()
-            if servers:
-                ip, label = self.rng.choice(servers)
+            weighted = self._secure_weighted()
+            if weighted:
+                ip, label = self.rng.choices([s for s, _ in weighted], weights=[w for _, w in weighted])[0]
                 return ip, f"{label} {ip}".strip()
         return "system", "your normal DNS"

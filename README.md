@@ -147,7 +147,7 @@ searches, in proportion to the activity mix in Settings.
 | Setting | What it does |
 |---|---|
 | **Your normal DNS** | Uses your computer's own resolver: your router, ISP or VPN DNS, or whatever encrypted DNS your system uses. The noise lands exactly where your real lookups do, so whoever can see your real DNS sees the noise mixed in. |
-| **Secure resolvers only** | OpenNIC servers that anonymize their logs (11 shipped, ≥95% reliable), optionally Quad9 (`9.9.9.9`, `149.112.112.112`), plus any resolver IPs you add. |
+| **Secure resolvers only** | OpenNIC servers that pass OpenNIC's own checks, keep no logs (preferred, picked 3× as often) or anonymized logs, and offer DNSCrypt, DoH or DoT (20 shipped, taken from servers.opennic.org), optionally Quad9 (`9.9.9.9`, `149.112.112.112`), plus any resolver IPs you add. |
 | **Mix** (default) | Switches between the two in random 10–60 minute blocks, spending a share of the time you set (default 70%) on your normal DNS. Default setup: Mix with only OpenNIC ticked (Quad9 and your own resolvers off). |
 
 Why normal DNS is the default: sending noise to resolvers you never otherwise use

@@ -19,7 +19,10 @@ from dataclasses import dataclass
 from .pacing import diurnal_factor
 
 # searches per hour at each slider level (1..10)
-SEARCHES_PER_HOUR = [0.5, 1, 1.5, 2.5, 4, 6, 9, 13, 20, 30]
+# The top is kept low enough that no one search engine sees bot-like volume from your
+# address: at level 10 the busiest engine (Google, ~35% of searches) gets about 7 an hour,
+# and engines.py also caps every engine at 8 searches in any hour.
+SEARCHES_PER_HOUR = [0.5, 1, 1.5, 2.5, 4, 6, 8, 11, 15, 20]
 LEVEL_NAMES = ["barely there", "very light", "light", "light-moderate", "moderate",
                "moderate-busy", "busy", "very busy", "heavy", "very heavy"]
 AVG_PERSON_SEARCHES_PER_DAY = 4.2      # SparkToro 2024, active US desktop users (126/month)
@@ -28,13 +31,16 @@ AVG_PERSON_SEARCHES_PER_DAY = 4.2      # SparkToro 2024, active US desktop users
 @dataclass
 class RateConfig:
     mode: str = "random"          # random (recommended) | steady
-    level: float = 5.0            # 1..10 slider
+    level: float = 5.0            # 1..10 slider: the average amount, in both modes
+    randomness: float = 1.0       # 0 = steady .. 1 = fully random; in between = partly each
 
     def validate(self) -> None:
         if self.mode not in ("random", "steady"):
             raise ValueError("rate.mode must be random or steady")
         if not 1 <= float(self.level) <= 10:
             raise ValueError("rate.level must be between 1 and 10")
+        if not 0 <= float(self.randomness) <= 1:
+            raise ValueError("rate.randomness must be between 0 and 1")
 
 
 def searches_per_hour(level: float) -> float:
@@ -73,7 +79,8 @@ class RatePlanner:
     def actions_for_hour(self, hour: int, search_share: float) -> float:
         """Total actions (all engines) planned for the given local hour."""
         base = searches_per_hour(self.cfg.level) / max(search_share, 0.05)
-        if self.cfg.mode == "steady":
+        r = 0.0 if self.cfg.mode == "steady" else min(1.0, max(0.0, float(self.cfg.randomness)))
+        if r == 0:
             return base
         if self._last_hour < 0 or hour <= self._last_hour:     # first plan, or a new day
             self._day_mult = self.rng.lognormvariate(0.0, 0.25)
@@ -84,4 +91,5 @@ class RatePlanner:
         step = 0.6 if self._away else 0.35                            # settle away over ~2-3 h, return slower
         self._away_level += (target - self._away_level) * step          # glide, don't cut
         day = diurnal_factor(hour + self.rng.uniform(0, 1)) / 0.95
-        return base * math.exp(self._wobble) * day * self._day_mult * self._away_level
+        random_factor = math.exp(self._wobble) * day * self._day_mult * self._away_level
+        return base * ((1 - r) + r * random_factor)        # partly steady, partly random
