@@ -298,10 +298,10 @@ table.dns td{vertical-align:middle}
     <div class="small mute">CrUX is Google's list of the sites real Chrome users load most. Its global list holds too much adult and gambling content to use on its own, so it only decides which of the already-filtered Tranco sites come up more often.</div>
     <div class="row">Daily data cap <input type="number" id="eCap" min="0" step="10" style="width:90px"> MB <span class="small mute">(0 = no cap, recommended unless your data is metered)</span></div>
     <div style="margin-top:10px"><b>Persona</b> <span class="small mute">— who the noise mostly looks like</span></div>
-    <div class="row">Persona <select id="pers"><option value="">Nobody in particular (default)</option></select>
+    <div class="row">Persona <select id="pers"><option value="">Nobody in particular (neutral)</option></select>
       <span class="small mute">pick the one closest to you</span></div>
-    <div class="row">How closely it's followed <input type="range" id="persShare" min="10" max="90" step="5" style="flex:1;max-width:220px"> <b class="small" id="persShareP"></b>
-      <span class="small mute">(60% recommended: mostly, not perfectly; the rest stays varied)</span></div>
+    <div class="row">How closely it's followed <input type="range" id="persShare" min="10" max="95" step="5" style="flex:1;max-width:220px"> <b class="small" id="persShareP"></b>
+      <span class="small mute">(90% recommended, default: mostly, not perfectly; the rest is everyday browsing)</span></div>
     <div class="small mute" id="persMix"></div>
     <div class="row">📦 Package installs <select id="ePkg"><option value="auto">Automatic: on for Data scientist and Developer (recommended, default)</option><option value="on">On</option><option value="off">Off</option></select></div>
     <div class="small mute">Real <code>pip install</code>, <code>pip download</code> and <code>pip uninstall</code> of popular packages (and <code>npm</code>, if you have it), the way someone who codes talks to PyPI and npm. Everything happens in legalPrivacy's own separate environment, never in yours: only ready-built packages, nothing is ever run, and what's installed is removed again. The environment is wiped and rebuilt daily.</div>
@@ -941,7 +941,7 @@ function fillSettings(force){
   $('#ePolite').checked=!!ex.polite;$('#eLow').checked=!!ex.low_data;$('#eCap').value=ex.daily_data_mb||0;
   renderEngines(ex.search_engines||{});
   $('#ePkg').value=ex.packages||'auto';
-  $('#persShare').value=Math.round((ex.persona_share??0.6)*100);$('#persShareP').textContent=$('#persShare').value+'%';
+  $('#persShare').value=Math.round((ex.persona_share??0.9)*100);$('#persShareP').textContent=$('#persShare').value+'%';
   $('#persShare').addEventListener('input',()=>{$('#persShareP').textContent=$('#persShare').value+'%'});
   $('#iOn').checked=!!ex.interests;$('#iDays').value=ex.interest_rotate_days||10;
   $('#iShare').value=Math.round((ex.interest_share??0.3)*100);$('#iShareP').textContent=$('#iShare').value+'%';
@@ -954,8 +954,8 @@ function fillSettings(force){
     $('#iN').innerHTML=d.themes.map((_,i)=>`<option value="${i+1}">${i+1}</option>`).join('');$('#iN').value=ex.interest_active||3;
     $('#iThemes').innerHTML='Allowed themes: '+d.themes.map(t=>`<label style="margin-right:10px;white-space:nowrap"><input type="checkbox" data-th="${esc(t)}" ${allowed.includes(t)?'checked':''}> ${esc(t)}</label>`).join('');
     $('#iNow').textContent=d.active.length&&!d.persona?('Active right now: '+d.active.join(', ')):'';
-    $('#pers').innerHTML='<option value="">Nobody in particular (default)</option>'+Object.keys(d.personas).map(n=>`<option>${esc(n)}</option>`).join('');
-    $('#pers').value=ex.persona||'';
+    $('#pers').innerHTML='<option value="">Nobody in particular (neutral)</option>'+Object.keys(d.personas).map(n=>`<option value="${esc(n)}">${esc(n)}${n==='Data scientist'?' (default)':''}</option>`).join('');
+    $('#pers').value=ex.persona??'Data scientist';
     const mixTxt=()=>{const m=d.personas[$('#pers').value];$('#persMix').textContent=m?('Mostly: '+Object.entries(m).map(([k,v])=>`${k} ${Math.round(v*100)}%`).join(' · ')+'. A persona takes the place of rotating Interests.'):''};
     mixTxt();$('#pers').addEventListener('change',mixTxt);
     $('#hNow').textContent=(d.household||[]).length?('Your household right now: '+d.household.join(' · ')):'';
@@ -994,7 +994,7 @@ async function saveSettings(auto){
               activity:(document.querySelector('input[name=iact]:checked')||{}).value||'off',busy_kbps:parseInt($('#iBusy').value||400),
               metrics:$('#eMetrics').checked,site_list:$('#eSites').value,
               household:$('#hOn').checked,household_size:parseInt($('#hSize').value||3),
-              persona:$('#pers').value,persona_share:parseInt($('#persShare').value||60)/100,packages:$('#ePkg').value}});
+              persona:$('#pers').value,persona_share:parseInt($('#persShare').value||90)/100,packages:$('#ePkg').value}});
     await api('/api/app',{autostart:$('#sAuto').checked,clear_logs_on_restart:$('#sClearLogs').checked});dirty.set=false;$('#sSaved').textContent='Saved ✓ '+(S&&S.running?'(applies the next time noise starts)':'');poll()}catch(e){$('#sSaved').textContent='Not saved: '+e.message;if(!auto)toast(e.message,1)}
 }
 $('#sSave').onclick=()=>saveSettings(false);
