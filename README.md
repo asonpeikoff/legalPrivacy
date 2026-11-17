@@ -168,7 +168,8 @@ isn't a browser's no matter what it claims. With a real browser each visit:
 - reads to a varied depth: most visits skim the top, some read to the end
 - **moves the mouse** along curved paths, hovers, then **clicks** (or **taps**) the search result
 - **downloads** a linked document now and then (about 3% of visits), through the browser, then discards it; nothing is saved
-- desktop personas use the browser's own, honest User-Agent; about 25% are phone personas with touch input, a phone screen and matching client hints
+- **User agents (plain-HTTP lane):** built from real release calendars for the last two years: every Chrome, Chromium and Firefox (incl. ESR) major, weighted so the newest two or three dominate. About 50% Chrome, 28% Firefox, 5% Chromium, 15% Android Chrome, 2% command-line tools (curl, Wget, Go). Edge and Safari are not used. Rebuild the list with `python tools/build_ua_catalog.py`.
+- **Real browser lane:** desktop personas use the installed browser's own, honest User-Agent; about 25% are phone personas with touch input, a phone screen and matching client hints
 
 Settings → Realism has the on/off switch and a "show the browser window" option
 so you can watch it work. Activity shows what happened on each visit, for example

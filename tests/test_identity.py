@@ -145,3 +145,44 @@ profile:
         assert p.engines["search"].budget_per_day == 80
     finally:
         os.remove(path)
+
+
+def test_ua_pool_is_built_from_the_last_two_years_of_releases():
+    import datetime as dt
+    from noisycricket import ua_catalog
+    from noisycricket.useragents import build_pool, TOOL_AGENTS
+    # at least two years back (the builder keeps a 60-day margin on top)
+    cutoff = (dt.date.today() - dt.timedelta(days=730)).isoformat()
+    for table in (ua_catalog.CHROME, ua_catalog.CHROMIUM, ua_catalog.FIREFOX):
+        assert len(table) >= 25
+        assert min(d for _, d, _ in table) <= cutoff
+    pool = build_pool()
+    assert set(pool) == {"desktop-chrome", "desktop-firefox", "desktop-chromium", "mobile-chrome", "tool"}
+    assert not any("Edg/" in e["ua"] or "Safari/604" in e["ua"] for ps in pool.values() for e in ps)
+    assert {e["ua"] for e in pool["tool"]} == {ua for ua, _ in TOOL_AGENTS}
+
+
+def test_most_common_versions_dominate_but_old_ones_stay_possible():
+    from noisycricket import ua_catalog
+    w = sorted((x[2] for x in ua_catalog.FIREFOX), reverse=True)
+    top3 = sum(w[:3]) / sum(w)
+    assert 0.5 < top3 < 0.9
+    assert all(x > 0 for x in w)
+
+
+def test_client_hints_match_chrome_chromium_and_are_absent_for_firefox_and_tools():
+    from noisycricket.identity import Identity, _client_hints
+    from noisycricket.useragents import build_pool
+    pool = build_pool()
+    chrome = next(e for e in pool["desktop-chrome"] if e["ua"].startswith("Mozilla/5.0 (Windows"))
+    ch = Identity(id=1, persona="desktop-chrome", user_agent=chrome["ua"], accept_language="en-US",
+                  pace="normal", query_taste=[], chromium=True)
+    assert '"Google Chrome"' in _client_hints(ch)["Sec-CH-UA"]
+    cr = pool["desktop-chromium"][0]
+    chromium = Identity(id=2, persona="desktop-chromium", user_agent=cr["ua"], accept_language="en-US",
+                        pace="normal", query_taste=[], chromium=True)
+    hints = _client_hints(chromium)["Sec-CH-UA"]
+    assert '"Chromium"' in hints and "Google Chrome" not in hints
+    ff = Identity(id=3, persona="desktop-firefox", user_agent=pool["desktop-firefox"][0]["ua"],
+                  accept_language="en-US", pace="normal", query_taste=[])
+    assert _client_hints(ff) == {}
