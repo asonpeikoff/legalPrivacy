@@ -47,7 +47,7 @@ def wipe_old_log_files() -> None:
             pass
 
 
-APP_DEFAULTS = {"autostart": False, "open_browser": True, "port": 8765, "intensity": "normal",
+APP_DEFAULTS = {"observe": True, "autostart": False, "open_browser": True, "port": 8765, "intensity": "normal",
                 "auto_refresh_sources": False,   # off: use the snapshot shipped with the app (no lookups)
                 "ml_auto": False, "ml_history": []}
 
@@ -65,6 +65,12 @@ class Controller:
         self._load()
         self.tor: TorManager | None = None
         self.feeds = FeedStore(self.log)
+        from .observe import TrafficObserver
+        self.observer = TrafficObserver(
+            noise_on=lambda: self.running and not (self.runner and self.runner.paused),
+            noise_requests=self._requests_in_minute,
+            tor_pid=lambda: (self.tor.pid if self.tor else None),
+            path=app_dir() / "observe.json")
         self._feed_timer_started = False
         self.runner: Runner | None = None
         self._thread: threading.Thread | None = None
@@ -143,9 +149,11 @@ class Controller:
         return self.state()
 
     def update_app(self, raw: dict[str, Any]) -> None:
-        for k in ("autostart", "open_browser", "auto_refresh_sources", "ml_auto"):
+        for k in ("autostart", "open_browser", "auto_refresh_sources", "ml_auto", "observe"):
             if k in raw:
                 self.app[k] = bool(raw[k])
+        if "observe" in raw:
+            (self.observer.start if self.app["observe"] else self.observer.stop)()
         self._save()
         self._start_feed_timer()
 
@@ -166,6 +174,18 @@ class Controller:
         return self.tor
 
     # ── DNS resolver table: health + verification ──────────────────────────
+    def _requests_in_minute(self, t: int) -> int:
+        r = self.runner
+        if not r:
+            return 0
+        return sum(1 for h in list(r.hit_log) if t <= h["ts"] < t + 60)
+
+    def observe_state(self) -> dict:
+        st = self.observer.state()
+        st["enabled"] = bool(self.app.get("observe", True))
+        st["running"] = self.running
+        return st
+
     def _fresh_dns_plan(self) -> DnsPlan:
         """One shared plan (keeps health results); re-checks resolvers when they'll be used."""
         plan = getattr(self, "dns_plan", None)

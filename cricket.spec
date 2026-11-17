@@ -36,6 +36,8 @@ a = Analysis(
         'noisycricket.safety',
         'noisycricket.events',
         'noisycricket.onion',
+        'noisycricket.observe',
+        'psutil',
         'noisycricket.paths',
         'noisycricket.torcontrol',
         'noisycricket.tormanager',

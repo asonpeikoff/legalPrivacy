@@ -340,6 +340,18 @@ class BrowserTransport(Transport):
                 "bytes", counter["bytes"] + int(r.headers.get("content-length") or 0)))
         except Exception:
             pass
+        try:                                   # label this address in the Proof tab's network map
+            def _learn(r):
+                try:
+                    sa = r.server_addr()
+                    if sa:
+                        from .observe import note
+                        note(sa.get("ipAddress", ""), urllib.parse.urlparse(r.url).hostname or "")
+                except Exception:
+                    pass
+            page.on("response", _learn)
+        except Exception:
+            pass
         cdp = None
         try:
             if ios:

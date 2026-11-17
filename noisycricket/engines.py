@@ -405,7 +405,11 @@ class DnsNoise:
         import concurrent.futures
         ex = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         try:
-            return bool(ex.submit(socket.getaddrinfo, domain, 443, 0, socket.SOCK_STREAM).result(timeout=timeout))
+            res = ex.submit(socket.getaddrinfo, domain, 443, 0, socket.SOCK_STREAM).result(timeout=timeout)
+            from .observe import note
+            for info in res[:4]:
+                note(info[4][0], domain)
+            return bool(res)
         except Exception:
             return False
         finally:
