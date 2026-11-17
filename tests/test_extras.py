@@ -110,6 +110,8 @@ def test_polite_mode_avoids_the_same_site_within_a_minute():
     r._make_target = lambda lane, eng, ident: queue.pop(0) if queue else Target(url="https://x.example/")
     for lane in r.lanes:                                      # only page-type engines this time
         lane.engines = [e for e in lane.engines if e == "crawl"] or lane.engines
+        for e in lane.engines:
+            lane.budgets[e].per_day, lane.budgets[e].spent = 10, 0
     r.run_once(wait=False)
     assert got == ["https://other.example/b"]
     r2 = _runner({"polite": False}, lambda lane, ident, target: (got.append(target.url), HitResult(200, ""))[1])
@@ -304,9 +306,29 @@ def test_a_login_wall_is_not_a_failure_and_the_site_rests():
     r._make_target = lambda lane, eng, ident: queue.pop(0) if queue else Target(url="https://x.example.net/")
     for lane in r.lanes:
         lane.engines = [e for e in lane.engines if e == "crawl"] or lane.engines
+        for e in lane.engines:                                   # make sure this hour has visits to make
+            lane.budgets[e].per_day, lane.budgets[e].spent = 10, 0
     r.run_once(wait=False)
     assert seen == ["https://walled.example.com/a"] and r.day_failures == 0
     assert r._host_rested("https://walled.example.com/anything")
     r.run_once(wait=False)
     assert seen[-1] == "https://open.example.org/c"                       # skipped the rested site
     assert r.hit_log[0]["ok"] and "login required" in (r.hit_log[0]["detail"] or "")
+
+
+def test_logs_clear_on_each_start_by_default_and_can_be_kept():
+    import tempfile
+    os.environ["LEGALPRIVACY_HOME"] = tempfile.mkdtemp()
+    from legalprivacy.controller import Controller
+    c = Controller()
+    assert c.app["clear_logs_on_restart"] is True
+    c.apply_config({"transports": {"clearnet": {"browser": "off"}}})
+    c.log.info("app", "from before")
+    c.start(); c.stop()
+    assert not any(e["message"] == "from before" for e in c.log.since(0)) and c.state()["log_epoch"] == 1
+    c.runner._hit_seq = 41                                     # pretend the last run made 41 requests
+    c.update_app({"clear_logs_on_restart": False})
+    c.log.info("app", "keep me")
+    c.start(); c.stop()
+    assert any(e["message"] == "keep me" for e in c.log.since(0)) and c.state()["log_epoch"] == 1
+    assert c.runner._hit_seq >= 41                             # numbering continues, so Activity keeps updating

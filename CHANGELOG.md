@@ -2,6 +2,9 @@
 
 ## v2.9.0
 
+- **Clear logs between restarts** (Settings → General, on by default): the Live Log and Activity start empty each
+  time noise starts; untick to keep them across Stop → Start. Both are memory-only and always end when the app quits.
+- **Fix:** after Stop → Start, new requests didn't appear in Activity until the count passed the previous run's.
 - **Login walls:** pages that require an account (Facebook, Instagram, LinkedIn, X and the like) get a short look,
   then the noise moves on and rests that site for a few hours, like a logged-out visitor. Public pages are browsed
   as usual. It never counts as a failure, and the noise never logs in.
