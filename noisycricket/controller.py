@@ -37,13 +37,23 @@ PRESETS = {   # budgets per day: search / crawl / dns / onion
     "normal": {"search": 120, "crawl": 40,  "dns": 200, "onion": 40},
     "heavy":  {"search": 300, "crawl": 100, "dns": 500, "onion": 100},
 }
+def wipe_old_log_files() -> None:
+    """Delete any cricket.log left by an older version. The app keeps no log files."""
+    for name in ("cricket.log", "cricket.log.1"):
+        try:
+            (app_dir() / name).unlink()
+        except OSError:
+            pass
+
+
 APP_DEFAULTS = {"autostart": False, "open_browser": True, "port": 8765, "intensity": "normal",
                 "auto_refresh_sources": False}   # off: use the snapshot shipped with the app (no lookups)
 
 
 class Controller:
     def __init__(self, profile_path: str | None = None):
-        self.log = EventLog(file_path=app_dir() / "cricket.log")
+        wipe_old_log_files()                      # older versions wrote cricket.log to disk
+        self.log = EventLog()                     # live log is memory-only (never written to disk)
         self.profile_path = profile_path or str(config_path())
         self.first_run = not Path(self.profile_path).exists()
         self.app: dict[str, Any] = dict(APP_DEFAULTS)
@@ -266,6 +276,8 @@ class Controller:
         self.log.info("app", "Stopped.")
         if stop_tor and self.tor:
             self.tor.stop()
+        wipe_old_log_files()
+        self.log.clear()                          # nothing from this run is kept after quitting
 
     def pause(self, paused: bool) -> None:
         if self.runner:
@@ -307,7 +319,7 @@ class Controller:
             "profile": profile_to_dict(self.profile)["profile"],
             "tor": self.tor_state(), "log_last_id": self.log.last_id(),
             "builtin_onion_seeds": [{"name": n, "url": u} for n, u in BUILTIN_ONION_SEEDS],
-            "config_path": self.profile_path, "log_path": str(app_dir() / "cricket.log"),
+            "config_path": self.profile_path,
             "presets": PRESETS, "browser": self.browser_info(), "feeds": self.feeds.status(),
             "feeds_refreshing": self.feeds.refreshing,
             "rate_info": [describe_rate(lv, self._search_share()) for lv in range(1, 11)],

@@ -77,3 +77,13 @@ def test_mobile_uses_no_mouse_moves():
     p = FakePage(mobile=True)
     HumanDriver(random.Random(5), p).browse()
     assert not [e for e in p.log if e[0] == "move"]
+
+
+def test_visits_mix_down_up_and_reread_patterns():
+    stats = {"back_scrolls": 0, "re_reads": 0, "scrolls": 0}
+    for seed in range(60):
+        p = FakePage(height=6000)
+        s = HumanDriver(random.Random(seed), p).browse()
+        for k in stats:
+            stats[k] += s[k]
+    assert stats["scrolls"] > 300 and stats["back_scrolls"] > 20 and stats["re_reads"] > 5

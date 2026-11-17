@@ -191,6 +191,9 @@ class UIServer:
                         ctl.update_app(body)
                     elif path == "/api/wizard":
                         return self._json(ctl.wizard(body))
+                    elif path == "/api/logs/clear":
+                        ctl.log.clear()
+                        return self._json({"ok": True})
                     elif path == "/api/shutdown":
                         self._json({"ok": True})
                         threading.Thread(target=srv.shutdown, daemon=True).start()

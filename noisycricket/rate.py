@@ -6,8 +6,8 @@ a day/night curve, and leaves some hours almost empty, the way a person is busy,
 then away. "steady" keeps the same amount every hour.
 
 Benchmark used to label the slider: active US desktop users run about 126 Google
-searches a month (SparkToro, 2024), roughly 4 a day; about 2.7 per internet user
-per day worldwide. Noise only hides you if it is at least comparable to your real
+searches a month (SparkToro/Datos, 2024), roughly 4 a day on average. That is a mean
+pulled up by heavy users (median ~53 a month, under 2 a day) and excludes mobile apps. Noise only hides you if it is at least comparable to your real
 activity, so even the middle levels are deliberately busier than that average.
 """
 from __future__ import annotations
@@ -55,16 +55,33 @@ def describe(level: float, search_share: float) -> dict:
 
 
 class RatePlanner:
+    """Hourly plan. Real activity drifts: it never jumps from busy to dead in one hour.
+
+    * busy/quiet level is a smoothed random walk (each hour keeps most of the last one),
+    * each day gets its own overall volume (some days heavier than others),
+    * "away" spells last several hours and ramp in and out instead of switching off.
+    """
+
     def __init__(self, rng: random.Random, cfg: RateConfig):
         self.rng, self.cfg = rng, cfg
+        self._wobble = 0.0            # log of the smoothed busy/quiet level
+        self._away = False
+        self._away_level = 1.0        # 1.0 when at the computer, ramps toward 0.1 when away
+        self._day_mult = 1.0
+        self._last_hour = -1
 
     def actions_for_hour(self, hour: int, search_share: float) -> float:
         """Total actions (all engines) planned for the given local hour."""
         base = searches_per_hour(self.cfg.level) / max(search_share, 0.05)
         if self.cfg.mode == "steady":
             return base
-        if self.rng.random() < 0.12:                      # away from the computer this hour
-            return base * self.rng.uniform(0.0, 0.15)
-        wobble = self.rng.lognormvariate(0.0, 0.5)        # some hours busy, some quiet
+        if self._last_hour < 0 or hour <= self._last_hour:     # first plan, or a new day
+            self._day_mult = self.rng.lognormvariate(0.0, 0.25)
+        self._last_hour = hour
+        self._wobble = 0.65 * self._wobble + self.rng.gauss(0.0, 0.3)
+        self._away = self.rng.random() < (0.6 if self._away else 0.06)   # spells of several hours
+        target = 0.05 if self._away else 1.0
+        step = 0.6 if self._away else 0.35                            # settle away over ~2-3 h, return slower
+        self._away_level += (target - self._away_level) * step          # glide, don't cut
         day = diurnal_factor(hour + self.rng.uniform(0, 1)) / 0.95
-        return base * wobble * day
+        return base * math.exp(self._wobble) * day * self._day_mult * self._away_level

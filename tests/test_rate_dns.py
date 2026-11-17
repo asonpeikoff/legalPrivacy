@@ -50,10 +50,9 @@ def test_plan_hour_sets_budgets_and_spreads_pacing():
     assert lo < 3600 / total < hi                                  # spread across the hour, not a burst
 
 
-def test_dns_defaults_to_your_normal_resolver():
-    assert Profile(name="t").dns.mode == "system"
-    plan = DnsPlan(random.Random(1), DnsConfig())
-    assert all(plan.pick()[0] == "system" for _ in range(20))
+def test_dns_defaults_to_mix_with_only_opennic_on():
+    cfg = Profile(name="t").dns
+    assert cfg.mode == "mix" and cfg.opennic is True and cfg.quad9 is False and cfg.custom == []
 
 
 def test_secure_mode_uses_opennic_quad9_and_custom_only_when_enabled():
@@ -88,3 +87,11 @@ def test_bad_dns_settings_rejected():
             raise AssertionError(f"accepted {bad}")
         except ConfigError:
             pass
+
+
+def test_hourly_level_glides_instead_of_jumping():
+    rp = RatePlanner(random.Random(3), RateConfig(mode="random", level=5))
+    xs = [rp.actions_for_hour(h % 24, 0.3) for h in range(24 * 60)]
+    same_day = [(a, b) for i, (a, b) in enumerate(zip(xs, xs[1:])) if (i + 1) % 24 != 0]
+    assert max(abs(a - b) / max(a, b) for a, b in same_day) < 0.95  # no hour-to-hour cliffs
+    assert any(x < 2 for x in xs)                                   # but away spells still happen

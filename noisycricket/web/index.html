@@ -79,6 +79,7 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
   <button data-t="set">Settings</button>
   <button data-t="health">Health</button>
   <button data-t="help">Help</button>
+  <button data-t="tools">Tools</button>
 </nav>
 <main>
 
@@ -248,6 +249,22 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
   </div>
   <div class="row" style="justify-content:space-between;margin-top:16px"><button id="wBack">Back</button><button id="wNext" class="pri">Next</button></div>
 </div></div>
+<!-- TOOLS -->
+<section id="t-tools" class="tab">
+  <div class="card"><h3>Live log</h3>
+    <p class="small mute">The live log is kept in memory only. Nothing is written to disk, and it is cleared when noisyCricket quits.</p>
+    <div class="row"><button id="toolClearLog">Clear live log now</button><span class="small mute" id="toolLogNote"></span></div>
+  </div>
+  <div class="card"><h3>Related checks</h3>
+    <p class="small mute">Outside links, opened only when you click them, in a new tab.</p>
+    <div class="row"><a href="https://check.torproject.org/" target="_blank" rel="noopener">Check whether Tor is in use (check.torproject.org)</a></div>
+    <div class="row"><a href="https://www.opennicproject.org/" target="_blank" rel="noopener">About OpenNIC resolvers (opennicproject.org)</a></div>
+  </div>
+  <div class="card"><h3>Files</h3>
+    <div class="small">Config file: <code id="toolCfg"></code></div>
+    <div class="small mute" style="margin-top:6px">No log file is kept. The only file noisyCricket writes is that config file.</div>
+  </div>
+</section>
 <div id="toast"></div>
 
 <script>
@@ -268,7 +285,7 @@ const fmtDur=s=>{s=Math.floor(s);const h=Math.floor(s/3600),m=Math.floor(s%3600/
 const fmtB=n=>n>1e9?(n/1e9).toFixed(2)+' GB':n>1e6?(n/1e6).toFixed(1)+' MB':n>1e3?(n/1e3).toFixed(0)+' KB':(n||0)+' B';
 
 // tabs
-$$('#nav button').forEach(b=>b.onclick=()=>{$$('#nav button').forEach(x=>x.classList.toggle('on',x===b));$$('.tab').forEach(t=>t.classList.toggle('on',t.id==='t-'+b.dataset.t));if(b.dataset.t==='log')renderLog(true);if(b.dataset.t==='set')fillSettings(true);if(b.dataset.t==='tor')fillTor(true)});
+$$('#nav button').forEach(b=>b.onclick=()=>{$$('#nav button').forEach(x=>x.classList.toggle('on',x===b));$$('.tab').forEach(t=>t.classList.toggle('on',t.id==='t-'+b.dataset.t));if(b.dataset.t==='log')renderLog(true);if(b.dataset.t==='set')fillSettings(true);if(b.dataset.t==='tor')fillTor(true);if(b.dataset.t==='tools')$('#toolCfg').textContent=S?S.config_path:''});
 
 let S=null, hits=[], hitAfter=0, logs=[], logAfter=0, errCount=0, srcOn=new Set(), srcAll=new Set();
 let dirty={set:false,tor:false};
@@ -409,7 +426,7 @@ function fillSettings(force){
   if(!S||(dirty.set&&!force))return;const p=S.profile;
   $('#engines').innerHTML=Object.entries(p.engines).map(([n,e])=>`<div class="row"><label class="chk" style="margin:0;width:150px"><input type="checkbox" data-en="${n}" ${e.enabled?'checked':''}> ${n==='onion'?'🧅 onion':n}</label><input type="number" min="0" data-bud="${n}" value="${e.budget_per_day}" style="width:100px"> <span class="small mute">weight${n==='onion'?' (needs Tor)':''}</span></div>`).join('');
   const r=p.rate||{mode:'random',level:5};document.querySelector(`input[name=srmode][value=${r.mode}]`).checked=true;$('#sLevel').value=r.level;rateInfo('sLevel','sLevelInfo');
-  const d=p.dns||{};(document.querySelector(`input[name=dnsm][value=${d.mode||'system'}]`)||{}).checked=true;
+  const d=p.dns||{};(document.querySelector(`input[name=dnsm][value=${d.mode||'mix'}]`)||{}).checked=true;
   $('#dShare').value=Math.round((d.system_share??0.7)*100);$('#dOpen').checked=d.opennic!==false;$('#dQuad9').checked=!!d.quad9;$('#dCustom').value=(d.custom||[]).join(', ');
   $('#dOpenN').textContent=(S.opennic||[]).length;$('#dOpenList').innerHTML=(S.opennic||[]).map(o=>esc(o[1]+' '+o[0]+' ('+(o[2]||'?')+')')).join('<br>');
   $('#sScale').value=p.realtime_scale;$('#sMaxF').value=p.daily_max_failures;$('#sProxy').value=p.transports.clearnet.proxy||'';
@@ -429,10 +446,11 @@ $('#sSave').onclick=async()=>{
 $('#sWiz').onclick=()=>showWiz();
 function rateInfo(sl,out){
   if(!S||!S.rate_info)return;const d=S.rate_info[parseInt($('#'+sl).value)-1];
-  $('#'+out).innerHTML=`<b>Level ${d.level} — ${esc(d.name)}.</b> About <b>${d.searches_per_hour} searches an hour</b> (≈${d.actions_per_hour} actions an hour counting page visits and DNS lookups). Over a 15-hour waking day that's ≈${d.searches_per_day_awake} searches. For comparison, an average person does about 4 searches a day (SparkToro study of US users), so this is about <b>${d.vs_average_person}×</b> that. Noise only hides you if it's at least comparable to your real activity.`;
+  $('#'+out).innerHTML=`<b>Level ${d.level} — ${esc(d.name)}.</b> About <b>${d.searches_per_hour} searches an hour</b> (≈${d.actions_per_hour} actions an hour counting page visits and DNS lookups). Over a 15-hour waking day that's ≈${d.searches_per_day_awake} searches. For comparison, an average active US desktop user does about 4 Google searches a day (SparkToro/Datos, 2024; desktop only, and the typical median user does about 2), so this is about <b>${d.vs_average_person}×</b> that average. Noise only hides you if it's at least comparable to your real activity.`;
 }
 $('#wLevel').oninput=()=>rateInfo('wLevel','wLevelInfo');
 $('#sLevel').oninput=()=>{rateInfo('sLevel','sLevelInfo');dirty.set=true;$('#sSaved').textContent='unsaved changes'};
+$('#toolClearLog').onclick=()=>act('/api/logs/clear').then(()=>{$('#toolLogNote').textContent='cleared';renderLog(true)});
 $('#fRefresh').onclick=()=>{if(confirm('Download fresh lists now from Google Trends, Wikipedia, BBC, Hugging Face and Tranco? This contacts those sites from your connection.')){act('/api/feeds/refresh');toast('Refreshing sources in the background…')}};
 $('#fAuto').onchange=()=>act('/api/app',{auto_refresh_sources:$('#fAuto').checked});
 $('#sBrowser').oninput=$('#sVisible').oninput=()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'};

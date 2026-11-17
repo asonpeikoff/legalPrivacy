@@ -48,10 +48,11 @@ typo can never be dispatched; add your own seeds on the Tor tab.
 |---|---|
 | **Dashboard** | hits, failures, uptime, hits-per-minute chart, per-lane per-engine budgets, one-click test hit |
 | **Activity** | every request: time, lane, engine, URL, where the query came from, what the browser did (scrolls, depth, reading time, click/tap, download), status, latency |
-| **Live Log** | one merged log (app, scheduler, clearnet, onion, **Tor's own output**), level + source filters, search, follow, download |
+| **Live Log** | one merged log (app, scheduler, clearnet, onion, **Tor's own output**), level + source filters, search, follow, download. Memory only: nothing is written to disk and it is cleared on quit |
 | **🧅 Tor** | status + bootstrap progress, version/ports/PID/traffic, **Start / Stop / Restart / New identity / Install**, live circuits table (onion-service circuits marked `HS_CLIENT_*`), Tor-only log, mode switches, onion seeds, bridges |
 | **Settings** | per-engine budgets & presets, speed, failure cap, proxy, autostart, **Realism** (real browser, show window, query sources + their live status) |
 | **Health** | plain-language self-checks (libs, internet, Tor program/status, seeds, ports) |
+| **Tools** | clear the live log now, links to outside checks (Tor, OpenNIC), config file location |
 
 The dashboard listens only on `127.0.0.1`, requires a token in its link (kept between launches so bookmarks work), and rejects
 foreign `Host`/`Origin` headers. Config lives in `~/.noisycricket/config.yaml`
@@ -144,9 +145,9 @@ searches, in proportion to the activity mix in Settings.
 
 | Setting | What it does |
 |---|---|
-| **Your normal DNS** (default, recommended) | Uses your computer's own resolver: your router, ISP or VPN DNS, or whatever encrypted DNS your system uses. The noise lands exactly where your real lookups do, so whoever can see your real DNS sees the noise mixed in. |
+| **Your normal DNS** | Uses your computer's own resolver: your router, ISP or VPN DNS, or whatever encrypted DNS your system uses. The noise lands exactly where your real lookups do, so whoever can see your real DNS sees the noise mixed in. |
 | **Secure resolvers only** | OpenNIC servers that anonymize their logs (11 shipped, ≥95% reliable), optionally Quad9 (`9.9.9.9`, `149.112.112.112`), plus any resolver IPs you add. |
-| **Mix** | Switches between the two in random 10–60 minute blocks, spending a share of the time you set (default 70%) on your normal DNS. |
+| **Mix** (default) | Switches between the two in random 10–60 minute blocks, spending a share of the time you set (default 70%) on your normal DNS. Default setup: Mix with only OpenNIC ticked (Quad9 and your own resolvers off). |
 
 Why normal DNS is the default: sending noise to resolvers you never otherwise use
 would hide nothing from whoever sees your real lookups, and would itself be an

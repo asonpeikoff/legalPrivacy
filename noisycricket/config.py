@@ -96,7 +96,7 @@ class RelayConfig:
 @dataclass
 class DnsConfig:
     """Which resolver the DNS noise uses. See noisycricket/dnsplan.py."""
-    mode: str = "system"          # system (your normal DNS, recommended) | secure | mix
+    mode: str = "mix"             # mix (default: blocks on your normal DNS + OpenNIC) | system | secure
     opennic: bool = True          # include OpenNIC no-log servers in the "secure" set
     quad9: bool = False           # include Quad9 (9.9.9.9 / 149.112.112.112) in the "secure" set
     custom: list[str] = field(default_factory=list)   # extra resolver IPs, your choice

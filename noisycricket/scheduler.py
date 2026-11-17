@@ -13,7 +13,7 @@ from typing import Callable
 from .config import Profile
 from .identity import Identity, make_identity
 from .events import EventLog
-from .pacing import Budget, Pacer
+from .pacing import Budget, Pacer, SessionPacer
 from .transports import ClearnetTransport, HitResult, Target, TorTransport, Transport
 
 
@@ -131,6 +131,8 @@ class Runner:
         self.hour: int | None = None
         self.hour_target = 0.0
         self._pace: tuple[float, float] | None = None   # (min_delay, max_delay) for this hour
+        self._sessions = SessionPacer(self.rng)          # app mode: irregular "sittings"
+        self._hour_end = 0.0
 
     def _emit(self, level: str, source: str, msg: str, **data) -> None:
         if self.log:
@@ -178,6 +180,8 @@ class Runner:
         search_share = sum(v for (ln, e), v in shares.items() if e == "search") or 0.3
         total = self.rate.actions_for_hour(hour, search_share)
         self.hour, self.hour_target = hour, total
+        now = time.localtime()
+        self._hour_end = self.clock() + (3600 - now.tm_min * 60 - now.tm_sec)
         for lane in self.lanes:
             for e, b in lane.budgets.items():
                 x = total * shares.get((lane.name, e), 0)
@@ -320,7 +324,14 @@ class Runner:
         if result.dim_transport and hasattr(lane.transport, "dimmed"):
             lane.transport.dimmed = True
         if wait:
-            pacer.wait(hour)
+            if self.rate is None or pacer.backoff_pending():
+                pacer.wait(hour)                       # CLI/tests, or honouring a failure backoff
+            else:
+                # app mode: irregular sittings whose hourly total still fits the hour
+                hits_left = sum(b.remaining for ln in self.lanes for b in ln.budgets.values())
+                seconds_left = max(60.0, self._hour_end - self.clock())
+                gap = self._sessions.next_gap(hits_left, seconds_left, self.profile.realtime_scale)
+                pacer.sleep_fn(gap)
         return True
 
     def _record_hit(self, lane: Lane, eng_name: str, identity: Identity,
