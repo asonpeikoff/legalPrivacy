@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.10.0
+
+- **Package installs** (Settings → Extras): real `pip install`, `pip download`, `pip index versions` and
+  `pip uninstall` of popular packages, plus `npm view` / `npm install` if npm is installed, so the noise also talks to
+  PyPI and npm like someone who codes. Automatic by default: on for the Data scientist and Developer personas.
+  It all happens in legalPrivacy's own separate environment, never yours: only ready-built packages, nothing installed
+  is ever run, installs are removed again, downloads are deleted, and the environment is rebuilt daily. Never over Tor.
+
 ## v2.9.0
 
 - **Personas** (Settings → Extras): pick who the noise mostly looks like: Data scientist, Developer, Sports fan,
