@@ -185,6 +185,8 @@ class UIServer:
                         ctl.check_dns()
                     elif path == "/api/feeds/refresh":
                         ctl.refresh_feeds()
+                    elif path == "/api/tor/selftest":
+                        ctl.tor_selftest()
                     elif path.startswith("/api/tor/"):
                         return self._json(ctl.tor_action(path.rsplit("/", 1)[1]))
                     elif path == "/api/config":

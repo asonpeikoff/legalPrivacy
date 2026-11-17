@@ -97,3 +97,26 @@ def test_simulated_session_searches_clicks_reads_and_stays_on_topic():
     assert all(c[3] for c in calls)                                  # every page had a planned reading time
     assert r.session_no >= 3                                         # several sessions with breaks between
     assert not any("/login" in c[1] for c in calls)
+
+
+def test_bot_checks_make_it_switch_engines_then_browse_sites_instead():
+    p = Profile(name="t")
+    apply_overrides(p, {"engines": {"dns": {"enabled": False}}})
+    calls, clock, stop = [], [0.0], threading.Event()
+
+    def sleep(s):
+        clock[0] += s
+        if clock[0] > 3600:
+            stop.set()
+
+    def probe(lane, ident, target):
+        calls.append(target)
+        return HitResult(429, "") if target.role == "search" else HitResult(200, ARTICLE)
+
+    r = Runner(profile=p, lanes=build_lanes(p, ["w"]), wordlist=["w"], clock=lambda: clock[0], sleep_fn=sleep,
+               probe_fn=probe, stop_event=stop, sessions=SessionPlanner(random.Random(6), level=6))
+    r.rng = random.Random(6)
+    r.run_sessions()
+    searches = [c.url for c in calls if c.role == "search"]
+    assert len(set(searches)) >= 1 and len(searches) < len(calls) / 2      # mostly browsing, not retrying
+    assert all(searches.count(u) <= 2 for u in set(searches))               # never hammers one blocked search

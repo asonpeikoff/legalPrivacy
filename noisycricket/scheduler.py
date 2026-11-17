@@ -569,14 +569,17 @@ class Runner:
         serp: tuple[str, str] | None = None
         visited: set[str] = set()
         last_role, last_html, last_url = None, "", ""
+        blocked = 0                                        # search engines showing bot checks
         if "search" not in engines or ("crawl" in engines and self.rng.random() < 0.15):
             last_role = "open_site"                       # sometimes start by opening a familiar site
             self.activity["theme"] = "popular sites"
         while not self._stopped() and self._now() < end:
-            if last_role == "open_site":
+            if last_role == "open_site" or (blocked >= 2 and not last_html):
                 target, role, eng = crawl.make(identity), "page", "crawl"
+                last_role = None
             else:
-                step = sp.next_step(last_role, serp is not None) if "search" in engines else "follow"
+                step = sp.next_step(last_role, serp is not None) if "search" in engines and blocked < 2 \
+                    else "follow"
                 target, role, eng = None, "page", "search"
                 if step == "search":
                     target, role = sf.make_for(query, origin), "search"
@@ -592,6 +595,8 @@ class Runner:
                 elif step == "follow" and last_html:
                     target = crawl.next_from(last_html, last_url)
                     eng = "crawl" if "crawl" in engines else "search"
+                elif step == "follow" and blocked >= 2:
+                    target, eng = crawl.make(identity), "crawl"
                 if target is None:                         # nothing to click: search something related
                     query, origin = sf.queries.next(identity)
                     target, role = sf.make_for(query, origin), "search"
@@ -611,7 +616,14 @@ class Runner:
                 if not getattr(lane.transport, "is_browser", False):
                     self._sleep(target.dwell)              # plain HTTP: time spent "reading"
             else:
-                last_role = None if role == "search" else last_role
+                if role == "search":
+                    blocked += 1
+                    sf._engine = None                      # a person would try another search engine
+                    if blocked == 2:
+                        self._emit("warn", "scheduler", "Search engines are showing bot checks; browsing sites "
+                                   "directly for the rest of this session.")
+                    last_role = None
+                last_html = "" if role == "search" else last_html
             if "dns" in engines and self.rng.random() < 0.4:
                 for _ in range(self.rng.randint(1, 2)):
                     self._execute(lane, "dns", identity, pacer, self._make_target(lane, "dns", identity))

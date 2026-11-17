@@ -164,11 +164,48 @@ class Controller:
             raise ConfigError(f"unknown tor action '{action}'")
         return self.tor_state()
 
+    def tor_selftest(self) -> None:
+        """User-initiated check: can we reach a site through Tor, and an onion site?"""
+        tm = self.tor_manager()
+        self.tor_test = {"running": True, "ts": time.time()}
+
+        def go():
+            import requests
+            from .onion import BUILTIN_ONION_SEEDS
+            from .transports import explain_tor_error
+            res = {"running": False, "ts": time.time()}
+            if not tm.ready:
+                res["summary"] = "Tor isn't ready yet — start it and wait for 100%."
+                self.tor_test = res
+                return
+            proxies = {"http": f"socks5h://test:test@{tm.socks_addr}", "https": f"socks5h://test:test@{tm.socks_addr}"}
+            try:
+                t0 = time.time()
+                j = requests.get("https://check.torproject.org/api/ip", proxies=proxies, timeout=60).json()
+                res["exit"] = {"ok": bool(j.get("IsTor")), "ip": j.get("IP"), "ms": round((time.time() - t0) * 1000)}
+            except Exception as exc:
+                res["exit"] = {"ok": False, "error": explain_tor_error(str(exc), tm.socks_addr)}
+            url = BUILTIN_ONION_SEEDS[1][1]                     # The Tor Project's own onion site
+            try:
+                t0 = time.time()
+                r = requests.get(url, proxies=proxies, timeout=90)
+                res["onion"] = {"ok": r.status_code < 400, "status": r.status_code, "url": url,
+                                "ms": round((time.time() - t0) * 1000)}
+            except Exception as exc:
+                res["onion"] = {"ok": False, "url": url, "error": explain_tor_error(str(exc), tm.socks_addr)}
+            ok = res["exit"]["ok"] and res["onion"]["ok"]
+            res["summary"] = ("Tor works: traffic leaves through the Tor network and onion sites load."
+                              if ok else "Tor test found a problem — see details.")
+            self.log.add("info" if ok else "warn", "tor", "Self-test: " + res["summary"])
+            self.tor_test = res
+        threading.Thread(target=go, daemon=True, name="tor-selftest").start()
+
     def tor_state(self) -> dict:
         tm = self.tor_manager()
         d = tm.snapshot()
         d["enabled"] = self._tor_cfg().enabled
         d["circuits"] = tm.circuits()
+        d["selftest"] = getattr(self, "tor_test", None)
         return d
 
     # ── realism helpers ─────────────────────────────────────────────────────

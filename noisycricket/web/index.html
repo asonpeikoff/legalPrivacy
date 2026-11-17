@@ -56,6 +56,13 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
 .opt:has(input:checked){border-color:var(--acc);background:var(--acc2)}.opt input{margin-right:8px}
 .opt.t:has(input:checked){border-color:var(--tor);background:var(--tor2)}
 .steps{display:flex;gap:6px;margin-bottom:14px}.steps i{flex:1;height:5px;border-radius:3px;background:var(--line)}.steps i.on{background:var(--acc)}
+details.why{display:inline;font-weight:400;text-transform:none;letter-spacing:0;color:var(--mute)}
+details.why>summary{display:inline;cursor:pointer;list-style:none;font-size:12px;opacity:.75}
+details.why>summary::-webkit-details-marker{display:none}
+details.why[open]>div{display:block;margin:6px 0;padding:8px 10px;border-radius:7px;background:var(--code);font-size:12px;color:var(--ink);max-width:720px}
+table.dns input[type=text]{width:100%;padding:3px 6px;font-size:12px}
+table.dns td{vertical-align:middle}
+.now{display:flex;gap:14px;align-items:center}.now .big{font-size:20px}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 16px;border-radius:8px;display:none;z-index:30}
 @media(max-width:600px){main{padding:10px}.big{font-size:22px}}
 </style>
@@ -85,15 +92,17 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
 <!-- DASHBOARD -->
 <section id="t-dash" class="tab on">
   <div id="dashNote"></div>
+  <div class="card"><h3>Right now <details class="why"><summary>ⓘ</summary><div>noisyCricket browses like a person: a <b>session</b> of a few to 30 minutes on one topic (search, open a result, read and scroll, follow a link, search for something related), then a <b>break</b>. How much and how often depends on the level in Settings.</div></details></h3>
+    <div class="now"><div class="big" id="nowWhat">—</div></div><div class="small mute" id="nowSub"></div></div>
   <div class="grid">
-    <div class="card"><h3>Hits today</h3><div class="big" id="kHits">0</div><div class="small mute" id="kHitsSub"></div></div>
+    <div class="card"><h3>Actions today</h3><div class="big" id="kHits">0</div><div class="small mute" id="kHitsSub"></div></div>
     <div class="card"><h3>Failures</h3><div class="big" id="kFail">0</div><div class="small mute">network errors / blocks</div></div>
     <div class="card"><h3>Running for</h3><div class="big" id="kUp">—</div><div class="small mute" id="kPace"></div></div>
-    <div class="card"><h3>Last hit</h3><div class="big" id="kLast">—</div><div class="small mute" id="kLastSub"></div></div>
+    <div class="card"><h3>Last action</h3><div class="big" id="kLast">—</div><div class="small mute" id="kLastSub"></div></div>
   </div>
-  <div class="card"><h3>Hits per minute (last 30 min)</h3><svg id="spark" class="spark" viewBox="0 0 300 60" preserveAspectRatio="none"></svg></div>
+  <div class="card"><h3>Activity per minute, last 30 min <details class="why"><summary>ⓘ</summary><div>Each bar counts searches, page visits and DNS lookups in that minute. Busy bars are sessions; gaps are breaks.</div></details></h3><svg id="spark" class="spark" viewBox="0 0 300 60" preserveAspectRatio="none"></svg></div>
   <div id="lanes"></div>
-  <div class="row"><button id="bTest">Send one test hit now</button><span class="small mute">Fires a single noise request immediately and shows it in Activity.</span></div>
+  <div class="row"><button id="bTest">Send one test request now</button><span class="small mute">Makes one request immediately and shows it in Activity.</span></div>
 </section>
 
 <!-- ACTIVITY -->
@@ -135,7 +144,9 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
       <button id="tRestart">↻ Restart</button>
       <button id="tNym">🔀 New identity (new circuits)</button>
       <button id="tInstall">⬇ Install / update Tor</button>
+      <button id="tTest">✔ Test Tor</button>
     </div>
+    <div class="small" id="tTestOut"></div>
     <div class="small mute" id="tInstallNote"></div>
     <label class="chk"><input type="checkbox" id="tEnable"><span><b>Use Tor</b> — turn the Tor lane on. Starting noise will automatically start (and if needed, install) Tor.</span></label>
     <label class="chk"><input type="checkbox" id="tOnion"><span><b>🧅 Visit onion sites</b> (darknet noise) — only .onion addresses, never leaves the Tor network.</span></label>
@@ -172,14 +183,19 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
     <div style="margin-top:10px"><b>Mix of activity</b> <span class="small mute">— relative weights; the slider sets the total per hour</span></div>
     <div id="engines"></div>
   </div>
-  <div class="card"><h3>DNS lookups</h3>
-    <div class="small mute">In Activity and the Live Log each lookup shows the site looked up and which resolver answered, e.g. <code>www.reddit.com [via your normal DNS]</code>.</div>
-    <label class="opt"><input type="radio" name="dnsm" value="system"> <b>Your normal DNS</b> <span class="mute">(recommended) — whatever your router, ISP, VPN or system already uses, so the noise lands exactly where your real lookups do</span></label>
-    <label class="opt"><input type="radio" name="dnsm" value="secure"> <b>Secure resolvers only</b> <span class="mute">— the servers ticked below</span></label>
+  <div class="card"><h3>DNS lookups <details class="why"><summary>ⓘ</summary><div>DNS turns a site name into an address. Every site you open needs a lookup, and whoever runs your DNS (usually your internet provider or VPN) sees every name. Noise lookups bury your real ones among ordinary sites.</div></details></h3>
+    <label class="opt"><input type="radio" name="dnsm" value="system"> <b>Your normal DNS</b> <span class="mute">(recommended) — the noise goes exactly where your real lookups go</span></label>
+    <label class="opt"><input type="radio" name="dnsm" value="secure"> <b>Secure resolvers only</b> <span class="mute">— only the addresses in the table below</span></label>
     <label class="opt"><input type="radio" name="dnsm" value="mix"> <b>Mix</b> <span class="mute">— switch between the two in random 10–60 minute blocks, spending</span> <input type="number" id="dShare" min="0" max="100" style="width:64px"> <span class="mute">% of the time on your normal DNS</span></label>
-    <label class="chk"><input type="checkbox" id="dOpen"><span><b>OpenNIC</b> servers that anonymize logs (<span id="dOpenN">0</span>) <details style="display:inline"><summary class="small">list</summary><div class="small mute" id="dOpenList"></div></details></span></label>
-    <label class="chk"><input type="checkbox" id="dQuad9"><span><b>Quad9</b> 9.9.9.9 and 149.112.112.112 <span class="mute">(blocks malware domains, DNSSEC)</span></span></label>
-    <div class="row">Your own resolvers <input type="text" id="dCustom" placeholder="optional, e.g. 1.2.3.4, 5.6.7.8" style="flex:1;min-width:220px"></div>
+    <div class="small" id="dSys" style="margin:6px 0"></div>
+    <div id="dWarn"></div>
+    <div class="row" style="margin-top:10px"><b>Secure resolvers</b> <span class="small mute">— the only IPs contacted in Secure / Mix mode</span>
+      <details class="why"><summary>ⓘ</summary><div><b>Primary</b> servers are used normally. A <b>fallback</b> is used only when no primary answers fast enough. <b>Status</b> shows the time for one lookup. <b>verified</b> means the server that really answered was the one listed. <b>⚠ intercepted</b> means something on your network (some ISPs, workplaces, hotels, cloud machines) secretly answered in its place, so lookups never reached that server.</div></details>
+      <span class="sp"></span><button id="dCheck">Check now</button><button id="dReset">Reset to recommended</button></div>
+    <table class="dns"><thead><tr><th>On</th><th>Name</th><th>IP address</th><th>Role</th><th>Note</th><th>Status</th><th></th></tr></thead><tbody id="dBody"></tbody></table>
+    <div class="row" style="margin-top:6px"><button id="dAdd">+ Add a resolver</button>
+      <details class="small"><summary>Add from the OpenNIC directory (<span id="dOpenN">0</span> no-log servers)</summary><div id="dOpenList"></div></details>
+      <span class="small mute">Slower than <input type="number" id="dSlow" min="50" max="3000" style="width:70px"> ms counts as not fast.</span></div>
   </div>
   <div class="card"><h3>General</h3>
     <div class="row">Speed <input type="number" id="sScale" step="0.1" min="0.05" style="width:90px"> <span class="small mute">1.0 = human pace; lower = faster (for testing)</span></div>
@@ -277,6 +293,7 @@ let dirty={set:false,tor:false};
 $('#bStart').onclick=()=>act('/api/start');
 $('#bStop').onclick=()=>act('/api/stop');
 $('#bPause').onclick=()=>act('/api/pause',{paused:!(S&&S.paused)});
+$('#tTest').onclick=()=>{act('/api/tor/selftest');toast('Testing Tor (up to a minute)…')};
 $('#bTest').onclick=()=>{act('/api/test');toast('Test hit sent — see Activity')};
 $('#bQuit').onclick=async()=>{if(confirm('Stop everything and quit noisyCricket?')){try{await api('/api/shutdown',{})}catch(e){}document.body.innerHTML='<main><div class="card"><h2>noisyCricket has quit.</h2><p>You can close this tab.</p></div></main>'}};
 ['tStart','tStop','tRestart','tNym','tInstall'].forEach(id=>$('#'+id).onclick=()=>act('/api/tor/'+{tStart:'start',tStop:'stop',tRestart:'restart',tNym:'newnym',tInstall:'install'}[id]));
@@ -311,7 +328,17 @@ function render(){
   // dashboard
   let hitsT=0,failT=0,last=0,lastSub='';
   s.lanes.forEach(l=>{hitsT+=l.hits;failT+=l.failures;if(l.last_hit_ts&&l.last_hit_ts>last){last=l.last_hit_ts;lastSub=l.name}});
-  $('#kHits').textContent=hitsT;$('#kFail').textContent=failT;
+  $('#kHits').textContent=hitsT;
+  const a=s.activity||{};
+  const mins=t=>Math.max(0,Math.round((t-Date.now()/1000)/60));
+  if(!s.running){$('#nowWhat').textContent='Stopped';$('#nowSub').textContent='Press ▶ Start.'}
+  else if(a.state==='session'){$('#nowWhat').textContent=(a.lane==='tor'?'🧅 ':'')+(a.doing||'browsing');
+    $('#nowSub').textContent=`Session ${a.session}${a.theme?' · topic: “'+a.theme+'”':''} · step ${a.steps||0} · about ${mins(a.until)} min left`}
+  else if(a.state==='break'){$('#nowWhat').textContent='☕ On a break';
+    $('#nowSub').textContent=`Back around ${new Date(a.until*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})} (in ~${mins(a.until)} min). People step away; so does noisyCricket. A background DNS lookup may happen meanwhile.`}
+  else if(a.state==='waiting'){$('#nowWhat').textContent='Waiting';$('#nowSub').textContent=a.why||''}
+  else if(a.state==='paused'){$('#nowWhat').textContent='Paused';$('#nowSub').textContent='Press Resume to continue.'}
+  else {$('#nowWhat').textContent='Starting…';$('#nowSub').textContent=''}$('#kFail').textContent=failT;
   $('#kUp').textContent=s.running?fmtDur(s.uptime):'—';
   $('#kPace').textContent=(s.hour_target!=null?`this hour: ~${s.hour_target} planned · `:'')+`${s.profile.rate.mode} · level ${s.profile.rate.level}`;
   $('#kLast').textContent=last?fmtDur(Date.now()/1000-last)+' ago':'—';$('#kLastSub').textContent=lastSub;
@@ -329,8 +356,9 @@ function render(){
 }
 function laneCard(l){
   const isT=l.name==='tor';
-  const rows=Object.entries(l.engines).map(([e,b])=>`<tr><td style="width:90px">${e==='onion'?'🧅 ':''}${esc(e)}</td><td><div class="bar ${isT?'tor':''}"><i style="width:${Math.min(100,100*b.spent/Math.max(1,b.per_day))}%"></i></div></td><td style="width:150px" class="mute">${b.spent}/${b.per_day} this hour</td></tr>`).join('');
-  const st=!l.open?'<span class="pill warn">waiting for Tor</span>':l.dimmed?'<span class="pill warn">backing off</span>':'<span class="pill ok">active</span>';
+  const maxSpent=Math.max(1,...Object.values(l.engines).map(b=>b.spent));
+  const rows=Object.entries(l.engines).map(([e,b])=>`<tr><td style="width:90px">${e==='onion'?'🧅 ':''}${esc(e)}</td><td><div class="bar ${isT?'tor':''}"><i style="width:${Math.min(100,100*b.spent/Math.max(1,maxSpent))}%"></i></div></td><td style="width:150px" class="mute">${b.spent} today${b.failures?` · ${b.failures} failed`:''}</td></tr>`).join('');
+  const st=!l.open?'<span class="pill warn">waiting for Tor</span>':l.dimmed?'<span class="pill warn" title="Recent requests failed, so this lane is used less for a while. It recovers on its own.">slowing down after errors</span>':'<span class="pill ok">active</span>';
   return `<div class="card"><h3>${isT?'🧅 Tor lane':'Clearnet lane'} ${st}</h3><table><tbody>${rows}</tbody></table>${l.last_error?`<div class="small warnc" style="margin-top:6px">last error: ${esc(l.last_error)}</div>`:''}</div>`
 }
 function renderSpark(){
@@ -379,6 +407,11 @@ function renderTorLog(){
 // tor
 function renderTorStatus(){
   const t=S.tor;
+  const st=t.selftest;
+  $('#tTestOut').innerHTML=!st?'<span class="mute">“Test Tor” checks that traffic really leaves through Tor and that an onion site loads.</span>':st.running?'Testing…':
+    `<b class="${st.exit&&st.exit.ok&&st.onion&&st.onion.ok?'ok':'warnc'}">${esc(st.summary||'')}</b><br>`+
+    (st.exit?`Through Tor to the web: ${st.exit.ok?`<span class="ok">✓ yes</span> — sites see Tor exit ${esc(st.exit.ip||'')} (${st.exit.ms} ms)`:`<span class="bad">✗ ${esc(st.exit.error||'not via Tor')}</span>`}<br>`:'')+
+    (st.onion?`Onion site (Tor Project): ${st.onion.ok?`<span class="ok">✓ loaded</span> in ${st.onion.ms} ms`:`<span class="bad">✗ ${esc(st.onion.error||('HTTP '+st.onion.status))}</span>`}`:'');
   $('#tState').textContent=({stopped:'Stopped',installing:'Installing…',starting:'Starting…',bootstrapping:'Connecting…',ready:'Ready 🧅',error:'Error'})[t.state]||t.state;
   $('#tBar').style.width=(t.state==='installing'?t.install_progress*100:t.bootstrap_pct)+'%';
   $('#tSum').textContent=(t.error?t.error:t.state==='installing'?'Downloading & verifying the official Tor bundle…':t.bootstrap_summary||'')+(t.hint?'  ⚠ '+t.hint:'');
@@ -410,8 +443,11 @@ function fillSettings(force){
   $('#engines').innerHTML=Object.entries(p.engines).map(([n,e])=>`<div class="row"><label class="chk" style="margin:0;width:150px"><input type="checkbox" data-en="${n}" ${e.enabled?'checked':''}> ${n==='onion'?'🧅 onion':n}</label><input type="number" min="0" data-bud="${n}" value="${e.budget_per_day}" style="width:100px"> <span class="small mute">weight${n==='onion'?' (needs Tor)':''}</span></div>`).join('');
   const r=p.rate||{mode:'random',level:5};document.querySelector(`input[name=srmode][value=${r.mode}]`).checked=true;$('#sLevel').value=r.level;rateInfo('sLevel','sLevelInfo');
   const d=p.dns||{};(document.querySelector(`input[name=dnsm][value=${d.mode||'system'}]`)||{}).checked=true;
-  $('#dShare').value=Math.round((d.system_share??0.7)*100);$('#dOpen').checked=d.opennic!==false;$('#dQuad9').checked=!!d.quad9;$('#dCustom').value=(d.custom||[]).join(', ');
-  $('#dOpenN').textContent=(S.opennic||[]).length;$('#dOpenList').innerHTML=(S.opennic||[]).map(o=>esc(o[1]+' '+o[0]+' ('+(o[2]||'?')+')')).join('<br>');
+  $('#dShare').value=Math.round((d.system_share??0.7)*100);$('#dSlow').value=d.slow_ms||250;
+  dRes=(d.resolvers||[]).map(r=>({...r}));renderDnsTable();
+  $('#dOpenN').textContent=(S.opennic||[]).length;
+  $('#dOpenList').innerHTML=(S.opennic||[]).map((o,i)=>`<div><button data-oadd="${i}" style="padding:1px 8px">+</button> ${esc('OpenNIC '+o[1])} <code>${esc(o[0])}</code> <span class="mute">${esc(o[2]||'')}</span></div>`).join('');
+  $$('[data-oadd]').forEach(b=>b.onclick=()=>{const o=S.opennic[+b.dataset.oadd];dRes=readDnsTable();if(dRes.some(r=>r.ip===o[0]))return toast('Already in the list');dRes.push({ip:o[0],name:'OpenNIC '+o[1],role:'primary',enabled:true,note:'OpenNIC, '+(o[2]||'')+'; anonymized logs'});renderDnsTable();markDirty()});
   $('#sScale').value=p.realtime_scale;$('#sMaxF').value=p.daily_max_failures;$('#sProxy').value=p.transports.clearnet.proxy||'';
   $('#sClear').checked=p.transports.clearnet.enabled;
   $('#sBrowser').value=p.transports.clearnet.browser||'auto';$('#sVisible').checked=!!p.transports.clearnet.browser_visible;
@@ -421,15 +457,44 @@ function fillSettings(force){
 $('#sSave').onclick=async()=>{
   const engines={};$$('[data-en]').forEach(i=>engines[i.dataset.en]={enabled:i.checked});$$('[data-bud]').forEach(i=>engines[i.dataset.bud].budget_per_day=parseInt(i.value||0));
   try{await api('/api/config',{realtime_scale:parseFloat($('#sScale').value),daily_max_failures:parseInt($('#sMaxF').value),engines,rate:{mode:document.querySelector('input[name=srmode]:checked').value,level:parseFloat($('#sLevel').value)},
-      dns:{mode:document.querySelector('input[name=dnsm]:checked').value,system_share:parseInt($('#dShare').value||70)/100,opennic:$('#dOpen').checked,quad9:$('#dQuad9').checked,custom:$('#dCustom').value},
+      dns:{mode:document.querySelector('input[name=dnsm]:checked').value,system_share:parseInt($('#dShare').value||70)/100,slow_ms:parseInt($('#dSlow').value||250),resolvers:readDnsTable()},
       transports:{clearnet:{enabled:$('#sClear').checked,proxy:$('#sProxy').value||null,browser:$('#sBrowser').value,browser_visible:$('#sVisible').checked}},
       queries:{live:$('#qLive').checked,dataset:$('#qData').checked,builtin:$('#qBuiltin').checked,words:$('#qWords').checked}});
     await api('/api/app',{autostart:$('#sAuto').checked});dirty.set=false;$('#sSaved').textContent='saved ✓ '+(S&&S.running?'(Stop → Start to apply)':'');toast('Settings saved');poll()}catch(e){toast(e.message,1)}
 };
 $('#sWiz').onclick=()=>showWiz();
+let dRes=[];
+function markDirty(){dirty.set=true;$('#sSaved').textContent='unsaved changes'}
+function renderDnsTable(){
+  $('#dBody').innerHTML=dRes.map((r,i)=>`<tr data-i="${i}"><td><input type="checkbox" data-f="enabled" ${r.enabled!==false?'checked':''}></td>
+    <td><input type="text" data-f="name" value="${esc(r.name)}"></td><td><input type="text" data-f="ip" value="${esc(r.ip)}" style="font-family:ui-monospace,monospace"></td>
+    <td><select data-f="role"><option value="primary" ${r.role==='primary'?'selected':''}>primary</option><option value="fallback" ${r.role==='fallback'?'selected':''}>fallback</option></select></td>
+    <td><input type="text" data-f="note" value="${esc(r.note||'')}"></td><td class="small" id="dh-${i}">—</td><td><button data-del="${i}" title="Remove" style="padding:1px 8px">✕</button></td></tr>`).join('')||'<tr><td colspan=7 class="mute">No resolvers. Add one, or Reset to recommended.</td></tr>';
+  $$('#dBody input,#dBody select').forEach(x=>x.oninput=markDirty);
+  $$('[data-del]').forEach(b=>b.onclick=()=>{dRes=readDnsTable();dRes.splice(+b.dataset.del,1);renderDnsTable();markDirty()});
+  renderDnsHealth();
+}
+function readDnsTable(){return $$('#dBody tr[data-i]').map(tr=>{const g=f=>tr.querySelector(`[data-f=${f}]`);return {enabled:g('enabled').checked,name:g('name').value.trim(),ip:g('ip').value.trim(),role:g('role').value,note:g('note').value.trim()}}).filter(r=>r.ip)}
+$('#dAdd').onclick=()=>{dRes=readDnsTable();dRes.push({ip:'',name:'',role:'primary',enabled:true,note:''});renderDnsTable();markDirty()};
+$('#dReset').onclick=async()=>{if(!confirm('Replace the resolver list with the recommended one?'))return;try{await api('/api/config',{dns:{reset_resolvers:true}});await poll();fillSettings(true);toast('Recommended resolvers restored')}catch(e){toast(e.message,1)}};
+$('#dCheck').onclick=()=>{act('/api/dns/check');toast('Checking each resolver…')};
+['dShare','dSlow'].forEach(id=>$('#'+id).oninput=markDirty);
+$$('input[name=dnsm]').forEach(x=>x.onchange=markDirty);
+function renderDnsHealth(){
+  if(!S||!S.dns)return;const by={};S.dns.resolvers.forEach(h=>by[h.ip]=h);
+  dRes.forEach((r,i)=>{const c=$('#dh-'+i);if(!c)return;const h=by[r.ip];
+    if(!h||h.verdict==='unknown'){c.innerHTML='<span class="mute">not checked</span>';return}
+    c.innerHTML={ok:`<span class="ok">✓ ${h.rtt_ms} ms</span>${h.egress?' <span class="mute">verified</span>':''}`,
+      slow:`<span class="warnc">slow ${h.rtt_ms} ms</span>`,down:`<span class="bad">✗ ${esc(h.error||'no answer')}</span>`,
+      intercepted:`<span class="warnc" title="answered by ${esc(h.egress)}">⚠ intercepted</span>`}[h.verdict]||esc(h.verdict)});
+  const sy=S.dns.system;
+  $('#dSys').innerHTML=sy.length?`Your normal DNS right now: ${sy.map(x=>`<code>${esc(x.ip)}</code>${x.what?' <span class="mute">('+esc(x.what)+')</span>':''}`).join(', ')}`:'<span class="mute">Your normal DNS: press “Check now” to see which servers this computer uses.</span>';
+  $('#dWarn').innerHTML=S.dns.intercepted?`<div class="note warn small"><b>⚠ Your network appears to intercept DNS.</b> Every resolver below was really answered by the same machine (<code>${esc((S.dns.resolvers[0]||{}).egress||'?')}</code>), so lookups don't reach the servers listed. A VPN usually fixes this; until then “Your normal DNS” is the honest choice.</div>`:'';
+  $('#dCheck').disabled=S.dns.checking;$('#dCheck').textContent=S.dns.checking?'Checking…':'Check now';
+}
 function rateInfo(sl,out){
   if(!S||!S.rate_info)return;const d=S.rate_info[parseInt($('#'+sl).value)-1];
-  $('#'+out).innerHTML=`<b>Level ${d.level} — ${esc(d.name)}.</b> About <b>${d.searches_per_hour} searches an hour</b> (≈${d.actions_per_hour} actions an hour counting page visits and DNS lookups). Over a 15-hour waking day that's ≈${d.searches_per_day_awake} searches. For comparison, an average person does about 4 searches a day (SparkToro study of US users), so this is about <b>${d.vs_average_person}×</b> that. Noise only hides you if it's at least comparable to your real activity.`;
+  $('#'+out).innerHTML=`<b>Level ${d.level} — ${esc(d.name)}.</b> About <b>${d.minutes_per_hour} minutes of browsing an hour</b>, in sessions with breaks between: roughly ${d.searches_per_hour} searches an hour plus the pages they lead to. Over a 15-hour waking day that's ≈${d.searches_per_day_awake} searches. For comparison, an average person does about 4 searches a day (SparkToro study of US users), so this is about <b>${d.vs_average_person}×</b> that. Noise only hides you if it's at least comparable to your real activity.`;
 }
 $('#wLevel').oninput=()=>rateInfo('wLevel','wLevelInfo');
 $('#sLevel').oninput=()=>{rateInfo('sLevel','sLevelInfo');dirty.set=true;$('#sSaved').textContent='unsaved changes'};
@@ -437,6 +502,7 @@ $('#fRefresh').onclick=()=>{if(confirm('Download fresh lists now from Google Tre
 $('#fAuto').onchange=()=>act('/api/app',{auto_refresh_sources:$('#fAuto').checked});
 $('#sBrowser').oninput=$('#sVisible').oninput=()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'};
 function renderRealism(){
+  renderDnsHealth();
   const b=S.browser;
   $('#sBrowserInfo').innerHTML=b.active?`<span class="ok">✓ using ${esc(b.detail.split(/[\\/]/).pop())}</span>`:b.setting==='off'?'<span class="mute">off</span>':`<span class="warnc">⚠ ${esc(b.detail)}</span>`;
   const label={deny:'Safety blocklist',trends:'Google Trends',wiki:'Wikipedia most-read',news:'BBC headlines',dataset:'Real past searches',tranco:'Popular sites (Tranco)',opennic:'OpenNIC resolvers'};

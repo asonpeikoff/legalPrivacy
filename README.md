@@ -1,4 +1,4 @@
-# noisyCricket v2.5
+# noisyCricket v2.6
 
 Conducts random searches, crawls, and DNS lookups so that mass traffic and
 bulk analysis of any one person's browsing is less useful. Fully automated,
@@ -49,7 +49,7 @@ typo can never be dispatched; add your own seeds on the Tor tab.
 | **Dashboard** | hits, failures, uptime, hits-per-minute chart, per-lane per-engine budgets, one-click test hit |
 | **Activity** | every request: time, lane, engine, URL, where the query came from, what the browser did (scrolls, depth, reading time, click/tap, download), status, latency |
 | **Live Log** | one merged log (app, scheduler, clearnet, onion, **Tor's own output**), level + source filters, search, follow, download |
-| **🧅 Tor** | status + bootstrap progress, version/ports/PID/traffic, **Start / Stop / Restart / New identity / Install**, live circuits table (onion-service circuits marked `HS_CLIENT_*`), Tor-only log, mode switches, onion seeds, bridges |
+| **🧅 Tor** | **Test Tor** (proves traffic leaves through Tor and an onion site loads), status + bootstrap progress, version/ports/PID/traffic, **Start / Stop / Restart / New identity / Install**, live circuits table (onion-service circuits marked `HS_CLIENT_*`), Tor-only log, mode switches, onion seeds, bridges |
 | **Settings** | per-engine budgets & presets, speed, failure cap, proxy, autostart, **Realism** (real browser, show window, query sources + their live status) |
 | **Health** | plain-language self-checks (libs, internet, Tor program/status, seeds, ports) |
 
@@ -111,27 +111,29 @@ noisyCricket v2 - one scheduler, two transports, three engines
 
 ## How it works
 
-**How much, and when.** You choose a level from 1 to 10. Each hour noisyCricket plans
-that hour's activity and spreads it across the hour. It never fires a burst on the hour mark.
+**How it behaves.** noisyCricket browses in **sessions**, like a person sitting down at a
+computer. A session lasts a few to 30 minutes on one topic. It searches, opens a result,
+reads it for 10 seconds to 4 minutes while scrolling and pausing, maybe follows a link, goes
+back to the results for another one, then searches for something related to what it just read.
+Then it takes a **break** and later starts a new session on a different topic. The dashboard's
+**Right now** card always says what it's doing ("reading bbc.com", "on a break until 14:35").
 
-| Mode | What happens |
-|---|---|
-| **Randomized** (recommended) | Every hour's amount varies around your level (log-normal), follows a day/night curve that's busiest in the evening, and about 1 hour in 8 is nearly silent ("away from the computer"). |
-| **Steady** | About the same amount every hour. |
+The slider (1–10) sets how many minutes an hour are spent browsing. **Randomized**
+(recommended) varies that hour to hour, busier in the evening, sometimes nearly idle;
+**Steady** keeps it constant.
 
-| Level | Searches / hour | Over a 15-hour waking day |
+| Level | Browsing per hour | ≈ searches per hour |
 |---|---|---|
-| 1 | 0.5 | ~8 |
-| 3 | 1.5 | ~23 |
-| 5 (default) | 4 | ~60 |
-| 7 | 9 | ~135 |
-| 10 | 30 | ~450 |
+| 1 | 2 min | 0.5 |
+| 3 | 6 min | 1.5 |
+| 5 (default) | 13 min | 4 |
+| 7 | 24 min | 9 |
+| 10 | 52 min | 30 |
 
 For scale: active US desktop users average about 126 Google searches a month,
 roughly 4 a day ([SparkToro, 2024](https://sparktoro.com/blog/new-research-how-often-do-americans-search-google-which-search-verticals-do-they-use/)).
-Noise only hides you if it's at least comparable to your real activity, so even
-the middle levels are well above that. Page visits and DNS lookups come on top of
-searches, in proportion to the activity mix in Settings.
+If search engines show "are you a robot" checks, a session switches engines, then
+browses sites directly instead of retrying.
 
 | Engine | What a hit is |
 |---|---|
@@ -144,9 +146,15 @@ searches, in proportion to the activity mix in Settings.
 
 | Setting | What it does |
 |---|---|
-| **Your normal DNS** (default, recommended) | Uses your computer's own resolver: your router, ISP or VPN DNS, or whatever encrypted DNS your system uses. The noise lands exactly where your real lookups do, so whoever can see your real DNS sees the noise mixed in. |
-| **Secure resolvers only** | OpenNIC servers that anonymize their logs (11 shipped, ≥95% reliable), optionally Quad9 (`9.9.9.9`, `149.112.112.112`), plus any resolver IPs you add. |
-| **Mix** | Switches between the two in random 10–60 minute blocks, spending a share of the time you set (default 70%) on your normal DNS. |
+| **Your normal DNS** (default, recommended) | Uses your computer's own resolver (router, ISP, VPN or system encrypted DNS). Noise lands where your real lookups do. |
+| **Secure resolvers only** | Only the IPs in the resolver table: by default OpenNIC `80.152.203.134` (ns2.de), `193.31.24.55` (ns3.de), `80.153.146.105` (ns4.de) as primaries, and Quad9 `9.9.9.9` as a fallback used only when the primaries are down or slower than 250 ms. Every row is editable; "Reset to recommended" restores these. |
+| **Mix** | Switches between the two in random 10–60 minute blocks, spending a share you set (default 70%) on your normal DNS. |
+
+**Checked, not assumed.** "Check now" times each resolver and asks it for `whoami.akamai.net`,
+which reveals the machine that really did the lookup. If something on your network secretly
+answers DNS in place of the servers you chose (some ISPs, workplaces, hotels and cloud hosts
+do this), the table marks them **⚠ intercepted** and says so. Replies are only accepted from
+the IP that was asked.
 
 Why normal DNS is the default: sending noise to resolvers you never otherwise use
 would hide nothing from whoever sees your real lookups, and would itself be an
