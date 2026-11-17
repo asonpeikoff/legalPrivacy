@@ -297,6 +297,7 @@ def apply_overrides(profile: Profile, raw: dict[str, Any]) -> Profile:
         merged = profile.rate.__dict__ | p["rate"]
         profile.rate = RateConfig(**{k: v for k, v in merged.items() if k in RateConfig.__dataclass_fields__})
         profile.rate.level = float(profile.rate.level)
+        profile.rate.randomness = float(profile.rate.randomness)
         try:
             profile.rate.validate()
         except ValueError as exc:

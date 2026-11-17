@@ -40,7 +40,7 @@ NEWS_FEEDS = [f"https://feeds.bbci.co.uk/news/{p}rss.xml" for p in
                "entertainment_and_arts/")]
 TRANCO_URL = "https://tranco-list.eu/top-1m.csv.zip"
 DENY_URL = "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/fakenews-gambling-porn/hosts"
-OPENNIC_URL = "https://api.opennicproject.org/geoip/?json&ipv=4&anon=true&pct=95&res=50"
+OPENNIC_URL = "https://servers.opennic.org/"     # the public server table (features + Pass/Fail)
 DS_ROWS = "https://datasets-server.huggingface.co/rows"
 DATASETS = [  # (dataset, config, split, field, conservative max row index)
     ("microsoft/ms_marco", "v2.1", "train", "query", 800_000),
@@ -106,7 +106,10 @@ class FeedStore:
 
     def _entry(self, name: str) -> dict:
         """User's own refreshed copy if any, else the snapshot shipped with the app."""
-        return self.data.get(name) or self.bundled.get(name) or {}
+        own = self.data.get(name)
+        if name == "opennic" and own and not all(str(x).count("|") >= 4 for x in own.get("items", [])):
+            own = None          # an older copy without the logging/encryption checks: don't trust it
+        return own or self.bundled.get(name) or {}
 
     def items(self, name: str) -> list:
         with self._lock:
@@ -241,6 +244,9 @@ class FeedStore:
         return out
 
     def _fetch_opennic(self) -> list[str]:
+        return parse_opennic_servers(_get(OPENNIC_URL, timeout=40).text)
+
+    def _fetch_opennic_api_unused(self) -> list[str]:
         """OpenNIC Tier-2 resolvers with anonymized logs, >=95% reliable, one per admin: 'ip|name|loc'."""
         import ipaddress
         out = []
@@ -261,3 +267,40 @@ class FeedStore:
                 if host not in ("0.0.0.0", "localhost"):
                     out.append(host)
         return out
+
+
+def parse_opennic_servers(html: str) -> list[str]:
+    """OpenNIC servers from servers.opennic.org that pass every requirement:
+
+      * status Pass (the table's own reachability/correctness check),
+      * no logs kept, or logs anonymized,
+      * at least one encrypted protocol: DNSCrypt, DNS over HTTPS or DNS over TLS.
+
+    Returns 'ip|host|location|logs|protocols', no-logs servers first.
+    logs is "none" or "anonymized"; protocols is e.g. "DoH+DoT".
+    """
+    import ipaddress as _ip
+    out = []
+    for group, body in re.findall(r"<div name='ccg\[([A-Z]+)\]'[^>]*>(.*?)</div>", html, re.S):
+        for row in re.findall(r"<p><span>(.*?)</p>", body, re.S):
+            feats = set(re.findall(r"title='([^']+)'", row.split("</span>")[0]))
+            status = re.search(r"class='stat' title='([^']+)'", row)
+            host = re.search(r"<a id='([^']+)'", row)
+            ipv4 = re.search(r"class='mono ipv4'[^>]*>([^<&]+)", row)
+            place = re.search(r'class=\'host\' title="\(([^)]*)\)', row)
+            if not (status and host and ipv4) or status.group(1) != "Passing":
+                continue
+            logs = "none" if "No logs kept" in feats else "anonymized" if "Logs are anonymized" in feats else ""
+            protos = [name for label, name in (("DNScrypt", "DNSCrypt"), ("DNS over HTTP", "DoH"),
+                                              ("DNS over TLS", "DoT")) if label in feats]
+            if not logs or not protos:
+                continue
+            ip = ipv4.group(1).strip()
+            try:
+                _ip.IPv4Address(ip)
+            except ValueError:
+                continue
+            short = host.group(1).replace(".dns.opennic.glue", "")
+            loc = place.group(1).strip() if place and place.group(1).strip() else group
+            out.append((0 if logs == "none" else 1, f"{ip}|{short}|{loc}|{logs}|{'+'.join(protos)}"))
+    return [x for _, x in sorted(out, key=lambda t: t[0])]
