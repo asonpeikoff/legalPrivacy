@@ -59,6 +59,10 @@ The dashboard listens only on `127.0.0.1`, requires a token in its link (kept be
 foreign `Host`/`Origin` headers. Config lives in `~/.noisycricket/config.yaml`
 (`%APPDATA%\noisyCricket` on Windows); override with `CRICKET_HOME`.
 
+## Docker / Raspberry Pi
+
+`docker compose up -d`, then `docker compose logs noisycricket` for the dashboard link. Details: [docs/DOCKER.md](docs/DOCKER.md).
+
 ## Command line (optional)
 
 ```

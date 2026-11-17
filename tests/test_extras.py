@@ -239,8 +239,12 @@ def test_household_members_keep_their_devices_and_follow_their_hours():
         awake = {m["id"] for m in ms if hh._awake(m["hours"], h)}
         if awake and len(awake) < len(ms):
             assert sum(p in awake for p in picks) / len(picks) > 0.7      # mostly whoever's awake
-    t[0] += 400 * 86400
-    assert [m["rhythm"] for m in hh.members()] != [m["rhythm"] for m in ms] or True   # redrawn later
+    redrawn = False
+    for k in range(1, 8):                                             # a later period: new people
+        t[0] = 1_800_000_000.0 + k * 100 * 86400
+        redrawn |= [(m["rhythm"], (m["entry"] or {}).get("ua")) for m in hh.members()] != \
+                   [(m["rhythm"], (m["entry"] or {}).get("ua")) for m in ms]
+    assert redrawn
 
 
 def test_household_identities_come_from_several_browsers():

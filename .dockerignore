@@ -1,0 +1,10 @@
+.git
+**/__pycache__
+*.pyc
+build
+dist
+.venv
+legacy-src
+nbproject
+docs
+tests

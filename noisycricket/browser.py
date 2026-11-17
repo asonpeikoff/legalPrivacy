@@ -206,7 +206,7 @@ class BrowserTransport(Transport):
                 "--no-first-run", "--disable-background-networking"]
         if self.offscreen:                                 # a real window, placed where no screen is
             args += ["--window-position=-32000,-32000", "--window-size=1366,850"]
-        if hasattr(os, "geteuid") and os.geteuid() == 0:
+        if os.environ.get("CRICKET_NO_SANDBOX") == "1" or (hasattr(os, "geteuid") and os.geteuid() == 0):
             args.append("--no-sandbox")                    # Chromium refuses to sandbox as root
         self._browser = self._pw.chromium.launch(executable_path=self.executable, headless=self.headless,
                                                  args=args, proxy={"server": self.proxy} if self.proxy else None)
