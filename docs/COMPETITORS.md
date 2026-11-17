@@ -32,21 +32,21 @@ or filtered OpenNIC resolvers; a local dashboard with live activity.
 |---|---|---|---|
 | Active hours (only run between set times) | phantom-noise, NoisyCompany | Optional schedule in Settings | **added** |
 | Search engine on/off and relative weights | phantom-noise | Optional, in Settings | **added** |
-| Occasional typos in queries | phantom-noise | Optional, off by default | **added** |
+| Occasional typos in queries | phantom-noise | Already ~3% of searches; optional extra raises it to ~1 in 9 | **added** |
 | Hover and text selection while reading | phantom-noise | Part of human behaviour | **added** |
 | Low-data mode: no images or video | isp-data-pollution, NoisyCompany | Optional, off by default (real browsers load images) | **added** |
 | Daily data cap and data-used counter | NoisyCompany, isp-data-pollution (GB/month) | Optional cap; usage on the dashboard | **added** |
 | Export activity as JSON / CSV | phantom-noise | Activity tab download | **added** |
 | Polite mode: per-site minimum gap, robots.txt | madereddy/noisy, NoisyCompany, isp-data-pollution | Optional, off by default | **added** |
 | Browser-like DNS (AAAA and HTTPS records too) | NoisyCompany | Optional, on by default | **added** |
-| Interest personas (coherent themes, rotated) | NoisyCompany, phantom-noise categories | Optional, alongside My List | planned |
+| Interest personas (coherent themes, rotated) | NoisyCompany, phantom-noise categories | Optional, alongside My List | **added** |
 | Household masking (2–5 virtual people with their own hours) | NoisyCompany | Optional | planned |
-| Follow your real activity (blend with your traffic volume, or back off when you're busy) | DNoiSe, NoisyCompany netwatch | Optional | planned |
+| Follow your real activity (blend with your traffic volume, or back off when you're busy) | DNoiSe, NoisyCompany netwatch | Optional | **added** |
 | Pi-hole / AdGuard Home integration | DNoiSe, NoisyCompany | Optional | planned |
 | Separability self-test (how easily noise is told apart) | NoisyCompany study | Tools tab | planned |
-| Data / energy estimate before running | NoisyCompany | Tools tab | planned |
-| Local privacy check with advice | NoisyCompany | Tools tab | planned |
-| Prometheus metrics | noisier, NoisyCompany | Optional endpoint | planned |
+| Data / energy estimate before running | NoisyCompany | Tools tab | **added** |
+| Local privacy check with advice | NoisyCompany | Tools tab | **added** |
+| Prometheus metrics | noisier, NoisyCompany | Optional endpoint | **added** |
 | Docker image, Raspberry Pi, Home Assistant | many | Packaging | planned |
 | Drive your real Firefox, not just Chromium | NoisyCompany companion | Optional | planned |
 | CrUX top-sites list (per country) as a site source | madereddy/noisy | Optional source next to Tranco | planned |

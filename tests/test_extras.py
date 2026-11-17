@@ -119,3 +119,76 @@ def test_polite_mode_avoids_the_same_site_within_a_minute():
     got.clear()
     r2.run_once(wait=False)
     assert got == ["https://same.example/a"]                  # off: no change
+
+
+def test_interest_personas_are_stable_within_a_period_and_change_after():
+    from noisycricket.interests import CATEGORIES, Interests
+    t = [0.0]
+    it = Interests(random.Random(1), None, 3, 10, "salt", clock=lambda: t[0])
+    first = it.active()
+    assert len(first) == 3 and all(c in CATEGORIES for c in first)
+    t[0] = 9 * 86400
+    assert it.active() == first
+    changed = False
+    for k in range(1, 6):
+        t[0] = k * 10 * 86400 + 1
+        changed |= it.active() != first
+    assert changed
+    other = Interests(random.Random(1), None, 3, 10, "another-salt", clock=lambda: 0.0)
+    assert sorted(CATEGORIES)  # and different installs usually differ:
+    assert other.active() != first or len(CATEGORIES) <= 3
+    only = Interests(random.Random(2), ["Cooking", "Books"], 3, 10, "s")
+    assert set(only.active()) == {"Cooking", "Books"}
+
+
+def test_interest_share_steers_sites_and_searches():
+    from noisycricket.domains import DomainPool
+    from noisycricket.interests import CATEGORIES, Interests
+    from noisycricket.queries import QuerySource
+    it = Interests(random.Random(3), ["Gardening"], 1, 10, "s")
+    pool = DomainPool(random.Random(4), None)
+    pool.interests, pool.interest_share = it, 0.5
+    picks = [pool.pick(browsable=True) for _ in range(1000)]
+    share = sum(p in CATEGORIES["Gardening"]["sites"] for p in picks) / len(picks)
+    assert 0.38 < share < 0.62
+    qs = QuerySource(random.Random(5), None)
+    qs.interests, qs.interest_share = it, 1.0
+    q, origin = qs.next()
+    assert origin == "interest"
+
+
+def test_netwatch_rate_excludes_our_own_bytes_and_tracks_idle():
+    from noisycricket.netwatch import NetWatch, total_bytes
+    vals, t = [1_000_000, 1_000_000 + 250_000], [0.0]
+    nw = NetWatch(reader=lambda: vals.pop(0), clock=lambda: t[0])
+    nw.sample()
+    t[0] = 10.0
+    rate = nw.sample(own_bytes_since_last=50_000)
+    assert abs(rate - 160.0) < 0.5                         # 200 kB in 10 s = 160 kbit/s
+    assert total_bytes() is None or total_bytes() >= 0     # real counters readable here (or unknown)
+
+
+def test_backoff_pauses_while_busy():
+    r = _runner({"activity": "backoff", "busy_kbps": 100})
+    from noisycricket.netwatch import NetWatch
+    nw = NetWatch(reader=lambda: 0)
+    nw.rate_kbps = 900.0
+    r._netwatch, r._nw_next, r._nw_bytes, r._nw_said = nw, 1e18, 0, ""
+    slept = []
+    r.sleep_fn = slept.append
+    assert r._activity_says_wait() and slept == [30.0]
+    nw.rate_kbps = 5.0
+    assert not r._activity_says_wait()
+
+
+def test_estimate_and_privacy_check_have_the_expected_shape():
+    import tempfile
+    os.environ["CRICKET_HOME"] = tempfile.mkdtemp()
+    from noisycricket.controller import Controller
+    c = Controller()
+    e = c.estimate()
+    assert e["mb_per_day"] >= 0 and e["gb_per_month"] >= 0 and e["hours_per_day"] == 15.0
+    c.apply_config({"extras": {"daily_data_mb": 1}})
+    assert c.estimate()["mb_per_day"] <= 1
+    names = {x["name"] for x in c.privacy_check()}
+    assert {"Content blocker", "VPN", "Encrypted DNS", "Real browser for noise"} <= names

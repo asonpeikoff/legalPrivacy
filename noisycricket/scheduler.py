@@ -278,6 +278,35 @@ class Runner:
                    f"({self.profile.rate.mode}, level {self.profile.rate.level:g}).")
         return total
 
+    def _activity_says_wait(self) -> bool:
+        """Settings → Extras → Your own activity. True = skip a turn (after sleeping)."""
+        ex = getattr(self.profile, "extras", None)
+        if ex is None or ex.activity == "off":
+            return False
+        if not hasattr(self, "_netwatch"):
+            from .netwatch import NetWatch
+            self._netwatch, self._nw_next, self._nw_bytes, self._nw_said = NetWatch(), 0.0, 0, ""
+        now = time.monotonic()
+        if now >= self._nw_next:
+            self._netwatch.sample(self.bytes_today - self._nw_bytes)
+            self._nw_bytes, self._nw_next = self.bytes_today, now + 15
+        nw = self._netwatch
+        if ex.activity == "backoff" and nw.rate_kbps > ex.busy_kbps:
+            if self._nw_said != "busy":
+                self._emit("info", "scheduler", f"You're using the connection ({nw.rate_kbps:.0f} kbit/s): "
+                                                "pausing noise until it quietens.")
+                self._nw_said = "busy"
+            self.sleep_fn(30.0)
+            return True
+        if ex.activity == "follow" and nw.idle_for() > 600 and self.rng.random() < 0.8:
+            if self._nw_said != "idle":
+                self._emit("info", "scheduler", "You've been idle for 10 minutes: noise slows down until you're back.")
+                self._nw_said = "idle"
+            self.sleep_fn(30.0)
+            return True
+        self._nw_said = ""
+        return False
+
     def _active_hour(self, hour: int) -> bool:
         ex = getattr(self.profile, "extras", None)
         if ex is None or not ex.active_hours:
@@ -583,6 +612,8 @@ class Runner:
                 continue
             if self.paused:
                 self.sleep_fn(1.0)
+                continue
+            if self._activity_says_wait():
                 continue
             try:
                 worked = self.run_once()

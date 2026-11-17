@@ -141,3 +141,68 @@ def speed_test(proxy: str | None = None, progress: Callable[[str], None] = lambd
     except Exception as exc:
         result["errors"].append(f"upload: {exc}")
     return result
+
+
+# ── local privacy check (idea from NoisyCompany's `privacy`) ────────────────
+UBO_CHROMIUM_IDS = ("cjpalhdlnbpafiamejdnhcphjbkeiagm", "ddkjiahejlhfcafbddmgiahcphecmpfh")   # uBO, uBO Lite
+UBO_FIREFOX = "uBlock0@raymondhill.net.xpi"
+_VPN_IF = ("tun", "tap", "wg", "ppp", "ipsec", "nordlynx", "proton", "mullvad", "tailscale")
+
+
+def _content_blocker() -> list[str]:
+    import glob
+    from .history import _chromium_bases, _firefox_bases
+    found = []
+    for name, base in _chromium_bases():
+        for ext in UBO_CHROMIUM_IDS:
+            if glob.glob(os.path.join(base, "*", "Extensions", ext)):
+                found.append(name)
+                break
+    for base in _firefox_bases():
+        if glob.glob(os.path.join(base, "*", "extensions", UBO_FIREFOX)):
+            found.append("Firefox")
+    return sorted(set(found))
+
+
+def _vpn_interfaces() -> list[str]:
+    import socket
+    try:
+        names = [n for _, n in socket.if_nameindex()]
+    except (OSError, AttributeError):
+        return []
+    return [n for n in names if n.lower().startswith(_VPN_IF)]
+
+
+def privacy_check(ctl) -> list[dict]:
+    """Plain-language checks of what actually protects you, with advice. Nothing is sent."""
+    out = []
+
+    def add(name, status, detail, advice=""):
+        out.append({"name": name, "status": status, "detail": detail, "advice": advice})
+
+    blockers = _content_blocker()
+    add("Content blocker", "ok" if blockers else "warn",
+        f"uBlock Origin found in: {', '.join(blockers)}" if blockers else "uBlock Origin not found in your browsers",
+        "" if blockers else "Blocking trackers stops more profiling than any amount of noise. Install uBlock Origin first.")
+    vpn = _vpn_interfaces()
+    add("VPN", "info", f"VPN-style network interface: {', '.join(vpn)}" if vpn else "No VPN interface seen",
+        "A VPN moves what your ISP sees to the VPN provider; noise still helps against whoever sees your traffic.")
+    dot = "+DNSOverTLS" in _run(["resolvectl", "status"]) if platform.system() == "Linux" else False
+    res = system_resolvers()["resolvers"]
+    add("Encrypted DNS", "ok" if dot else "info",
+        "DNS over TLS is on (systemd-resolved)" if dot else
+        f"Your system resolvers: {', '.join(res) or 'unknown'}. Whether they are encrypted can't be seen from here.",
+        "" if dot else "Turning on encrypted DNS (DoH/DoT) in your OS or router hides lookups from your ISP.")
+    tor_on = ctl._tor_cfg().enabled
+    add("Tor in the mix", "ok" if tor_on else "info", "On: .onion noise runs" if tor_on else "Off",
+        "" if tor_on else "Optional. Turning it on adds Tor traffic to your mix (🧅 Tor tab).")
+    bi = ctl.browser_info()
+    add("Real browser for noise", "ok" if bi["active"] else "warn",
+        "Noise runs in a real browser" if bi["active"] else f"Plain HTTP only ({bi['detail']})",
+        "" if bi["active"] else "Plain HTTP can't scroll or run pages and is easier to tell apart. Install Playwright and Chrome.")
+    ident = ctl.profile.identity
+    own = ident.ua_mode == "pin" and ident.ua_pin == "own"
+    add("Noise looks like your browser", "ok" if own else "info",
+        "Pinned to your own browser's user agent" if own else "User agent rotates",
+        "" if own else "Recommended: Settings → User agent → Pin to my own browser's user agent.")
+    return out
