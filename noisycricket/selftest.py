@@ -217,13 +217,12 @@ def evaluate(real: list[tuple[float, str]], noise: list[tuple[float, str]], rank
 
 
 def predict(model, site: str, hour: int, weekday: int, ranks: dict[str, int]) -> float:
-    """Probability that one request (site at that hour and weekday) is noise, per the last model."""
-    counts = model[0]
-    common = {f: (counts[0][f] + counts[1][f]).most_common(1)[0][0] for f in ("gap", "revisit")}
+    """Probability that one request (a site at that hour and weekday) is noise, per the last model.
+    Uses only what describes a single request: hour, weekday, the site's popularity and ending
+    (rhythm and revisits need a sequence of requests, so they are left out)."""
     t = time.mktime((2026, 1, 5 + weekday, hour, 30, 0, 0, 0, -1))
     x = featurize([(t, site, 0)], ranks)[0][0]
-    x.update(common)
-    return round(_sigmoid(_score(model, x, FEATURES)) * 100, 1)
+    return round(_sigmoid(_score(model, x, ["hour", "weekday", "popularity", "ending"])) * 100, 1)
 
 
 # ── noise: simulate from settings ───────────────────────────────────────────
