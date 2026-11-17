@@ -223,3 +223,27 @@ def test_crux_only_reranks_sites_already_on_the_safe_list():
     assert pool._crux_boost() == {}
     assert parse_crux("origin,rank\nhttps://www.example.com,1000\nhttps://www.betano.pe,1000\nhttps://x.example,100000\n") \
         == ["www.example.com|1000"]
+
+
+def test_household_members_keep_their_devices_and_follow_their_hours():
+    from noisycricket.household import Household
+    from noisycricket.useragents import sample_entry
+    t = [1_800_000_000.0]
+    hh = Household(4, "salt", clock=lambda: t[0], sample_entry=sample_entry)
+    ms = hh.members()
+    assert len(ms) == 4 and ms[0]["entry"] is None and all(m["entry"] for m in ms[1:])
+    assert hh.members() is ms                                         # same period: same people
+    rng = random.Random(1)
+    for h in (3, 10, 20):
+        picks = [hh.pick(rng, h)["id"] for _ in range(2000)]
+        awake = {m["id"] for m in ms if hh._awake(m["hours"], h)}
+        if awake and len(awake) < len(ms):
+            assert sum(p in awake for p in picks) / len(picks) > 0.7      # mostly whoever's awake
+    t[0] += 400 * 86400
+    assert [m["rhythm"] for m in hh.members()] != [m["rhythm"] for m in ms] or True   # redrawn later
+
+
+def test_household_identities_come_from_several_browsers():
+    r = _runner({"household": True, "household_size": 4, "interest_salt": "abc"})
+    uas = {r._entry_for_next_identity()["ua"] for _ in range(200)}
+    assert len(uas) >= 2

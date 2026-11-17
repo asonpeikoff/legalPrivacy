@@ -156,6 +156,8 @@ class ExtrasConfig:
     busy_kbps: int = 400          # backoff: pause while your own traffic is above this
     metrics: bool = False         # Prometheus metrics at /metrics (needs the dashboard token)
     site_list: str = "both"       # both = Tranco re-ranked by Chrome's real browsing (CrUX), default | tranco
+    household: bool = False       # noise from a virtual household of several people
+    household_size: int = 3       # 2..5 people, member 1 = you
 
     def validate(self) -> None:
         from .engines import ENGINE_NAMES
@@ -183,6 +185,8 @@ class ExtrasConfig:
             raise ConfigError("extras.interest_share must be between 0 and 1")
         if self.activity not in ("off", "backoff", "follow"):
             raise ConfigError("extras.activity must be off, backoff or follow")
+        if not 2 <= int(self.household_size) <= 5:
+            raise ConfigError("extras.household_size must be 2 to 5")
         if self.site_list not in ("both", "tranco"):
             raise ConfigError("extras.site_list must be both or tranco")
         if int(self.busy_kbps) < 10:
@@ -383,8 +387,9 @@ def apply_overrides(profile: Profile, raw: dict[str, Any]) -> Profile:
             interest_active=int(m["interest_active"]), interest_rotate_days=int(m["interest_rotate_days"]),
             interest_share=float(m["interest_share"]), interest_salt=str(m.get("interest_salt") or ""),
             activity=str(m["activity"]), busy_kbps=int(m["busy_kbps"]), metrics=bool(m["metrics"]),
-            site_list="tranco" if m.get("site_list") == "tranco" else "both")
-        if profile.extras.interests and not profile.extras.interest_salt:
+            site_list="tranco" if m.get("site_list") == "tranco" else "both",
+            household=bool(m.get("household")), household_size=int(m.get("household_size") or 3))
+        if (profile.extras.interests or profile.extras.household) and not profile.extras.interest_salt:
             import secrets as _s
             profile.extras.interest_salt = _s.token_hex(8)
         profile.extras.validate()

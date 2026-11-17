@@ -307,6 +307,20 @@ class Runner:
         self._nw_said = ""
         return False
 
+    def _entry_for_next_identity(self) -> dict:
+        """Whose browser makes the next requests: you, or (household masking) another member."""
+        ex = getattr(self.profile, "extras", None)
+        if ex is None or not ex.household:
+            return self._ua.choose()
+        if not hasattr(self, "_household"):
+            from .household import Household
+            from .useragents import sample_entry
+            tc = self.profile.traffic
+            self._household = Household(ex.household_size, ex.interest_salt, sample_entry=sample_entry,
+                                        mobile_share=tc.mobile_share, device=tc.device)
+        member = self._household.pick(self.rng)
+        return member["entry"] if member["entry"] is not None else self._ua.choose()
+
     def _active_hour(self, hour: int) -> bool:
         ex = getattr(self.profile, "extras", None)
         if ex is None or not ex.active_hours:
@@ -383,7 +397,7 @@ class Runner:
         if lane.identity is None or lane.hits_by_identity >= limit:
             self._ident_counter += 1
             lane.identity = make_identity(self.rng, self._ident_counter, self.wordlist,
-                                          entry=self._ua.choose())
+                                          entry=self._entry_for_next_identity())
             lane.pacer = Pacer(self.rng,
                                pace_multiplier=lane.identity.pace_multiplier,
                                realtime_scale=self.profile.realtime_scale)

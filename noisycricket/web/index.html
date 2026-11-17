@@ -250,6 +250,9 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
     <div class="row">Share that follows the themes <input type="range" id="iShare" min="0" max="100" step="10" style="flex:1;max-width:220px"> <b class="small" id="iShareP"></b> <span class="small mute">(30% recommended)</span></div>
     <div class="small" id="iThemes"></div>
     <div class="small mute" id="iNow"></div>
+    <div style="margin-top:10px"><b>Household</b> <span class="small mute">— so the noise doesn't tell how many people live with you, or when the home is empty</span></div>
+    <label class="chk"><input type="checkbox" id="hOn"><span><b>Noise from a virtual household of</b> <select id="hSize"><option>2</option><option selected>3</option><option>4</option><option>5</option></select> people <span class="mute">(off by default) — each has their own phone or computer, browser and usual hours; you're one of them. Redrawn every 30–90 days.</span></span></label>
+    <div class="small mute" id="hNow"></div>
     <div style="margin-top:10px"><b>Your own activity</b> <span class="small mute">— reads only your computer's total traffic counters, never what's in it</span></div>
     <label class="opt"><input type="radio" name="iact" value="off"> <b>Ignore it</b> <span class="mute">(default)</span></label>
     <label class="opt"><input type="radio" name="iact" value="backoff"> <b>Pause while I'm busy</b> <span class="mute">— stop noise while you use more than <input type="number" id="iBusy" min="10" step="50" style="width:80px"> kbit/s (400 recommended), so it never slows you down</span></label>
@@ -700,11 +703,13 @@ function fillSettings(force){
   $('#iShare').addEventListener('input',()=>{$('#iShareP').textContent=$('#iShare').value+'%'});
   (document.querySelector(`input[name=iact][value=${ex.activity||'off'}]`)||{}).checked=true;$('#iBusy').value=ex.busy_kbps||400;
   $('#eMetrics').checked=!!ex.metrics;$('#eSites').value=ex.site_list||'both';
+  $('#hOn').checked=!!ex.household;$('#hSize').value=String(ex.household_size||3);
   api('/api/interests').then(d=>{
     const allowed=(ex.interest_list&&ex.interest_list.length)?ex.interest_list:d.themes;
     $('#iN').innerHTML=d.themes.map((_,i)=>`<option value="${i+1}">${i+1}</option>`).join('');$('#iN').value=ex.interest_active||3;
     $('#iThemes').innerHTML='Allowed themes: '+d.themes.map(t=>`<label style="margin-right:10px;white-space:nowrap"><input type="checkbox" data-th="${esc(t)}" ${allowed.includes(t)?'checked':''}> ${esc(t)}</label>`).join('');
     $('#iNow').textContent=d.active.length?('Active right now: '+d.active.join(', ')):'';
+    $('#hNow').textContent=(d.household||[]).length?('Your household right now: '+d.household.join(' · ')):'';
     $$('[data-th]').forEach(c=>c.addEventListener('change',()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'}));
     $('#iN').onchange=()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'};
   }).catch(()=>{});
@@ -738,7 +743,8 @@ async function saveSettings(auto){
               interest_share:parseInt($('#iShare').value||30)/100,
               interest_list:(()=>{const all=$$('[data-th]'),on=all.filter(c=>c.checked).map(c=>c.dataset.th);return on.length===all.length?[]:on})(),
               activity:(document.querySelector('input[name=iact]:checked')||{}).value||'off',busy_kbps:parseInt($('#iBusy').value||400),
-              metrics:$('#eMetrics').checked,site_list:$('#eSites').value}});
+              metrics:$('#eMetrics').checked,site_list:$('#eSites').value,
+              household:$('#hOn').checked,household_size:parseInt($('#hSize').value||3)}});
     await api('/api/app',{autostart:$('#sAuto').checked});dirty.set=false;$('#sSaved').textContent='Saved ✓ '+(S&&S.running?'(applies the next time noise starts)':'');poll()}catch(e){$('#sSaved').textContent='Not saved: '+e.message;if(!auto)toast(e.message,1)}
 }
 $('#sSave').onclick=()=>saveSettings(false);

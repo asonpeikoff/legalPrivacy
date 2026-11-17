@@ -202,7 +202,14 @@ class Controller:
     def interests_state(self) -> dict:
         from .interests import CATEGORIES
         it = self._interests()
-        return {"themes": list(CATEGORIES), "active": it.active() if it else []}
+        ex = self.profile.extras
+        hh = []
+        if ex.household and ex.interest_salt:
+            from .household import Household
+            from .useragents import sample_entry
+            hh = Household(ex.household_size, ex.interest_salt, sample_entry=sample_entry,
+                           mobile_share=self.profile.traffic.mobile_share, device=self.profile.traffic.device).describe()
+        return {"themes": list(CATEGORIES), "active": it.active() if it else [], "household": hh}
 
     def estimate(self) -> dict:
         """Rough data use before running (idea from NoisyCompany): per day and per month."""
