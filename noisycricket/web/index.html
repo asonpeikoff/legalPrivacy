@@ -324,11 +324,15 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
 <!-- HELP -->
 <section id="t-help" class="tab">
   <div class="card"><h3>What this does</h3>
-    <p>noisyCricket sends believable random searches, page visits and DNS lookups in the background so that bulk analysis of any one person's real browsing is less useful. Every request is shown in <b>Activity</b>; everything the app and Tor say is in <b>Live Log</b>.</p>
-    <p><b>Tor (optional).</b> Off by default. With Tor on, noisyCricket can visit <b>.onion sites</b> (darknet noise) through its own private Tor, which it downloads, verifies and starts for you. Routing ordinary clearnet noise through Tor is a separate switch, off by default, and not recommended.</p>
-    <p><b>Community relay.</b> Never an exit node. See <code>cricket relay gen</code> in the README.</p>
-    <p class="mute small">The dashboard listens only on this computer (127.0.0.1) and requires a one-time token in its address.</p>
+    <p>noisyCricket makes believable searches, page visits and DNS lookups in the background, so that bulk analysis of your real browsing tells much less about you. Every request shows in <b>Activity</b>; everything the app and Tor report is in <b>Live Log</b>. Both are kept in memory only and cleared when you quit.</p>
+    <p><b>Activity vs Live Log.</b> Activity lists each request the noise made and what happened on it. Live Log is everything the app says, including starts and stops, Tor's own messages and warnings.</p>
+    <p><b>Getting started.</b> Everything already has the recommended setting. Press <b>Start</b>; the first action comes within seconds. Settings save themselves.</p>
+    <p><b>Look like yourself.</b> Add the sites you really use on <b>My List</b>, then check the <b>ML</b> tab: it shows how easily your traffic can be told apart from the noise, and which settings help.</p>
+    <p><b>Tor (optional).</b> Off by default. With Tor on, noisyCricket can visit .onion sites through its own private Tor, which it downloads, checks and starts for you. Many .onion sites are offline at any moment; those are skipped for a while, which is normal. Sending ordinary web noise through Tor is a separate switch, off by default and not recommended.</p>
+    <p><b>Contribute to Tor.</b> <code>cricket relay gen</code> writes a middle-relay or bridge configuration; it never runs an exit.</p>
+    <p class="small mute">The dashboard is reachable only from this computer (127.0.0.1) and needs the token in its address.</p>
   </div>
+
 </section>
 </main>
 

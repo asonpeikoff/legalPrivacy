@@ -139,7 +139,7 @@ class IdentityConfig:
 
 @dataclass
 class ExtrasConfig:
-    """Optional extras (most adopted from similar projects; see docs/COMPETITORS.md)."""
+    """Optional extras: active hours, interests, household, activity-aware pacing and more."""
     active_hours: bool = False    # only make noise between active_from and active_to (local time)
     active_from: int = 8
     active_to: int = 23
