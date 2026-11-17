@@ -2,6 +2,9 @@
 
 ## v2.8.1
 
+- **Network map explains itself** when it has nothing to draw (psutil missing, watching off, nothing seen yet,
+  or only local/private connections such as through a VPN or proxy), and shows any drawing error instead of
+  staying blank.
 - **Cookies:** the noise browser keeps its own cookies for about an hour by default (was a week), then starts
   fresh, with each set living 60–140% of the chosen time. Choices: don't keep, 1 hour, 6 hours, 1 day, 1 week,
   30 days. Earlier day-based settings carry over.
