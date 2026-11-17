@@ -265,9 +265,13 @@ class TrafficObserver:
 
         b_on, b_off = runs(base_active)
         n_on, n_off = runs(noise_active)
+        hb = hours(base, lambda r: r["you"] > 0)
+        hn = hours(noisy, lambda r: r["req"] > 0 or r["noise"] > 0)
+        # comparing time of day is only fair once both sides have been seen across much of the day
+        fair = len({int(h) for h in hb}) >= 8 and len({int(h) for h in hn}) >= 8
         metrics = [
-            ("Time of day", "When activity happens",
-             ks_similarity(hours(base, lambda r: r["you"] > 0), hours(noisy, lambda r: r["req"] > 0 or r["noise"] > 0))),
+            ("Time of day", "When activity happens" + ("" if fair else " (needs a few days of both)"),
+             ks_similarity(hb, hn) if fair else None),
             ("Burst length", "How many minutes in a row stay busy", ks_similarity(b_on, n_on)),
             ("Quiet gaps", "How long the pauses between bursts last", ks_similarity(b_off, n_off)),
             ("Busyness", "How many sites in a busy minute",
