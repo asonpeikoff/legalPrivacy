@@ -81,24 +81,23 @@ jobs:
           body: |
             ## 🦗 noisyCricket ${{ github.ref_name }}
 
-            ### Download & run — no installation needed
+            Believable background browsing, searches and DNS lookups, so bulk analysis of your traffic tells much less about you.
+
+            ### Download and run (nothing to install)
 
             | Platform | File | How to run |
-            |----------|------|-----------|
-            | Linux    | `cricket-launch-linux`     | `chmod +x cricket-launch-linux && ./cricket-launch-linux` |
-            | Windows  | `cricket-launch-windows.exe` | Double-click or run from Terminal |
-            | macOS    | `cricket-launch-macos`     | `chmod +x cricket-launch-macos && ./cricket-launch-macos` |
+            |---|---|---|
+            | Windows | `cricket-launch-windows.exe` | Double-click. If SmartScreen warns, choose **More info → Run anyway**. |
+            | macOS | `cricket-launch-macos` | Right-click → **Open** the first time (the app isn't signed). |
+            | Linux | `cricket-launch-linux` | `chmod +x cricket-launch-linux && ./cricket-launch-linux` |
 
-            Double-click it: your browser opens the dashboard, you answer 3 quick questions, and it starts. Tor (optional) is installed and run for you automatically if you choose onion mode.
+            Your browser opens the dashboard, you answer three quick questions, and it starts. A real Chrome, Edge,
+            Brave or Chromium on the computer makes the browsing look human; Tor is optional and set up for you.
 
-            ### Or install via pip
-            ```bash
-            pip install noisycricket
-            cricket-launch
-            ```
+            Or from source: `pip install git+https://github.com/asonpeikoff/noisyCricket` then `cricket-launch`.
 
             ### What's new
-            See [CHANGELOG](https://github.com/asonpeikoff/noisyCricket/blob/master/CHANGELOG.md) or commit history.
+            See the [changelog](https://github.com/asonpeikoff/noisyCricket/blob/master/CHANGELOG.md).
           files: |
             dist/cricket-launch-linux/cricket-launch-linux
             dist/cricket-launch-windows.exe/cricket-launch-windows.exe

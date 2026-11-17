@@ -1,10 +1,20 @@
-# noisyCricket v2.7
+# noisyCricket v2.8
 
 noisyCricket makes believable background browsing, searches and DNS lookups from your
 computer, so that bulk analysis of your traffic tells much less about you. It runs in a
 real browser, behaves like a person, follows a daily rhythm, and can make optional Tor
 `.onion` noise. Everything it does is visible in a local dashboard, and nothing about your
 activity is stored after it stops.
+
+<p align="center">
+  <img src="docs/screenshots/proof.png" alt="The Proof tab: a live map of every machine this computer talks to, six hours of traffic per minute with the noise-on periods shaded, and how closely the noise matches your own rhythm" width="900">
+  <br><sub>The <b>Proof</b> tab: who this computer is talking to, your traffic with the noise off and on, and how much the noise looks like you (example data).</sub>
+</p>
+
+| | |
+|---|---|
+| <img src="docs/screenshots/amount.png" alt="Amount of noise: a 1–10 slider with an explanation, randomness, and the mix of activity" width="440"><br><sub>How much noise, how random, and the mix</sub> | <img src="docs/screenshots/looks-like-you.png" alt="Off vs on table and the does-the-noise-look-like-you score" width="440"><br><sub>Off vs on, and the “looks like you” score (example data)</sub> |
+| <img src="docs/screenshots/dns.png" alt="DNS settings: normal, secure or mix, with the resolver table and live checks" width="440"><br><sub>DNS: your resolvers, checked live</sub> | <img src="docs/screenshots/bridges.png" alt="Tor bridges: built-in obfs4, Snowflake and meek, your own, automatic fallback and request links" width="440"><br><sub>Tor bridges, built in or your own</sub> |
 
 ## Quick start
 
