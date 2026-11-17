@@ -92,6 +92,13 @@ When Chrome, Edge, Brave or Chromium is installed, noisyCricket drives it in the
 - **Browser engine:** matches your own browser by default. If you use Firefox and Playwright's
   Firefox is installed (`python -m playwright install firefox`), the noise uses Firefox too.
 
+### Cookies
+
+Like a real browser, noisyCricket **keeps its own cookies between runs** (separate from yours; it
+never touches your browser's cookies), so sites see a returning visitor and Google shows its
+"are you a robot?" page less often. They are **wiped every week** by default. Settings → *Keep
+cookies* also offers 1 day, 30 days, or "don't keep".
+
 ### User agent
 
 By default the noise uses **your own browser's user agent**, read automatically from your

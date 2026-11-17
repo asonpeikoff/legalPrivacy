@@ -336,6 +336,12 @@ table.dns td{vertical-align:middle}
       <option value="headless">Hidden (recommended, default)</option>
       <option value="offscreen">Real window, off-screen</option>
       <option value="visible">Visible (watch it work)</option></select></div>
+    <div class="row">Keep cookies <select id="sCookies">
+      <option value="7">1 week, then clear (recommended)</option>
+      <option value="1">1 day</option>
+      <option value="30">30 days</option>
+      <option value="0">Don't keep (clear every session)</option></select>
+      <details class="why"><summary>ⓘ</summary><div>Real people's browsers remember cookies, so sites (and Google) see a returning visitor and ask “are you a robot?” less often. noisyCricket keeps its own separate cookies (never yours) on this computer and wipes them on this schedule.</div></details></div>
     <div class="small mute">Hidden runs the same Chrome code as a normal window, and what your ISP or DNS provider sees is identical. Only a site's own scripts, checking deeply, can tell (for example, no graphics card). <b>Off-screen</b> uses a real window and real graphics where no screen shows it: a little more realistic to those scripts, but uses more CPU and memory. <b>Visible</b> is for watching.</div>
     <div style="margin-top:10px"><b>Where searches come from</b> <span class="small mute">— mixed so no one list dominates</span></div>
     <label class="chk"><input type="checkbox" id="qLive"><span><b>Live trends</b> — Google Trends, Wikipedia most-read, BBC headlines</span></label>
@@ -927,7 +933,7 @@ function fillSettings(force){
     ...(torOn2?[{key:'onion',label:'Tor .onion sites',value:tr.onion??15,hint:'(about 10–15% recommended)'}]:[])]);
   $('#xMobile').value=Math.round((tr.mobile_share??0.55)*100);$('#xDevice').value=tr.device||'iPhone 13';
   $('#xDevice').onchange=()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'};
-  $('#sBrowser').value=p.transports.clearnet.browser||'auto';$('#sEngine').value=p.transports.clearnet.browser_engine||'auto';$('#sWin').value=p.transports.clearnet.browser_visible?'visible':(p.transports.clearnet.browser_offscreen?'offscreen':'headless');
+  $('#sBrowser').value=p.transports.clearnet.browser||'auto';$('#sEngine').value=p.transports.clearnet.browser_engine||'auto';$('#sWin').value=p.transports.clearnet.browser_visible?'visible':(p.transports.clearnet.browser_offscreen?'offscreen':'headless');$('#sCookies').value=String(p.transports.clearnet.cookie_days??7);
   const q=p.queries||{};$('#qLive').checked=q.live!==false;$('#qData').checked=q.dataset!==false;$('#qBuiltin').checked=q.builtin!==false;$('#qWords').checked=q.words!==false;$('#sAuto').checked=!!S.app.autostart;$('#sPath').textContent=S.config_path;dirty.set=false;
   $$('#t-set input').forEach(i=>i.oninput=()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'});
 }
@@ -936,7 +942,7 @@ async function saveSettings(auto){
   const rnd=parseInt($('#sRand').value||0)/100;
   try{await api('/api/config',{realtime_scale:parseFloat($('#sScale').value),daily_max_failures:parseInt($('#sMaxF').value),engines,rate:{mode:rnd>0?'random':'steady',level:parseFloat($('#sLevel').value),randomness:rnd},
       dns:{mode:document.querySelector('input[name=dnsm]:checked').value,system_share:parseInt($('#dShare').value||50)/100,opennic:$('#dOpen').checked,quad9:$('#dQuad9').checked,custom:$('#dCustom').value,slow_ms:parseInt($('#dSlow').value||250),resolvers:readDnsTable()},
-      transports:{clearnet:{enabled:$('#sClear').checked,proxy:$('#sProxy').value||null,browser:$('#sBrowser').value,browser_visible:$('#sWin').value==='visible',browser_offscreen:$('#sWin').value==='offscreen',browser_engine:$('#sEngine').value}},
+      transports:{clearnet:{enabled:$('#sClear').checked,proxy:$('#sProxy').value||null,browser:$('#sBrowser').value,browser_visible:$('#sWin').value==='visible',browser_offscreen:$('#sWin').value==='offscreen',browser_engine:$('#sEngine').value,cookie_days:+$('#sCookies').value}},
       queries:{live:$('#qLive').checked,dataset:$('#qData').checked,builtin:$('#qBuiltin').checked,words:$('#qWords').checked},
       traffic:{pattern:(document.querySelector('input[name=xpat]:checked')||{}).value||'drift',...(()=>{const m=window._trMix.values();return {browser:m.browser,plain:m.plain,onion:m.onion??window._trOnion}})(),
                mobile_share:parseInt($('#xMobile').value||0)/100,device:$('#xDevice').value},

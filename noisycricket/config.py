@@ -58,6 +58,7 @@ class TransportConfig:
     browser_offscreen: bool = True    # clearnet: a real window parked off-screen (harder to flag than headless);
                                       # falls back to headless where there is no display
     browser_engine: str = "auto"      # clearnet: auto (match your browser) | chromium | firefox
+    cookie_days: int = 7              # clearnet: keep browser cookies between runs, wiped every N days (0 = never keep)
     # --- tor lane only ---
     socks: str = DEFAULT_TOR_SOCKS
     control: str | None = None
