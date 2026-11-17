@@ -527,9 +527,13 @@ class Controller:
             return None
         from .browser import BrowserTransport
         engine = self._browser_engine()
-        return BrowserTransport(proxy=cfg.proxy, headless=not (cfg.browser_visible or cfg.browser_offscreen),
+        import os as _os
+        has_display = sys.platform in ("win32", "darwin") or bool(_os.environ.get("DISPLAY") or
+                                                                    _os.environ.get("WAYLAND_DISPLAY"))
+        offscreen = cfg.browser_offscreen and has_display
+        return BrowserTransport(proxy=cfg.proxy, headless=not (cfg.browser_visible or offscreen),
                                 engine=engine,
-                                offscreen=cfg.browser_offscreen and not cfg.browser_visible, executable=info["detail"],
+                                offscreen=offscreen and not cfg.browser_visible, executable=info["detail"],
                                 low_data=self.profile.extras.low_data,
                                 stop_event=stop, scale=lambda: self.profile.realtime_scale,
                                 on_event=lambda lvl, msg: self.log.add(lvl, "browser", msg))

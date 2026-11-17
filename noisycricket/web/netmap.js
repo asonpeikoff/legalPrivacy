@@ -21,7 +21,7 @@
   var R_MIN = 3, R_MAX = 16;    // node radius: 3 + 2.2*sqrt(weight), clamped
   var W_MIN = 0.6, W_MAX = 5;   // link width: 0.6 + 0.5*sqrt(weight), clamped
   var FADE_IN_MS = 400, FADE_OUT_MS = 600;
-  var CENTER_R = 14;            // center node is always the largest
+  var CENTER_R = 17;            // center node: always larger than any remote node (max 16)
   var CHAR_W = 6.2;             // estimated width of one 11px character
   var LEGEND = [
     ['you', 'Your apps'], ['noise', 'noisyCricket'], ['tor', 'Tor'], ['dns', 'DNS']

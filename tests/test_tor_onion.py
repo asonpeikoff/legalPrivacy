@@ -1,5 +1,6 @@
 """Tor/onion tests — all offline (fake control server, injected probes)."""
 import os
+import random
 import socket
 import sys
 import tempfile
@@ -200,16 +201,14 @@ def test_control_cookie_auth():
     os.unlink(cookie.name)
 
 
-def test_tor_patience_retries_once_then_new_identity_and_routine_circuits():
+def _patience_run(seed):
     p = Profile(name="t")
     apply_overrides(p, {"transports": {"clearnet": {"enabled": False}, "tor": {"enabled": True}}})
     clock = [1000.0]
-    calls = []
+    calls, seen = [], []
     lanes = build_lanes(p, WORDS, tor_gate=lambda: True)
-    lane = lanes[0]
-    lane.transport.reconnect = lambda: calls.append("newnym") or True
-    lane.transport.renew_circuits = lambda: calls.append("renew") or True
-    seen = []
+    lanes[0].transport.reconnect = lambda: calls.append("newnym") or True
+    lanes[0].transport.renew_circuits = lambda: calls.append("renew") or True
 
     def probe(l, ident, target):
         seen.append(target.url)
@@ -217,17 +216,29 @@ def test_tor_patience_retries_once_then_new_identity_and_routine_circuits():
 
     r = Runner(profile=p, lanes=lanes, wordlist=WORDS, clock=lambda: clock[0], local_hour_fn=lambda: 12.0,
                sleep_fn=lambda s: None, probe_fn=probe)
-    r.run_once(wait=False)
-    first = seen[0]
-    clock[0] += 150                                 # a couple of minutes later
-    r.run_once(wait=False)
-    assert seen[1] == first                          # the failed page is reloaded once
-    r.run_once(wait=False)
-    assert "newnym" in calls                         # three failures in a row: new identity
-    clock[0] += 3000                                 # later on, circuits change by themselves
-    lane.transport.reconnect = lambda: True
-    r._tor_state["streak"] = 0
-    probe_ok = lambda l, i, t: HitResult(200, "<html></html>")
-    r.probe_fn = probe_ok
+    r.rng = random.Random(seed)
+    for _ in range(6):
+        r.run_once(wait=False)
+        clock[0] += 200
+    return r, seen, calls, clock, lanes
+
+
+def test_tor_patience_varies_like_a_person_and_gets_new_identities():
+    retried = moved_on = 0
+    for seed in range(40):
+        r, seen, calls, clock, lanes = _patience_run(seed)
+        assert "newnym" in calls                          # a run of failures always ends in a new identity
+        if seen[1] == seen[0]:
+            retried += 1
+        else:
+            moved_on += 1
+    assert retried > 5 and moved_on > 5                   # not one fixed reaction
+
+
+def test_tor_routine_new_circuits():
+    r, seen, calls, clock, lanes = _patience_run(1)
+    calls.clear()
+    clock[0] += 3000
+    r.probe_fn = lambda l, i, t: HitResult(200, "<html></html>")
     r.run_once(wait=False)
     assert "renew" in calls

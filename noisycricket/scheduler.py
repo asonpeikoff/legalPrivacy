@@ -335,15 +335,22 @@ class Runner:
         now = self.clock()
         st = self.__dict__.setdefault("_tor_state", {"streak": 0, "retried": set(),
                                                      "next_newnym": now + self.rng.uniform(600, 2400)})
+        st.setdefault("limit", self.rng.randint(2, 5))
         if result.ok:
             st["streak"] = 0
         else:
             st["streak"] += 1
-            if eng_name == "onion" and target.url not in st["retried"] and len(st["retried"]) < 500:
-                st["retried"].add(target.url)            # try this page again, once, in a minute or two
-                lane.__dict__["onion_retry"] = (target.url, now + self.rng.uniform(45, 120))
-            if st["streak"] >= 3:
+            # People don't react the same way every time: sometimes reload a bit later, sometimes just
+            # go elsewhere, sometimes ask for a new identity first and then reload.
+            r = self.rng.random()
+            if eng_name == "onion" and target.url not in st["retried"] and len(st["retried"]) < 500 and r < 0.65:
+                st["retried"].add(target.url)
+                lane.__dict__["onion_retry"] = (target.url, now + self.rng.uniform(30, 180))
+                if r < 0.15:                             # new identity first, then the reload
+                    st["streak"] = st["limit"]
+            if st["streak"] >= st["limit"]:
                 st["streak"] = 0
+                st["limit"] = self.rng.randint(2, 5)
                 ok = getattr(lane.transport, "reconnect", lambda: False)()
                 self._emit("info", "tor", "Several Tor requests failed in a row; asked Tor for a new identity "
                            f"(fresh circuits){'' if ok else ' — control port unavailable, new circuits only'}.")
@@ -495,6 +502,13 @@ class Runner:
             self._onion_seen_dead(target.url)
         if lane.name == "tor":
             self._tor_patience(lane, eng_name, target, result)
+        if target.role == "search" and result.status == 429:
+            from .engines import cool_down_engine
+            hours = self.rng.uniform(2, 8)
+            host = cool_down_engine(target.url, hours * 3600)
+            if host:
+                self._emit("warn", lane.name, f"{host} showed its “are you a robot?” check. Using other search "
+                           f"engines for about {hours:.0f} h, the way a person would switch.")
         if target.kind != "dns":
             import urllib.parse as _up
             self._host_last[_up.urlparse(target.url).hostname or ""] = self.clock()

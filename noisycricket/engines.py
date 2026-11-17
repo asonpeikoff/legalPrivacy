@@ -79,6 +79,22 @@ _ENGINE_HITS: dict[str, list[float]] = {}
 _ENGINE_LOCK = __import__("threading").Lock()
 
 
+_ENGINE_COOLDOWN: dict[str, float] = {}     # endpoint -> time it may be used again
+
+
+def cool_down_engine(url: str, seconds: float, now: float | None = None) -> str | None:
+    """A search engine showed its robot check: leave it alone for a while (as a person would)."""
+    import time as _t
+    now = _t.time() if now is None else now
+    for ep in SEARCH_ENDPOINTS:
+        host = urllib.parse.urlparse(ep).hostname or ""
+        if host and host in url:
+            with _ENGINE_LOCK:
+                _ENGINE_COOLDOWN[ep] = now + seconds
+            return host
+    return None
+
+
 def pick_search_endpoint(rng, now: float | None = None) -> str:
     """Weighted engine choice that skips any engine already at its hourly cap."""
     import time as _t
@@ -88,7 +104,8 @@ def pick_search_endpoint(rng, now: float | None = None) -> str:
             hits[:] = [t for t in hits if now - t < 3600]
         weights = _current_weights()
         allowed = [(ep, w) for ep, w in zip(SEARCH_ENDPOINTS, weights)
-                   if w > 0 and len(_ENGINE_HITS.get(ep, [])) < MAX_SEARCHES_PER_ENGINE_PER_HOUR]
+                   if w > 0 and len(_ENGINE_HITS.get(ep, [])) < MAX_SEARCHES_PER_ENGINE_PER_HOUR
+                   and now >= _ENGINE_COOLDOWN.get(ep, 0)]
         pool = allowed or [(ep, w) for ep, w in zip(SEARCH_ENDPOINTS, weights) if w > 0] \
             or list(zip(SEARCH_ENDPOINTS, SEARCH_WEIGHTS))
         ep = rng.choices([p for p, _ in pool], weights=[w for _, w in pool])[0]
