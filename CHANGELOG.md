@@ -2,6 +2,9 @@
 
 ## v2.9.0
 
+- **Personas** (Settings → Extras): pick who the noise mostly looks like: Data scientist, Developer, Sports fan,
+  Student, Home cook and gardener, or Traveller. It's followed mostly, not perfectly (60% by default); the rest stays
+  varied. New Data science theme with its own sites and searches.
 - **Clear logs between restarts** (Settings → General, on by default): the Live Log and Activity start empty each
   time noise starts; untick to keep them across Stop → Start. Both are memory-only and always end when the app quits.
 - **Fix:** after Stop → Start, new requests didn't appear in Activity until the count passed the previous run's.

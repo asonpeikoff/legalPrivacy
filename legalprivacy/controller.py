@@ -296,7 +296,7 @@ class Controller:
         ml = self.profile.mylist
         pool = DomainPool(_r.Random(), self.feeds, my_sites=ml.sites if ml.enabled else None,
                           random_share=ml.random_share, my_weights=ml.weights)
-        pool.interests, pool.interest_share = self._interests(), self.profile.extras.interest_share
+        pool.interests, pool.interest_share = self._interests(), self._interest_share()
         pool.site_list = self.profile.extras.site_list
         return pool
 
@@ -310,7 +310,9 @@ class Controller:
             from .useragents import sample_entry
             hh = Household(ex.household_size, ex.interest_salt, sample_entry=sample_entry,
                            mobile_share=self.profile.traffic.mobile_share, device=self.profile.traffic.device).describe()
-        return {"themes": list(CATEGORIES), "active": it.active() if it else [], "household": hh}
+        from .interests import PERSONAS
+        return {"themes": list(CATEGORIES), "active": it.active() if it else [], "household": hh,
+                "personas": {k: v for k, v in PERSONAS.items()}, "persona": ex.persona}
 
     def estimate(self) -> dict:
         """Rough data use before running (idea from NoisyCompany): per day and per month."""
@@ -554,8 +556,16 @@ class Controller:
                                 stop_event=stop, scale=lambda: self.profile.realtime_scale,
                                 on_event=lambda lvl, msg: self.log.add(lvl, "browser", msg))
 
+    def _interest_share(self) -> float:
+        ex = self.profile.extras
+        return ex.persona_share if ex.persona else ex.interest_share
+
     def _interests(self):
         ex = self.profile.extras
+        if ex.persona:                            # a persona takes priority over rotating interests
+            import random as _r
+            from .interests import Persona
+            return Persona(_r.Random(), ex.persona)
         if not ex.interests:
             return None
         import random as _r
@@ -579,7 +589,7 @@ class Controller:
         import random as _r
         q = self.profile.queries
         qs = QuerySource(_r.Random(), self.feeds, QueryConfig(q.live, q.dataset, q.builtin, q.words), words)
-        qs.interests, qs.interest_share = self._interests(), self.profile.extras.interest_share
+        qs.interests, qs.interest_share = self._interests(), self._interest_share()
         return qs
 
     def _start_feed_timer(self) -> None:

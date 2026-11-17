@@ -332,3 +332,26 @@ def test_logs_clear_on_each_start_by_default_and_can_be_kept():
     c.start(); c.stop()
     assert any(e["message"] == "keep me" for e in c.log.since(0)) and c.state()["log_epoch"] == 1
     assert c.runner._hit_seq >= 41                             # numbering continues, so Activity keeps updating
+
+
+def test_data_scientist_persona_is_followed_mostly_not_perfectly():
+    import tempfile
+    from legalprivacy.interests import CATEGORIES, PERSONAS
+    os.environ["LEGALPRIVACY_HOME"] = tempfile.mkdtemp()
+    from legalprivacy.controller import Controller
+    c = Controller()
+    c.apply_config({"extras": {"persona": "Data scientist"}})
+    assert c.profile.extras.persona_share == 0.6
+    pool = c._domain_pool(random)
+    themed = {s for t in PERSONAS["Data scientist"] for s in CATEGORIES[t]["sites"]}
+    picks = [pool.pick(browsable=True) for _ in range(3000)]
+    share = sum(p in themed for p in picks) / len(picks)
+    assert 0.5 < share < 0.75                                   # mostly on theme, not all of it
+    qs = c._query_source([])
+    origins = [qs.next()[1] for _ in range(400)]
+    assert 0.45 < origins.count("interest") / len(origins) < 0.75
+    try:
+        c.apply_config({"extras": {"persona": "Astronaut"}})
+        raise AssertionError("unknown persona accepted")
+    except Exception as exc:
+        assert "unknown persona" in str(exc)
