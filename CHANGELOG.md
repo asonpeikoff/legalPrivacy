@@ -3,8 +3,8 @@
 ## v2.10.0
 
 - **Data scientist is the default persona**, followed 90% of the time (the rest is everyday browsing); "Nobody in
-  particular (neutral)" turns it off. Its searches are mostly real people's: about 12,000 data-science searches from
-  MS MARCO (Bing) and GooAQ (Google). Its sites are a list of ~115 data-science sites, and more popular ones come up
+  particular (neutral)" turns it off. Its searches are mostly real people's: about 8,000 data-science searches from
+  MS MARCO (Bing) and GooAQ (Google), advanced only: basic statistics is left out. Its sites are a list of ~115 data-science sites, and more popular ones come up
   more often. Sections of sites (such as reddit.com/r/datascience) are visited as listed.
 - **Package installs** (Settings → Extras): real `pip install`, `pip download`, `pip index versions` and
   `pip uninstall` of popular packages, plus `npm view` / `npm install` if npm is installed, so the noise also talks to

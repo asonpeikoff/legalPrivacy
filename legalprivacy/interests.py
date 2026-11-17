@@ -51,7 +51,7 @@ CATEGORIES: dict[str, dict] = {
                      "topics": ["pandas groupby", "random forest hyperparameters", "train test split", "cross validation",
                                 "logistic regression", "xgboost vs lightgbm", "pca explained", "confusion matrix",
                                 "roc auc", "time series forecasting", "fine tune transformers", "sql window functions",
-                                "numpy broadcasting", "matplotlib subplots", "bayesian inference", "a/b test sample size",
+                                "numpy broadcasting", "matplotlib subplots", "bayesian inference", "causal inference",
                                 "feature engineering", "k-means clustering", "gradient descent", "jupyter shortcuts",
                                 "polars vs pandas", "data leakage", "shap values", "imbalanced classes",
                                 "duckdb parquet", "scikit-learn pipeline", "pytorch dataloader", "embedding similarity"]},
