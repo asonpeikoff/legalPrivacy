@@ -279,7 +279,7 @@ class Controller:
             res = sites_from_urls([str(u) for u in urls[:50_000]], self.feeds.denylist())
         else:
             res = bookmark_sites(self.feeds.denylist())
-        self.log.info("mylist", f"Read bookmarks: {len(res['sites'])} sites found.")
+        self.log.info("mylist", f"Imported addresses: {len(res['sites'])} sites found.")
         return res
 
     def mylist_save(self, body: dict) -> dict:
