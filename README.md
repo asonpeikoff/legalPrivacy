@@ -90,6 +90,9 @@ When Chrome, Edge, Brave or Chromium is installed, legalPrivacy drives it in the
 - **Clicks** follow curved mouse paths, or taps on phones.
 - **Now and then** a linked document is downloaded or an image saved, through the browser, and
   discarded.
+- **Pages that need an account** (Facebook, Instagram, LinkedIn, X and the like): public pages are
+  browsed normally. When a page asks to log in, the noise does what a logged-out person does: a
+  short look, then somewhere else, and that site rests for a few hours. It never logs in.
 - **Phones:** 55% of noise identities are phones, an **iPhone 13 with Safari** by default (or
   iPhone 15, iPhone SE, Pixel 7, Galaxy S24, or a mix), with the phone's screen and touch input.
 - **Browser engine:** matches your own browser by default. If you use Firefox and Playwright's

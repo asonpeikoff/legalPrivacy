@@ -2,6 +2,9 @@
 
 ## v2.9.0
 
+- **Login walls:** pages that require an account (Facebook, Instagram, LinkedIn, X and the like) get a short look,
+  then the noise moves on and rests that site for a few hours, like a logged-out visitor. Public pages are browsed
+  as usual. It never counts as a failure, and the noise never logs in.
 - **New name: legalPrivacy** (formerly noisyCricket), a homage to the blog *Legalizing Privacy*. Commands are now
   `legalprivacy` and `legalprivacy-launch`, start scripts `Start-legalPrivacy.bat` and `start-legalprivacy.sh` /
   `.command`, downloads `legalprivacy-launch-*`, and the Docker service `legalprivacy`.
