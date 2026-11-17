@@ -123,18 +123,32 @@ class PlaywrightActuator:
         v = self.page.viewport_size or {"width": 1280, "height": 720}
         return v["width"], v["height"]
 
-    def page_height(self) -> int:
+    # Many sites scroll an inner container instead of the page itself; measure whichever
+    # element really scrolls, or depth would read 0%.
+    _SCROLLER_JS = """() => {
+      const se = document.scrollingElement || document.documentElement;
+      if (se.scrollHeight > innerHeight + 40) return [se.scrollTop, se.scrollHeight];
+      let best = null, bh = 0;
+      for (const el of document.querySelectorAll('main, article, div, section')) {
+        if (el.clientHeight < innerHeight * 0.5 || el.scrollHeight <= el.clientHeight + 40) continue;
+        const oy = getComputedStyle(el).overflowY;
+        if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > bh) { best = el; bh = el.scrollHeight; }
+      }
+      return best ? [best.scrollTop, best.scrollHeight] : [se.scrollTop, se.scrollHeight];
+    }"""
+
+    def _scroller(self) -> tuple[float, int]:
         try:
-            return int(self.page.evaluate("Math.max(document.documentElement.scrollHeight, "
-                                          "document.body ? document.body.scrollHeight : 0)"))
+            y, hgt = self.page.evaluate(self._SCROLLER_JS)
+            return float(y), int(hgt)
         except Exception:
-            return 0
+            return 0.0, 0
+
+    def page_height(self) -> int:
+        return self._scroller()[1]
 
     def scroll_y(self) -> float:
-        try:
-            return float(self.page.evaluate("window.scrollY"))
-        except Exception:
-            return 0.0
+        return self._scroller()[0]
 
     def move(self, x: float, y: float) -> None:
         self.page.mouse.move(x, y)
@@ -374,7 +388,17 @@ class BrowserTransport(Transport):
         try:
             resp = None
             t_load = time.time()
-            if target.role == "result" and target.referer and s["last_url"] == target.referer:
+            from_serp = target.role == "result" and target.referer and s.get("serp_ref") == target.referer
+            if from_serp and not s.get("on_serp"):
+                try:                                           # back to the results, like pressing Back
+                    driver.pause(lognormal_clipped(driver.rng, 1.2, 0.5, 0.4, 4))
+                    page.go_back(wait_until="domcontentloaded", timeout=15000)
+                    s["on_serp"] = True
+                    driver.pause(lognormal_clipped(driver.rng, 2.5, 0.5, 0.8, 8))   # re-scan the list
+                except Exception:
+                    pass
+            if (from_serp and s.get("on_serp")) or \
+                    (target.role == "result" and target.referer and s["last_url"] == target.referer):
                 resp, how = self._click_through(page, driver, target, mobile)
             if resp is None and how == "open":
                 resp = page.goto(target.url, referer=target.referer, wait_until="domcontentloaded",
@@ -390,6 +414,9 @@ class BrowserTransport(Transport):
             stats = driver.serp() if target.role == "search" else driver.browse()
             downloaded = self._maybe_download(page) or self._maybe_save_image(page)
             s["last_url"] = page.url
+            s["on_serp"] = target.role == "search"
+            if target.role == "search":
+                s["serp_ref"] = target.url
             html = page.content()[:2_000_000]
             parts = [f"{how} {'📱' if mobile else '🖥'}", f"{stats['scrolls']} scrolls",
                      f"{int(stats['depth'] * 100)}% depth", f"{stats['seconds']:.0f}s on page"]

@@ -31,6 +31,7 @@ class Target:
     referer: str | None = None    # set on click-through / link-follow hits
     note: str | None = None       # e.g. query origin ("trends", "dataset"…), shown in the log
     role: str = "page"            # search | result | page
+    dwell: float | None = None    # seconds a person would spend on this page (sessions)
 
     @property
     def host(self) -> str:
@@ -116,7 +117,10 @@ class ClearnetTransport(Transport):
                 # Identity headers injected here; requests also sets Host/Content-Length.
                 headers=headers,
             )
-            return HitResult(resp.status_code, resp.text[:2_000_000])
+            status = resp.status_code
+            if status == 202 and "duckduckgo.com" in target.url:
+                status = 429                       # DuckDuckGo's bot check: back off, don't count a visit
+            return HitResult(status, resp.text[:2_000_000])
         except requests.RequestException as exc:
             return HitResult(None, error=str(exc))
 
@@ -167,7 +171,7 @@ class TorTransport(Transport):
             )
             return HitResult(resp.status_code, resp.text[:2_000_000])
         except requests.RequestException as exc:
-            return HitResult(None, error=str(exc))
+            return HitResult(None, error=explain_tor_error(str(exc), f"{self.socks_host}:{self.socks_port}"))
 
     def renew_circuits(self) -> bool:
         """NEWNYM via the Tor control port, if configured. Best-effort."""
@@ -226,6 +230,29 @@ TOR_BROWSER_HEADERS = {
     "Accept-Encoding": "gzip, deflate, br",
     "Upgrade-Insecure-Requests": "1",
 }
+
+
+_TOR_ERRORS = [   # SOCKS5 reply codes from Tor, in plain English
+    ("0xf0", "onion address not found — the site is offline or has moved"),
+    ("0xf1", "onion address is invalid"), ("0xf2", "onion site didn't respond (introduction failed)"),
+    ("0xf3", "onion site didn't respond (rendezvous failed)"), ("0xf4", "onion site requires client authorization"),
+    ("0xf5", "onion address is malformed"), ("0xf6", "onion connection timed out — onion sites are often slow"),
+    ("0x01", "Tor couldn't reach the site (it may be offline)"), ("0x02", "Tor's rules refused this connection"),
+    ("0x03", "the network is unreachable through Tor"), ("0x04", "the site is unreachable through Tor"),
+    ("0x05", "the site refused the connection"), ("0x06", "timed out inside Tor"),
+]
+
+
+def explain_tor_error(msg: str, socks: str) -> str:
+    low = msg.lower()
+    for code, text in _TOR_ERRORS:
+        if code in low:
+            return text
+    if "connection refused" in low or "error connecting to socks" in low:
+        return f"Tor isn't accepting connections on {socks} (is it still starting?)"
+    if "timed out" in low:
+        return "timed out — onion sites are often slow; will try again later"
+    return msg.splitlines()[0][:160]
 
 
 def is_onion_host(url: str) -> bool:

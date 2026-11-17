@@ -52,21 +52,47 @@ def test_plan_hour_sets_budgets_and_spreads_pacing():
 
 def test_dns_defaults_to_mix_with_only_opennic_on():
     cfg = Profile(name="t").dns
-    assert cfg.mode == "mix" and cfg.opennic is True and cfg.quad9 is False and cfg.custom == []
+    assert cfg.mode == "mix" and cfg.opennic is False and cfg.quad9 is False and cfg.custom == []
+    assert [r["ip"] for r in cfg.resolvers] == ["80.152.203.134", "193.31.24.55", "80.153.146.105", "9.9.9.9"]
+    assert [r["role"] for r in cfg.resolvers] == ["primary"] * 3 + ["fallback"]
 
 
-def test_secure_mode_uses_opennic_quad9_and_custom_only_when_enabled():
-    cfg = DnsConfig(mode="secure", opennic=True, quad9=True, custom=["10.0.0.53"])
-    plan = DnsPlan(random.Random(3), cfg, ["148.113.235.58|ns1.ca|CA"])
-    ips = {plan.pick()[0] for _ in range(200)}
-    assert ips == {"148.113.235.58", "9.9.9.9", "149.112.112.112", "10.0.0.53"}
-    cfg2 = DnsConfig(mode="secure", opennic=False, quad9=False)
-    assert DnsPlan(random.Random(3), cfg2, ["148.113.235.58|ns1.ca|CA"]).pick()[0] == "system"
+def test_recommended_resolvers_primaries_then_fallback():
+    cfg = DnsConfig(mode="secure")
+    assert [r["ip"] for r in cfg.resolvers if r["role"] == "primary"] == \
+        ["80.152.203.134", "193.31.24.55", "80.153.146.105"]
+    plan = DnsPlan(random.Random(3), cfg)
+    assert {plan.pick()[0] for _ in range(100)} == {"80.152.203.134", "193.31.24.55", "80.153.146.105"}
+    for ip in ("80.152.203.134", "193.31.24.55"):
+        plan.health[ip] = {"ip": ip, "ok": True, "rtt_ms": 900, "egress": None}      # answering, but slow
+    plan.health["80.153.146.105"] = {"ip": "80.153.146.105", "ok": False, "rtt_ms": None, "egress": None}
+    plan.health["9.9.9.9"] = {"ip": "9.9.9.9", "ok": True, "rtt_ms": 20, "egress": None}
+    assert {plan.pick()[0] for _ in range(50)} == {"9.9.9.9"}                 # fallback only now
+    plan.health["9.9.9.9"]["ok"] = False
+    assert {plan.pick()[0] for _ in range(50)} <= {"80.152.203.134", "193.31.24.55"}   # slow beats nothing
+
+
+def test_interception_is_detected():
+    plan = DnsPlan(random.Random(1), DnsConfig(mode="secure"))
+    plan.system_egress = "192.0.2.7"
+    for r in plan.cfg.resolvers:
+        plan.health[r["ip"]] = {"ip": r["ip"], "ok": True, "rtt_ms": 1, "egress": "192.0.2.7"}
+    assert plan.report()["intercepted"]
+    plan.health["193.31.24.55"]["egress"] = "193.31.24.55"
+    assert plan.verdict("193.31.24.55") == "ok"
+
+
+def test_user_can_override_and_reset_resolvers():
+    p = Profile(name="t")
+    apply_overrides(p, {"dns": {"resolvers": [{"ip": "10.0.0.53", "name": "mine", "role": "primary"}]}})
+    assert [r["ip"] for r in p.dns.resolvers] == ["10.0.0.53"]
+    apply_overrides(p, {"dns": {"reset_resolvers": True}})
+    assert len(p.dns.resolvers) == 4
 
 
 def test_mix_mode_switches_in_blocks_with_the_right_share():
     t = [0.0]
-    plan = DnsPlan(random.Random(4), DnsConfig(mode="mix", quad9=True, system_share=0.7),
+    plan = DnsPlan(random.Random(4), DnsConfig(mode="mix", system_share=0.7),
                    [], clock=lambda: t[0])
     modes, runs, last = [], 0, None
     for _ in range(20000):                 # one minute steps over ~2 weeks
@@ -81,7 +107,7 @@ def test_mix_mode_switches_in_blocks_with_the_right_share():
 
 
 def test_bad_dns_settings_rejected():
-    for bad in ({"dns": {"mode": "weird"}}, {"dns": {"custom": "not-an-ip"}}, {"rate": {"level": 11}}):
+    for bad in ({"dns": {"mode": "weird"}}, {"dns": {"resolvers": [{"ip": "not-an-ip"}]}}, {"rate": {"level": 11}}):
         try:
             apply_overrides(Profile(name="t"), bad)
             raise AssertionError(f"accepted {bad}")

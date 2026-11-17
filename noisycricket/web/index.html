@@ -59,6 +59,12 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
 .opt:has(input:checked){border-color:var(--acc);background:var(--acc2)}.opt input{margin-right:8px}
 .opt.t:has(input:checked){border-color:var(--tor);background:var(--tor2)}
 .steps{display:flex;gap:6px;margin-bottom:14px}.steps i{flex:1;height:5px;border-radius:3px;background:var(--line)}.steps i.on{background:var(--acc)}
+details.why{display:inline;font-weight:400;text-transform:none;letter-spacing:0;color:var(--mute)}
+details.why>summary{display:inline;cursor:pointer;list-style:none;font-size:12px;opacity:.75}
+details.why>summary::-webkit-details-marker{display:none}
+details.why[open]>div{display:block;margin:6px 0;padding:8px 10px;border-radius:7px;background:var(--code);font-size:12px;color:var(--ink);max-width:720px}
+table.dns input[type=text]{width:100%;padding:3px 6px;font-size:12px}
+table.dns td{vertical-align:middle}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 16px;border-radius:8px;display:none;z-index:30}
 @media(max-width:600px){main{padding:10px}.big{font-size:22px}}
 .vz{--you:#2a78d6;--noi:#eb6834}
@@ -157,6 +163,7 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
       <button id="tRestart" title="Stop and start the Tor program: it reconnects to the Tor network from scratch (10–30 seconds)">↻ Restart</button>
       <button id="tNym" title="Tor keeps running and uses fresh circuits (a new path and exit) for new connections. Takes a second.">🔀 New identity (new circuits)</button>
       <button id="tInstall">⬇ Install / update Tor</button>
+      <button id="tTest">✔ Test Tor</button>
     </div>
     <div class="small mute"><b>Restart</b> stops and starts Tor itself, reconnecting to the network from scratch (use it if Tor seems stuck). <b>New identity</b> keeps Tor running and switches to fresh circuits, so new connections take a different path. <b>Ready</b> means Tor is connected; individual .onion sites are often offline, and those show in Activity as “site offline” and are skipped for a while.</div>
     <div class="small mute" id="tInstallNote"></div>
@@ -202,8 +209,17 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
   <div class="card"><h3>DNS lookups</h3>
     <div class="small mute">In Activity and the Live Log each lookup shows the site looked up and which resolver answered, e.g. <code>www.reddit.com [via your normal DNS]</code>.</div>
     <label class="opt"><input type="radio" name="dnsm" value="system"> <b>Your normal DNS</b> <span class="mute">— whatever your router, ISP, VPN or system already uses, so the noise lands exactly where your real lookups do</span></label>
-    <label class="opt"><input type="radio" name="dnsm" value="secure"> <b>Secure resolvers only</b> <span class="mute">— the servers ticked below</span></label>
+    <label class="opt"><input type="radio" name="dnsm" value="secure"> <b>Secure resolvers only</b> <span class="mute">— only the resolvers listed below</span></label>
     <label class="opt"><input type="radio" name="dnsm" value="mix"> <b>Mix</b> <span class="mute">(recommended, default) — switch between the two in random 10–60 minute blocks, spending</span> <input type="number" id="dShare" min="0" max="100" style="width:64px"> <span class="mute">% of the time on your normal DNS</span></label>
+    <div class="small" id="dSys" style="margin:6px 0"></div>
+    <div id="dWarn"></div>
+    <div class="row" style="margin-top:10px"><b>Resolvers</b> <span class="small mute">— the exact IPs used in Secure / Mix mode</span>
+      <details class="why"><summary>ⓘ</summary><div><b>Primary</b> servers are used normally. A <b>fallback</b> is used only when no primary answers within the speed limit. <b>Status</b> shows the time for one lookup. <b>verified</b> means the server that really answered was the one listed (checked with <code>whoami.akamai.net</code>). <b>⚠ intercepted</b> means something on your network (some ISPs, workplaces, hotels, cloud machines) answered in its place, so lookups never reached that server.</div></details>
+      <span class="sp"></span><button id="dCheck">Check now</button><button id="dReset">Reset to recommended</button></div>
+    <table class="dns"><thead><tr><th>On</th><th>Name</th><th>IP address</th><th>Role</th><th>Note</th><th>Status</th><th></th></tr></thead><tbody id="dBody"></tbody></table>
+    <div class="row" style="margin-top:6px"><button id="dAdd">+ Add a resolver</button>
+      <span class="small mute">Slower than <input type="number" id="dSlow" min="50" max="3000" style="width:70px"> ms counts as not fast.</span></div>
+    <div style="margin-top:8px"><b>Extras</b> <span class="small mute">— optional, added as primaries</span></div>
     <label class="chk"><input type="checkbox" id="dOpen"><span><b>OpenNIC</b> servers that pass OpenNIC's checks, keep no logs (preferred) or anonymized logs, and offer DNSCrypt, DoH or DoT (<span id="dOpenN">0</span>) <details style="display:inline"><summary class="small">list</summary><div class="small mute" id="dOpenList"></div></details></span></label>
     <label class="chk"><input type="checkbox" id="dQuad9"><span><b>Quad9</b> 9.9.9.9 and 149.112.112.112 <span class="mute">(blocks malware domains, DNSSEC)</span></span></label>
     <div class="row">Your own resolvers <input type="text" id="dCustom" placeholder="optional, e.g. 1.2.3.4, 5.6.7.8" style="flex:1;min-width:220px"></div>
@@ -597,8 +613,19 @@ function renderTorLog(){
   const s=$('#tLog').parentElement;s.scrollTop=s.scrollHeight;
 }
 // tor
+$('#tTest').onclick=()=>{act('/api/tor/selftest');toast('Testing Tor (up to a minute)…')};
+function renderTorSelftest(t){
+  let o=$('#tTestOut');
+  if(!o){o=document.createElement('div');o.id='tTestOut';o.className='small';$('#tTest').parentElement.after(o)}
+  const st=t.selftest;
+  o.innerHTML=!st?'<span class="mute">“Test Tor” checks that traffic really leaves through Tor and that an onion site loads.</span>':st.running?'Testing…':
+    `<b class="${st.exit&&st.exit.ok&&st.onion&&st.onion.ok?'ok':'warnc'}">${esc(st.summary||'')}</b><br>`+
+    (st.exit?`Through Tor to the web: ${st.exit.ok?`<span class="ok">✓ yes</span> — sites see Tor exit ${esc(st.exit.ip||'')} (${st.exit.ms} ms)`:`<span class="bad">✗ ${esc(st.exit.error||'not via Tor')}</span>`}<br>`:'')+
+    (st.onion?`Onion site (Tor Project): ${st.onion.ok?`<span class="ok">✓ loaded</span> in ${st.onion.ms} ms`:`<span class="bad">✗ ${esc(st.onion.error||('HTTP '+st.onion.status))}</span>`}`:'');
+}
 function renderTorStatus(){
   const t=S.tor;
+  renderTorSelftest(t);
   $('#tState').textContent=({stopped:'Stopped',installing:'Installing…',starting:'Starting…',bootstrapping:'Connecting…',ready:'Ready 🧅',error:'Error'})[t.state]||t.state;
   $('#tBar').style.width=(t.state==='installing'?t.install_progress*100:t.bootstrap_pct)+'%';
   $('#tSum').textContent=(t.error?t.error:t.state==='installing'?'Downloading & verifying the official Tor bundle…':t.bootstrap_summary||'')+(t.hint?'  ⚠ '+t.hint:'');
@@ -752,7 +779,8 @@ function fillSettings(force){
   const r=p.rate||{mode:'random',level:5,randomness:1};$('#sLevel').value=r.level;rateInfo('sLevel','sLevelInfo');levelScope();
   $('#sRand').value=r.mode==='steady'?0:Math.round((r.randomness??1)*100);randInfo();
   const d=p.dns||{};(document.querySelector(`input[name=dnsm][value=${d.mode||'mix'}]`)||{}).checked=true;
-  $('#dShare').value=Math.round((d.system_share??0.5)*100);$('#dOpen').checked=d.opennic!==false;$('#dQuad9').checked=!!d.quad9;$('#dCustom').value=(d.custom||[]).join(', ');
+  $('#dShare').value=Math.round((d.system_share??0.5)*100);$('#dSlow').value=d.slow_ms||250;
+  dRes=(d.resolvers||[]).map(r=>({...r}));renderDnsTable();$('#dOpen').checked=d.opennic!==false;$('#dQuad9').checked=!!d.quad9;$('#dCustom').value=(d.custom||[]).join(', ');
   $('#dOpenN').textContent=(S.opennic||[]).length;$('#dOpenList').innerHTML=(S.opennic||[]).map(o=>esc(o[1]+' '+o[0]+' ('+(o[2]||'?')+')'+(o[3]?' · '+(o[3]==='none'?'no logs':'anonymized logs')+' · '+(o[4]||''):''))).join('<br>')+'<div style="margin-top:4px">Noise lookups to these servers are ordinary (unencrypted) DNS, like most lookups; the encryption requirement is a quality bar for the servers.</div>';
   $('#sScale').value=p.realtime_scale;$('#sMaxF').value=p.daily_max_failures;$('#sProxy').value=p.transports.clearnet.proxy||'';
   $('#sClear').checked=p.transports.clearnet.enabled;loadUA();
@@ -794,7 +822,7 @@ async function saveSettings(auto){
   const engines={};Object.entries(window._engMix.values()).forEach(([n,v])=>engines[n]={enabled:v>0,budget_per_day:Math.round(v*10)});
   const rnd=parseInt($('#sRand').value||0)/100;
   try{await api('/api/config',{realtime_scale:parseFloat($('#sScale').value),daily_max_failures:parseInt($('#sMaxF').value),engines,rate:{mode:rnd>0?'random':'steady',level:parseFloat($('#sLevel').value),randomness:rnd},
-      dns:{mode:document.querySelector('input[name=dnsm]:checked').value,system_share:parseInt($('#dShare').value||50)/100,opennic:$('#dOpen').checked,quad9:$('#dQuad9').checked,custom:$('#dCustom').value},
+      dns:{mode:document.querySelector('input[name=dnsm]:checked').value,system_share:parseInt($('#dShare').value||50)/100,opennic:$('#dOpen').checked,quad9:$('#dQuad9').checked,custom:$('#dCustom').value,slow_ms:parseInt($('#dSlow').value||250),resolvers:readDnsTable()},
       transports:{clearnet:{enabled:$('#sClear').checked,proxy:$('#sProxy').value||null,browser:$('#sBrowser').value,browser_visible:$('#sWin').value==='visible',browser_offscreen:$('#sWin').value==='offscreen',browser_engine:$('#sEngine').value}},
       queries:{live:$('#qLive').checked,dataset:$('#qData').checked,builtin:$('#qBuiltin').checked,words:$('#qWords').checked},
       traffic:{pattern:(document.querySelector('input[name=xpat]:checked')||{}).value||'drift',...(()=>{const m=window._trMix.values();return {browser:m.browser,plain:m.plain,onion:m.onion??window._trOnion}})(),
@@ -948,7 +976,36 @@ $('#toolClearLog').onclick=()=>act('/api/logs/clear').then(()=>{$('#toolLogNote'
 $('#fRefresh').onclick=()=>{if(confirm('Download fresh lists now from Google Trends, Wikipedia, BBC, Hugging Face and Tranco? This contacts those sites from your connection.')){act('/api/feeds/refresh');toast('Refreshing sources in the background…')}};
 $('#fAuto').onchange=()=>act('/api/app',{auto_refresh_sources:$('#fAuto').checked});
 $('#sBrowser').oninput=$('#sWin').oninput=()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'};
+let dRes=[];
+function dnsDirty(){dirty.set=true;const x=$('#sSaved');if(x)x.textContent='unsaved changes'}
+function renderDnsTable(){
+  $('#dBody').innerHTML=dRes.map((r,i)=>`<tr data-i="${i}"><td><input type="checkbox" data-f="enabled" ${r.enabled!==false?'checked':''}></td>
+    <td><input type="text" data-f="name" value="${esc(r.name)}"></td><td><input type="text" data-f="ip" value="${esc(r.ip)}" style="font-family:ui-monospace,monospace"></td>
+    <td><select data-f="role"><option value="primary" ${r.role==='primary'?'selected':''}>primary</option><option value="fallback" ${r.role==='fallback'?'selected':''}>fallback</option></select></td>
+    <td><input type="text" data-f="note" value="${esc(r.note||'')}"></td><td class="small" id="dh-${i}">—</td><td><button data-del="${i}" title="Remove" style="padding:1px 8px">✕</button></td></tr>`).join('')||'<tr><td colspan=7 class="mute">No resolvers. Add one, or Reset to recommended.</td></tr>';
+  $$('#dBody input,#dBody select').forEach(x=>x.oninput=dnsDirty);
+  $$('[data-del]').forEach(b=>b.onclick=()=>{dRes=readDnsTable();dRes.splice(+b.dataset.del,1);renderDnsTable();dnsDirty()});
+  renderDnsHealth();
+}
+function readDnsTable(){return $$('#dBody tr[data-i]').map(tr=>{const g=f=>tr.querySelector(`[data-f=${f}]`);return {enabled:g('enabled').checked,name:g('name').value.trim(),ip:g('ip').value.trim(),role:g('role').value,note:g('note').value.trim()}}).filter(r=>r.ip)}
+$('#dAdd').onclick=()=>{dRes=readDnsTable();dRes.push({ip:'',name:'',role:'primary',enabled:true,note:''});renderDnsTable();dnsDirty()};
+$('#dReset').onclick=async()=>{if(!confirm('Replace the resolver list with the recommended one?'))return;try{await api('/api/config',{dns:{reset_resolvers:true}});await poll();fillSettings(true);toast('Recommended resolvers restored')}catch(e){toast(e.message,1)}};
+$('#dCheck').onclick=()=>{act('/api/dns/check');toast('Checking each resolver…')};
+$('#dSlow').oninput=dnsDirty;
+function renderDnsHealth(){
+  if(!S||!S.dns)return;const by={};S.dns.resolvers.forEach(h=>by[h.ip]=h);
+  dRes.forEach((r,i)=>{const c=$('#dh-'+i);if(!c)return;const h=by[r.ip];
+    if(!h||h.verdict==='unknown'){c.innerHTML='<span class="mute">not checked</span>';return}
+    c.innerHTML={ok:`<span class="ok">✓ ${h.rtt_ms} ms</span>${h.egress?' <span class="mute">verified</span>':''}`,
+      slow:`<span class="warnc">slow ${h.rtt_ms} ms</span>`,down:`<span class="bad">✗ ${esc(h.error||'no answer')}</span>`,
+      intercepted:`<span class="warnc" title="answered by ${esc(h.egress)}">⚠ intercepted</span>`}[h.verdict]||esc(h.verdict)});
+  const sy=S.dns.system||[];
+  $('#dSys').innerHTML=sy.length?`Your normal DNS right now: ${sy.map(x=>`<code>${esc(x.ip)}</code>${x.what?' <span class="mute">('+esc(x.what)+')</span>':''}`).join(', ')}`:'<span class="mute">Your normal DNS: press “Check now” to see which servers this computer uses.</span>';
+  $('#dWarn').innerHTML=S.dns.intercepted?`<div class="note warn small"><b>⚠ Your network appears to intercept DNS.</b> Every resolver was really answered by the same machine (<code>${esc((S.dns.resolvers[0]||{}).egress||'?')}</code>), so lookups don't reach the servers listed. A VPN usually fixes this; until then “Your normal DNS” is the honest choice.</div>`:'';
+  $('#dCheck').disabled=!!S.dns.checking;$('#dCheck').textContent=S.dns.checking?'Checking…':'Check now';
+}
 function renderRealism(){
+  renderDnsHealth();
   const b=S.browser;
   $('#sBrowserInfo').innerHTML=b.active?`<span class="ok">✓ using ${esc(b.detail.split(/[\\/]/).pop())}</span>`:b.setting==='off'?'<span class="mute">off</span>':`<span class="warnc">⚠ ${esc(b.detail)}</span>`;
   const label={deny:'Safety blocklist',trends:'Google Trends',wiki:'Wikipedia most-read',news:'BBC headlines',dataset:'Real past searches',tranco:'Popular sites (Tranco)',opennic:'OpenNIC resolvers',crux:'Popular sites (Chrome / CrUX)'};
