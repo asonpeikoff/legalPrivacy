@@ -160,6 +160,36 @@ class UIServer:
                         return self._json(ctl.ua_state())
                     if u.path == "/api/tools/speed":
                         return self._json(ctl.speed_status())
+                    if u.path in ("/api/hits.json", "/api/hits.csv"):
+                        rows = ctl.hits(0)
+                        if u.path.endswith(".json"):
+                            return self._send(200, json.dumps(rows, indent=1).encode(), "application/json",
+                                              {"Content-Disposition": "attachment; filename=noisycricket-activity.json"})
+                        import csv
+                        import io
+                        buf = io.StringIO()
+                        cols = ["seq", "ts", "lane", "engine", "url", "status", "ok", "latency_ms", "note", "role", "detail", "error"]
+                        w = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
+                        w.writeheader()
+                        w.writerows(rows)
+                        return self._send(200, buf.getvalue().encode(), "text/csv; charset=utf-8",
+                                          {"Content-Disposition": "attachment; filename=noisycricket-activity.csv"})
+                    if u.path == "/api/tools/estimate":
+                        return self._json(ctl.estimate())
+                    if u.path == "/api/tools/privacy":
+                        return self._json({"checks": ctl.privacy_check()})
+                    if u.path == "/api/interests":
+                        return self._json(ctl.interests_state())
+                    if u.path == "/metrics":
+                        if not ctl.profile.extras.metrics:
+                            return self._json({"error": "metrics are off (Settings → Extras)"}, 404)
+                        st = ctl.state()
+                        lines = ["# noisyCricket metrics", f"noisycricket_running {int(bool(st['running']))}",
+                                 f"noisycricket_bytes_today {st.get('bytes_today', 0)}"]
+                        for ln in st["lanes"]:
+                            lines += [f'noisycricket_hits_total{{lane="{ln["name"]}"}} {ln["hits"]}',
+                                      f'noisycricket_failures_total{{lane="{ln["name"]}"}} {ln["failures"]}']
+                        return self._send(200, ("\n".join(lines) + "\n").encode(), "text/plain; version=0.0.4")
                     if u.path == "/api/doctor":
                         return self._json({"checks": ctl.doctor()})
                 except Exception as exc:

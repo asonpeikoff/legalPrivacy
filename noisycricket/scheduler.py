@@ -146,6 +146,12 @@ class Runner:
         self._lane_wobble: dict[str, float] = {}
         self._mobile_wobble = 0.0
         self._alt_lane, self._alt_left = None, 0
+        self.bytes_today = 0
+        self._host_last: dict[str, float] = {}
+        ex = getattr(self.profile, "extras", None)
+        if ex is not None:
+            from .engines import configure_search
+            configure_search(ex.search_engines, ex.typos)
         self._ua = UaChooser(self.rng, self.profile.identity,
                              mobile=lambda: (self._mobile_now, tc.device if tc else "iPhone 13"))
         self._hour_end = 0.0
@@ -171,7 +177,9 @@ class Runner:
                 "engines": {e: {"spent": b.spent, "per_day": b.per_day, "failures": b.failures}
                             for e, b in lane.budgets.items()},
             })
-        return {"lanes": lanes, "paused": self.paused, "uptime": int(time.time() - self.started_at)}
+        ex = getattr(self.profile, "extras", None)
+        return {"lanes": lanes, "paused": self.paused, "uptime": int(time.time() - self.started_at),
+                "bytes_today": self.bytes_today, "data_cap_mb": ex.daily_data_mb if ex else 0}
 
     # ── hourly plan (app mode) ──────────────────────────────────────────────
     def _lane_base(self) -> dict[str, float]:
@@ -244,6 +252,13 @@ class Runner:
         """Set this hour's per-engine allowances and pacing from the RatePlanner."""
         if self.mix:
             self._update_mix()
+        if not self._active_hour(hour):                  # outside your active hours: nothing this hour
+            self.hour, self.hour_target = hour, 0.0
+            for lane in self.lanes:
+                for b in lane.budgets.values():
+                    b.per_day, b.spent = 0, 0
+            self._emit("info", "scheduler", f"Hour {hour:02d}:00 is outside your active hours: resting.")
+            return 0.0
         shares = self.engine_shares()
         search_share = sum(v for (ln, e), v in shares.items() if e == "search") or 0.3
         total = self.rate.actions_for_hour(hour, search_share)
@@ -263,6 +278,46 @@ class Runner:
                    f"({self.profile.rate.mode}, level {self.profile.rate.level:g}).")
         return total
 
+    def _activity_says_wait(self) -> bool:
+        """Settings → Extras → Your own activity. True = skip a turn (after sleeping)."""
+        ex = getattr(self.profile, "extras", None)
+        if ex is None or ex.activity == "off":
+            return False
+        if not hasattr(self, "_netwatch"):
+            from .netwatch import NetWatch
+            self._netwatch, self._nw_next, self._nw_bytes, self._nw_said = NetWatch(), 0.0, 0, ""
+        now = time.monotonic()
+        if now >= self._nw_next:
+            self._netwatch.sample(self.bytes_today - self._nw_bytes)
+            self._nw_bytes, self._nw_next = self.bytes_today, now + 15
+        nw = self._netwatch
+        if ex.activity == "backoff" and nw.rate_kbps > ex.busy_kbps:
+            if self._nw_said != "busy":
+                self._emit("info", "scheduler", f"You're using the connection ({nw.rate_kbps:.0f} kbit/s): "
+                                                "pausing noise until it quietens.")
+                self._nw_said = "busy"
+            self.sleep_fn(30.0)
+            return True
+        if ex.activity == "follow" and nw.idle_for() > 600 and self.rng.random() < 0.8:
+            if self._nw_said != "idle":
+                self._emit("info", "scheduler", "You've been idle for 10 minutes: noise slows down until you're back.")
+                self._nw_said = "idle"
+            self.sleep_fn(30.0)
+            return True
+        self._nw_said = ""
+        return False
+
+    def _active_hour(self, hour: int) -> bool:
+        ex = getattr(self.profile, "extras", None)
+        if ex is None or not ex.active_hours:
+            return True
+        a, b = int(ex.active_from), int(ex.active_to)
+        return (a <= hour < b) if a < b else (hour >= a or hour < b) if a > b else True
+
+    def _data_capped(self) -> bool:
+        ex = getattr(self.profile, "extras", None)
+        return bool(ex and ex.daily_data_mb > 0 and self.bytes_today >= ex.daily_data_mb * 1_000_000)
+
     def reset_budgets(self) -> None:
         for lane in self.lanes:
             for b in lane.budgets.values():
@@ -270,6 +325,7 @@ class Runner:
                 b.history.clear()
             lane.hits_by_identity = lane.consecutive_failures = 0
         self.day_failures = self.day_onion_failures = 0
+        self.bytes_today = 0
         self._emit("info", "scheduler", "New day — daily budgets reset.")
 
     def _probe(self, lane: Lane, identity: Identity, target: Target) -> HitResult:
@@ -296,7 +352,13 @@ class Runner:
             return HitResult(None, error="lookup via your normal DNS failed")
         noise = DnsNoise(self.rng, self.wordlist, self.domains)
         if noise.fire(packet, server, timeout=target.timeout):
-            return HitResult(200, "")
+            ex = getattr(self.profile, "extras", None)
+            if ex is not None and ex.browser_dns:        # browsers also ask for IPv6 and HTTPS records
+                for qtype in ("AAAA", "HTTPS"):
+                    noise.fire(build_dns_query(domain, self.rng.randint(0, 0xFFFF), qtype), server, timeout=1.5)
+            res = HitResult(200, "")
+            res.bytes = 300 if ex is not None and ex.browser_dns else 100
+            return res
         return HitResult(None, error=f"dns query to {server} failed")
 
     def _dns_label(self, server: str) -> str:
@@ -352,7 +414,19 @@ class Runner:
         lane, eng_name = self.rng.choices(options, weights=weights)[0]
         identity, pacer = self._identity_pacer_for(lane)
         target = self._make_target(lane, eng_name, identity)
+        ex = getattr(self.profile, "extras", None)
+        if ex is not None and ex.polite and target.kind != "dns" and target.role != "search":
+            import urllib.parse as _up
+            for _ in range(3):                            # polite: no site twice within a minute
+                host = _up.urlparse(target.url).hostname or ""
+                if self.clock() - self._host_last.get(host, -1e9) >= 60:
+                    break
+                target = self._make_target(lane, eng_name, identity)
         result = self._probe(lane, identity, target)
+        if target.kind != "dns":
+            import urllib.parse as _up
+            self._host_last[_up.urlparse(target.url).hostname or ""] = self.clock()
+        self.bytes_today += int(getattr(result, "bytes", 0) or len(result.html or ""))
         budget = lane.budgets[eng_name]
         if result.ok:
             budget.record_hit(self.clock())
@@ -387,6 +461,8 @@ class Runner:
                 self.day_failures += 1
         total_failures, onion_failures = self.day_failures, self.day_onion_failures
         self._record_hit(lane, eng_name, identity, target, result)
+        if self._data_capped():
+            raise MaxFailuresExceeded("daily data cap reached")
         if total_failures > self.profile.daily_max_failures or \
                 onion_failures > self.profile.daily_max_failures * 3:
             raise MaxFailuresExceeded("daily_max_failures exceeded — stopping run")
@@ -537,10 +613,13 @@ class Runner:
             if self.paused:
                 self.sleep_fn(1.0)
                 continue
+            if self._activity_says_wait():
+                continue
             try:
                 worked = self.run_once()
             except MaxFailuresExceeded as exc:
-                self._emit("error", "scheduler", f"{exc}. Pausing until tomorrow.")
+                self._emit("warn" if "data cap" in str(exc) else "error", "scheduler",
+                           f"{str(exc)[0].upper()}{str(exc)[1:]}. Pausing until tomorrow.")
                 self.paused = "failures"           # auto-resumes at the next day reset
                 continue
             if not worked:

@@ -49,8 +49,16 @@ class DomainPool:
         self.my_sites = [s for s in (my_sites or []) if safe_domain(s)]   # most-visited first
         self.random_share = random_share
         self.my_weights = my_weights or {}
+        self.interests = None              # Interests (optional personas)
+        self.interest_share = 0.0
         self._recent: deque[str] = deque(maxlen=60)
         self._seen_good: deque[str] = deque(maxlen=300)    # sites reached by clicking search results
+
+    def _themed(self) -> str | None:
+        if self.interests is not None and self.rng.random() < self.interest_share:
+            s = self.interests.site()
+            return s if safe_domain(s) else None
+        return None
 
     def remember(self, host: str) -> None:
         """Record a site the user persona actually reached organically (used as a later start point)."""
@@ -76,7 +84,7 @@ class DomainPool:
     def pick(self, browsable: bool = False) -> str:
         """Zipf-weighted draw: popular sites dominate, like real browsing, but the tail still appears.
         browsable=True restricts to things people open in a browser (DNS lookups use everything)."""
-        mine = self._mine()
+        mine = self._themed() or self._mine()
         if mine:
             self._recent.append(mine)
             return mine
@@ -97,7 +105,7 @@ class DomainPool:
 
     def visit_host(self) -> str:
         """A site to open: My List first (if set), else one reached earlier via search, else a popular site."""
-        mine = self._mine()
+        mine = self._themed() or self._mine()
         if mine:
             return f"www.{mine}" if mine.count(".") == 1 and self.rng.random() < 0.6 else mine
         if self._seen_good and self.rng.random() < 0.5:

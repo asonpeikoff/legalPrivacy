@@ -96,6 +96,8 @@ class QuerySource:
         self.words = [w for w in (words or []) if 4 <= len(w) <= 8 and w.isalpha() and w.islower()][:200_000]
         self._recent: deque[str] = deque(maxlen=500)
         self._last: dict[int, str] = {}
+        self.interests = None              # Interests (optional personas)
+        self.interest_share = 0.0
 
     def _pools(self) -> dict[str, list[str]]:
         st = self.store
@@ -127,6 +129,11 @@ class QuerySource:
             q = f"{prev} {self.rng.choice(REFINERS[prev_origin])}"     # a person narrows the previous search
             if safe_query(q) and q not in self._recent:
                 return self._finish(ident, q, "refine")
+        if self.interests is not None and self.rng.random() < self.interest_share:
+            for _ in range(4):
+                q = self.interests.query()
+                if safe_query(q) and q not in self._recent:
+                    return self._finish(ident, q, "interest")
         pools = self._pools()
         names = list(pools)
         # de-dup window scales with how much material there is, so small pools aren't starved

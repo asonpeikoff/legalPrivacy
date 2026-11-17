@@ -20,7 +20,7 @@ import yaml
 from . import __version__
 from .config import (ConfigError, Profile, apply_overrides, load_profile,
                      profile_to_dict, save_profile)
-from .engines import load_wordlist
+from .engines import ENGINE_NAMES, SEARCH_WEIGHTS, load_wordlist
 from .dnsplan import DnsPlan
 from .domains import DomainPool
 from .rate import RatePlanner, describe as describe_rate
@@ -185,8 +185,44 @@ class Controller:
     # ── My List ──────────────────────────────────────────────────────────────
     def _domain_pool(self, _r):
         ml = self.profile.mylist
-        return DomainPool(_r.Random(), self.feeds, my_sites=ml.sites if ml.enabled else None,
+        pool = DomainPool(_r.Random(), self.feeds, my_sites=ml.sites if ml.enabled else None,
                           random_share=ml.random_share, my_weights=ml.weights)
+        pool.interests, pool.interest_share = self._interests(), self.profile.extras.interest_share
+        return pool
+
+    def interests_state(self) -> dict:
+        from .interests import CATEGORIES
+        it = self._interests()
+        return {"themes": list(CATEGORIES), "active": it.active() if it else []}
+
+    def estimate(self) -> dict:
+        """Rough data use before running (idea from NoisyCompany): per day and per month."""
+        from .rate import searches_per_hour
+        prof, ex, tc = self.profile, self.profile.extras, self.profile.traffic
+        eng = {n: (c.budget_per_day if c.enabled else 0) for n, c in prof.engines.items()}
+        if not self._tor_cfg().enabled:
+            eng["onion"] = 0
+        tot = sum(eng.values()) or 1
+        actions_h = searches_per_hour(prof.rate.level) / max(eng.get("search", 0) / tot, 0.05)
+        hours = 15.0
+        if ex.active_hours:
+            a, b = ex.active_from, ex.active_to
+            hours = float((b - a) % 24 or 24)
+        page_mb = 0.4 if ex.low_data else 2.5            # a real-browser page with images vs without
+        b_share = (tc.browser / ((tc.browser + tc.plain) or 1)) if self.browser_info()["active"] else 0.0
+        per_page = b_share * page_mb + (1 - b_share) * 0.15
+        per = {"search": per_page, "crawl": per_page, "dns": 0.0003, "onion": 0.4}
+        mb_h = actions_h * sum(eng[n] / tot * per.get(n, 0.2) for n in eng)
+        day = mb_h * hours
+        if ex.daily_data_mb:
+            day = min(day, ex.daily_data_mb)
+        return {"mb_per_day": round(day, 1), "gb_per_month": round(day * 30 / 1000, 2),
+                "actions_per_hour": round(actions_h), "hours_per_day": hours,
+                "real_browser": b_share > 0, "low_data": ex.low_data, "cap_mb": ex.daily_data_mb}
+
+    def privacy_check(self) -> list[dict]:
+        from .nettools import privacy_check
+        return privacy_check(self)
 
     def mylist_state(self) -> dict:
         from .history import history_files
@@ -316,13 +352,24 @@ class Controller:
             return None
         from .browser import BrowserTransport
         return BrowserTransport(proxy=cfg.proxy, headless=not cfg.browser_visible, executable=info["detail"],
+                                low_data=self.profile.extras.low_data,
                                 stop_event=stop, scale=lambda: self.profile.realtime_scale,
                                 on_event=lambda lvl, msg: self.log.add(lvl, "browser", msg))
+
+    def _interests(self):
+        ex = self.profile.extras
+        if not ex.interests:
+            return None
+        import random as _r
+        from .interests import Interests
+        return Interests(_r.Random(), ex.interest_list, ex.interest_active, ex.interest_rotate_days, ex.interest_salt)
 
     def _query_source(self, words):
         import random as _r
         q = self.profile.queries
-        return QuerySource(_r.Random(), self.feeds, QueryConfig(q.live, q.dataset, q.builtin, q.words), words)
+        qs = QuerySource(_r.Random(), self.feeds, QueryConfig(q.live, q.dataset, q.builtin, q.words), words)
+        qs.interests, qs.interest_share = self._interests(), self.profile.extras.interest_share
+        return qs
 
     def _start_feed_timer(self) -> None:
         """Only if the user opted in: re-fetch sources when they are ~3 months old."""
@@ -443,6 +490,9 @@ class Controller:
             "version": __version__, "first_run": self.first_run, "running": self.running,
             "paused": stats.get("paused", False), "uptime": stats.get("uptime", 0) if self.running else 0,
             "lanes": stats["lanes"], "app": self.app,
+            "bytes_today": stats.get("bytes_today", 0) if self.running else 0,
+            "data_cap_mb": self.profile.extras.daily_data_mb,
+            "engine_names": ENGINE_NAMES, "engine_defaults": dict(zip(ENGINE_NAMES, SEARCH_WEIGHTS)),
             "profile": profile_to_dict(self.profile)["profile"],
             "tor": self.tor_state(), "log_last_id": self.log.last_id(),
             "builtin_onion_seeds": [{"name": n, "url": u} for n, u in BUILTIN_ONION_SEEDS],

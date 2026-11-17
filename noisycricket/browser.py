@@ -147,6 +147,27 @@ class PlaywrightActuator:
                 return
             self.page.wait_for_timeout(min(250, left * 1000))
 
+    def select_text(self, x: float, y: float, dx: float) -> bool:
+        """Press, drag across a line of plain text, release: only on text, never on a link,
+        button or form field, so it can never click anything."""
+        try:
+            ok = self.page.evaluate(
+                "([x, y]) => { const e = document.elementFromPoint(x, y); if (!e) return false;"
+                " if (e.closest('a,button,input,select,textarea,label,summary,[onclick],[role=button],[contenteditable]')) return false;"
+                " return ['P','SPAN','LI','H1','H2','H3','H4','TD','BLOCKQUOTE','ARTICLE','DIV'].includes(e.tagName)"
+                " && (e.innerText || '').trim().length > 40; }", [x, y])
+            if not ok:
+                return False
+            m = self.page.mouse
+            m.down()
+            for i in range(1, 9):
+                m.move(x + dx * i / 8, y + (i % 3 - 1) * 0.6)
+                time.sleep(0.03)
+            m.up()
+            return True
+        except Exception:
+            return False
+
     def stopped(self) -> bool:
         return bool(self._stop and self._stop.is_set())
 
@@ -157,7 +178,8 @@ class BrowserTransport(Transport):
     def __init__(self, proxy: str | None = None, headless: bool = True, executable: str | None = None,
                  stop_event: threading.Event | None = None, scale: Callable[[], float] = lambda: 1.0,
                  download_prob: float = 0.03, on_event: Callable[[str, str], None] | None = None,
-                 rng: random.Random | None = None):
+                 rng: random.Random | None = None, low_data: bool = False):
+        self.low_data = low_data
         self.proxy, self.headless = proxy, headless
         self.executable = executable or find_browser()
         self.stop_event, self.scale, self.download_prob = stop_event, scale, download_prob
@@ -255,7 +277,16 @@ class BrowserTransport(Transport):
             (w, h), _ = rng.choices(DESKTOP_VIEWPORTS, weights=[v[1] for v in DESKTOP_VIEWPORTS])[0]
             vh = h - rng.choice([0, 70, 85, 110])          # browser chrome eats some height
             ctx = self._browser.new_context(viewport={"width": w, "height": vh}, locale=lang)
+        if self.low_data:              # optional: skip images, video and fonts to save data
+            ctx.route("**/*", lambda route: route.abort()
+                      if route.request.resource_type in ("image", "media", "font") else route.continue_())
         page = ctx.new_page()
+        counter = {"bytes": 0}
+        try:
+            page.on("response", lambda r: counter.__setitem__(
+                "bytes", counter["bytes"] + int(r.headers.get("content-length") or 0)))
+        except Exception:
+            pass
         cdp = None
         try:
             if ios:
@@ -283,7 +314,7 @@ class BrowserTransport(Transport):
                     cdp.send("Emulation.setUserAgentOverride", {**ov, "acceptLanguage": lang})
         except Exception:
             cdp = None
-        s = {"ctx": ctx, "page": page, "mobile": mobile, "cdp": cdp, "last_url": None}
+        s = {"ctx": ctx, "page": page, "mobile": mobile, "cdp": cdp, "last_url": None, "counter": counter}
         self._sessions[key] = s
         return s
 
@@ -298,6 +329,7 @@ class BrowserTransport(Transport):
             return HitResult(None, error=f"browser unavailable: {exc}")
         page, mobile = s["page"], s["mobile"]
         act = PlaywrightActuator(page, mobile, self.stop_event, s["cdp"])
+        bytes_before = s.get("counter", {}).get("bytes", 0)
         driver = HumanDriver(self.rng, act, scale=self.scale())
         how = "open"
         try:
@@ -322,11 +354,15 @@ class BrowserTransport(Transport):
                      f"{int(stats['depth'] * 100)}% depth", f"{stats['seconds']:.0f}s reading"]
             if stats["back_scrolls"]:
                 parts.append(f"{stats['back_scrolls']} scroll-back")
+            if stats.get("selections"):
+                parts.append(f"{stats['selections']} text selected")
             if downloaded:
                 parts.append(downloaded)
             self.on_event("debug", f"{urllib.parse.urlparse(page.url).hostname}: " + ", ".join(parts))
             res = HitResult(status, html)
             res.detail = ", ".join(parts)
+            # content-length is missing for some compressed responses, so this is a floor
+            res.bytes = max(len(html), s.get("counter", {}).get("bytes", 0) - bytes_before)
             return res
         except Exception as exc:
             msg = str(exc).splitlines()[0][:200]
