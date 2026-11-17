@@ -321,6 +321,7 @@ table.dns td{vertical-align:middle}
     <div class="row">Clearnet proxy <input type="text" id="sProxy" placeholder="optional  http:// or socks5://…" style="flex:1;min-width:220px"></div>
     <label class="chk"><input type="checkbox" id="sClear"><span>Clearnet noise enabled</span></label>
     <label class="chk"><input type="checkbox" id="sAuto"><span>Start noise automatically when legalPrivacy opens</span></label>
+    <label class="chk"><input type="checkbox" id="sClearLogs"><span>Clear the Live Log and Activity each time noise starts <span class="mute">(recommended, default)</span>. They're kept in memory only and always cleared when legalPrivacy quits.</span></label>
   </div>
   <div class="card"><h3>Realism</h3>
     <div class="row">Browse with a real browser
@@ -548,6 +549,7 @@ const fmtB=n=>n>1e9?(n/1e9).toFixed(2)+' GB':n>1e6?(n/1e6).toFixed(1)+' MB':n>1e
 // tabs
 $$('#nav button').forEach(b=>b.onclick=()=>{$$('#nav button').forEach(x=>x.classList.toggle('on',x===b));$$('.tab').forEach(t=>t.classList.toggle('on',t.id==='t-'+b.dataset.t));if(b.dataset.t==='log')renderLog(true);if(b.dataset.t==='set')fillSettings(true);if(b.dataset.t==='tor')fillTor(true);if(b.dataset.t==='tools')$('#toolCfg').textContent=S?S.config_path:'';if(b.dataset.t==='mylist')loadML();if(b.dataset.t==='ml')loadMLTab();if(b.dataset.t==='proof')pollProof()});
 
+let logEpoch=null;
 let S=null, hits=[], hitAfter=0, logs=[], logAfter=0, errCount=0, srcOn=new Set(), srcAll=new Set(['app','scheduler','clearnet','browser','tor','onion','tools','mylist']);
 let dirty={set:false,tor:false};
 
@@ -563,6 +565,9 @@ $('#bQuit').onclick=async()=>{if(confirm('Stop everything and quit legalPrivacy?
 async function poll(){
   try{
     S=await api('/api/state');
+    if(S.log_epoch!==undefined&&S.log_epoch!==logEpoch){          // the app cleared its log: empty our copy too
+      if(logEpoch!==null){logs=[];hits=[];errCount=0;renderLog(true);renderAct()}
+      logEpoch=S.log_epoch}
     const [h,l]=await Promise.all([api('/api/hits?after='+hitAfter),api('/api/logs?after='+logAfter+'&level=debug')]);
     if(h.hits.length){hits.push(...h.hits);hitAfter=h.hits[h.hits.length-1].seq;if(hits.length>3000)hits=hits.slice(-2000);renderAct()}
     if(l.events.length){for(const e of l.events){logs.push(e);srcAll.add(e.source);if(e.level==='error')errCount++}
@@ -952,7 +957,7 @@ function fillSettings(force){
   $('#xMobile').value=Math.round((tr.mobile_share??0.55)*100);$('#xDevice').value=tr.device||'iPhone 13';
   $('#xDevice').onchange=()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'};
   $('#sBrowser').value=p.transports.clearnet.browser||'auto';$('#sEngine').value=p.transports.clearnet.browser_engine||'auto';$('#sWin').value=p.transports.clearnet.browser_visible?'visible':(p.transports.clearnet.browser_offscreen?'offscreen':'headless');$('#sCookies').value=String(p.transports.clearnet.cookie_hours??1);$('#sCookieVary').checked=p.transports.clearnet.cookie_vary!==false;
-  const q=p.queries||{};$('#qLive').checked=q.live!==false;$('#qData').checked=q.dataset!==false;$('#qBuiltin').checked=q.builtin!==false;$('#qWords').checked=q.words!==false;$('#sAuto').checked=!!S.app.autostart;$('#sPath').textContent=S.config_path;dirty.set=false;
+  const q=p.queries||{};$('#qLive').checked=q.live!==false;$('#qData').checked=q.dataset!==false;$('#qBuiltin').checked=q.builtin!==false;$('#qWords').checked=q.words!==false;$('#sAuto').checked=!!S.app.autostart;$('#sClearLogs').checked=S.app.clear_logs_on_restart!==false;$('#sPath').textContent=S.config_path;dirty.set=false;
   $$('#t-set input').forEach(i=>i.oninput=()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'});
 }
 async function saveSettings(auto){
@@ -973,7 +978,7 @@ async function saveSettings(auto){
               activity:(document.querySelector('input[name=iact]:checked')||{}).value||'off',busy_kbps:parseInt($('#iBusy').value||400),
               metrics:$('#eMetrics').checked,site_list:$('#eSites').value,
               household:$('#hOn').checked,household_size:parseInt($('#hSize').value||3)}});
-    await api('/api/app',{autostart:$('#sAuto').checked});dirty.set=false;$('#sSaved').textContent='Saved ✓ '+(S&&S.running?'(applies the next time noise starts)':'');poll()}catch(e){$('#sSaved').textContent='Not saved: '+e.message;if(!auto)toast(e.message,1)}
+    await api('/api/app',{autostart:$('#sAuto').checked,clear_logs_on_restart:$('#sClearLogs').checked});dirty.set=false;$('#sSaved').textContent='Saved ✓ '+(S&&S.running?'(applies the next time noise starts)':'');poll()}catch(e){$('#sSaved').textContent='Not saved: '+e.message;if(!auto)toast(e.message,1)}
 }
 $('#sSave').onclick=()=>saveSettings(false);
 $('#sWiz').onclick=()=>showWiz();

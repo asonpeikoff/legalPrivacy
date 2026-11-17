@@ -49,7 +49,8 @@ def wipe_old_log_files() -> None:
 
 APP_DEFAULTS = {"observe": True, "autostart": False, "open_browser": True, "port": 8765, "intensity": "normal",
                 "auto_refresh_sources": False,   # off: use the snapshot shipped with the app (no lookups)
-                "ml_auto": False, "ml_history": []}
+                "ml_auto": False, "ml_history": [],
+                "clear_logs_on_restart": True}
 
 
 class Controller:
@@ -149,7 +150,7 @@ class Controller:
         return self.state()
 
     def update_app(self, raw: dict[str, Any]) -> None:
-        for k in ("autostart", "open_browser", "auto_refresh_sources", "ml_auto", "observe"):
+        for k in ("autostart", "open_browser", "auto_refresh_sources", "ml_auto", "observe", "clear_logs_on_restart"):
             if k in raw:
                 self.app[k] = bool(raw[k])
         if "observe" in raw:
@@ -635,12 +636,20 @@ class Controller:
             if not lanes:
                 raise ConfigError("Nothing to run: enable clearnet noise or Tor/onion noise in Settings.")
             import random as _r
+            prev = self.runner
+            if self.app.get("clear_logs_on_restart", True):      # Settings → General (on by default)
+                self.log.clear()
+                self.log_epoch = getattr(self, "log_epoch", 0) + 1
             self.runner = Runner(profile=prof, lanes=lanes, wordlist=words, log=self.log,
                                  stop_event=self._stop, sleep_fn=lambda s: self._stop.wait(s),
                                  queries=self._query_source(words), domains=self._domain_pool(_r),
                                  rate=RatePlanner(_r.Random(), prof.rate),
                                  dns_plan=self._fresh_dns_plan(),
                                  mix=True)
+            if prev is not None:                  # request numbers keep counting across restarts
+                self.runner._hit_seq = prev._hit_seq
+                if not self.app.get("clear_logs_on_restart", True):
+                    self.runner.hit_log.extend(prev.hit_log)
             self._thread = threading.Thread(target=self._run_loop, daemon=True, name="legalprivacy-runner")
             self._thread.start()
             self.log.info("app", "Started: lanes = " + ", ".join(
@@ -661,8 +670,7 @@ class Controller:
         self.log.info("app", "Stopped.")
         if stop_tor and self.tor:
             self.tor.stop()
-        wipe_old_log_files()
-        self.log.clear()                          # nothing from this run is kept after quitting
+        wipe_old_log_files()                      # the log itself lives in memory and ends with the app
 
     def pause(self, paused: bool) -> None:
         if self.runner:
@@ -701,6 +709,7 @@ class Controller:
             "version": __version__, "first_run": self.first_run, "running": self.running,
             "paused": stats.get("paused", False), "uptime": stats.get("uptime", 0) if self.running else 0,
             "current": stats.get("current") if self.running else None,
+            "log_epoch": getattr(self, "log_epoch", 0),
             "lanes": stats["lanes"], "app": self.app,
             "bytes_today": stats.get("bytes_today", 0) if self.running else 0,
             "data_cap_mb": self.profile.extras.daily_data_mb,
