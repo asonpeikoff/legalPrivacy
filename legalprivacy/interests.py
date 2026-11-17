@@ -15,12 +15,37 @@ import random
 import time
 
 # Mainstream, safe sites and everyday searches per theme.
-CATEGORIES: dict[str, dict[str, list[str]]] = {
-    "Data science": {"sites": ["kaggle.com", "towardsdatascience.com", "stackoverflow.com", "stats.stackexchange.com",
-                               "github.com", "pypi.org", "scikit-learn.org", "pandas.pydata.org", "numpy.org",
-                               "pytorch.org", "huggingface.co", "arxiv.org", "docs.python.org", "jupyter.org",
-                               "matplotlib.org", "seaborn.pydata.org", "plotly.com", "cran.r-project.org",
-                               "machinelearningmastery.com", "kdnuggets.com", "statsmodels.org", "mlflow.org"],
+CATEGORIES: dict[str, dict] = {
+    "Data science": {"sites": {"aclanthology.org": 2, "airflow.apache.org": 2, "ai.google": 5, "aijobs.net": 1,
+                               "archive.ics.uci.edu": 2, "arxiv.org": 12, "aws.amazon.com/sagemaker/": 5, "chromadb.com": 2,
+                               "cloud.google.com/bigquery": 5, "colab.research.google.com": 12, "commoncrawl.org": 1,
+                               "cs229.stanford.edu": 2, "d3js.org": 5, "data.gov": 5, "data.worldbank.org": 5, "data.un.org": 2,
+                               "datalemur.com": 2, "datasetsearch.research.google.com": 2, "dbt.com": 2, "deepmind.google": 5,
+                               "distill.pub": 1, "dvc.org": 2, "duckdb.org": 5, "fast.ai": 2, "feast.dev": 1, "flourish.studio": 2,
+                               "flowingdata.com": 2, "greatexpectations.io": 2, "huggingface.co": 12, "huggingface.co/spaces": 5,
+                               "icml.cc": 2, "jmlr.org": 2, "jupyter.org": 5, "kafka.apache.org": 5, "labelstud.io": 2,
+                               "leetcode.com": 12, "lightgbm.readthedocs.io": 2, "matplotlib.org": 5, "mathworld.wolfram.com": 5,
+                               "mlflow.org": 2, "ocw.mit.edu": 5, "onnx.ai": 2, "openreview.net": 5, "optuna.org": 2,
+                               "otexts.com/fpp3/": 2, "paperswithcode.com": 1, "plotly.com": 5, "pola.rs": 2, "posit.co": 5,
+                               "powerbi.microsoft.com": 5, "pytorch.org": 12, "scikit-learn.org": 5, "scipy.org": 5,
+                               "seaborn.pydata.org": 5, "spark.apache.org": 5, "sqlbolt.com": 2, "statquest.org": 2,
+                               "stats.stackexchange.com": 5, "streamlit.io": 5, "tensorflow.org": 12, "towardsdatascience.com": 5,
+                               "wandb.ai": 5, "www.analyticsvidhya.com": 5, "www.comet.com": 2, "www.coursera.org": 12,
+                               "www.datacamp.com": 5, "www.dataquest.io": 2, "www.datasciencecentral.com": 2, "www.datawrapper.de": 2,
+                               "www.deeplearning.ai": 5, "www.edx.org": 12, "www.evidentlyai.com": 2, "www.freecodecamp.org": 12,
+                               "www.geeksforgeeks.org": 12, "www.getdbt.com": 2, "www.github.com": 12, "www.google.com": 12,
+                               "www.gradio.app": 5, "www.hackerrank.com": 12, "www.itl.nist.gov/div898/handbook/": 2,
+                               "www.kaggle.com": 12, "www.kdnuggets.com": 5, "www.langchain.com": 5, "www.llamaindex.ai": 2,
+                               "www.machinelearningmastery.com": 5, "www.microsoft.com/microsoft-fabric": 5,
+                               "www.nature.com/natmachintell/": 2, "www.numpy.org": 5, "www.openintro.org": 2, "www.openml.org": 2,
+                               "www.openai.com": 12, "www.ourworldindata.org": 5, "www.pandas.pydata.org": 5, "www.python.org": 12,
+                               "www.r-bloggers.com": 5, "www.r-project.org": 5, "www.ray.io": 2, "www.realpython.com": 5,
+                               "www.reddit.com/r/datascience/": 5, "www.reddit.com/r/MachineLearning/": 5, "www.roboflow.com": 5,
+                               "www.semanticscholar.org": 5, "www.snowflake.com": 5, "www.stackoverflow.com": 12,
+                               "www.statlearning.com": 2, "www.statology.org": 5, "www.stratascratch.com": 2, "www.tableau.com": 5,
+                               "www.tensorflow.org": 12, "www.thegradient.pub": 2, "www.trychroma.com": 2, "www.wolfram.com": 5,
+                               "www.xgboost.ai": 2, "zenodo.org": 5, "pypi.org": 5, "docs.python.org": 5, "cran.r-project.org": 2,
+                               "statsmodels.org": 2},
                      "queries": ["{t}", "{t} example", "how to {t}", "{t} python", "{t} explained", "{t} pandas",
                                  "{t} stack overflow", "{t} vs", "best way to {t}"],
                      "topics": ["pandas groupby", "random forest hyperparameters", "train test split", "cross validation",
@@ -92,6 +117,40 @@ CATEGORIES: dict[str, dict[str, list[str]]] = {
 }
 
 
+_REAL: dict[str, list[str]] = {}
+
+
+def real_queries(theme: str) -> list[str]:
+    """Real people's searches on a theme, picked out of MS MARCO (Bing) and GooAQ (Google)
+    by tools/build_theme_queries.py and shipped in data/themes/."""
+    if theme not in _REAL:
+        import gzip
+        from .paths import resource_root
+        slug = theme.lower().replace(" & ", "_").replace(" ", "_")
+        try:
+            with gzip.open(resource_root() / "data" / "themes" / f"{slug}.txt.gz", "rt", encoding="utf-8") as fh:
+                _REAL[theme] = [ln.strip() for ln in fh if ln.strip()]
+        except OSError:
+            _REAL[theme] = []
+    return _REAL[theme]
+
+
+def _pick_site(rng: random.Random, sites) -> str:
+    """Sites are a list (all equal) or {site: how popular}; popular ones come up more often."""
+    if isinstance(sites, dict):
+        return rng.choices(list(sites), weights=list(sites.values()))[0]
+    return rng.choice(sites)
+
+
+def _pick_query(rng: random.Random, theme: str, real_share: float = 0.8) -> str:
+    """Mostly a real person's search on the theme; otherwise one made from the theme's topics."""
+    real = real_queries(theme)
+    if real and rng.random() < real_share:
+        return rng.choice(real)
+    cat = CATEGORIES[theme]
+    return rng.choice(cat["queries"]).format(t=rng.choice(cat["topics"]))
+
+
 class Interests:
     """The active themes right now, and sites and searches drawn from them."""
 
@@ -108,17 +167,16 @@ class Interests:
         return random.Random(seed).sample(sorted(self.allowed), self.active_n)
 
     def site(self) -> str:
-        return self.rng.choice(CATEGORIES[self.rng.choice(self.active())]["sites"])
+        return _pick_site(self.rng, CATEGORIES[self.rng.choice(self.active())]["sites"])
 
     def query(self) -> str:
-        cat = CATEGORIES[self.rng.choice(self.active())]
-        return self.rng.choice(cat["queries"]).format(t=self.rng.choice(cat["topics"]))
+        return _pick_query(self.rng, self.rng.choice(self.active()))
 
 
 # A persona is who the noise mostly looks like: a fixed mix of themes. It's followed
 # "mostly" (Settings sets how much); the rest of the noise stays varied.
 PERSONAS: dict[str, dict[str, float]] = {
-    "Data scientist": {"Data science": 0.65, "Technology": 0.2, "Science": 0.15},
+    "Data scientist": {"Data science": 1.0},
     "Developer": {"Technology": 0.6, "Data science": 0.2, "Science": 0.1, "Books": 0.1},
     "Sports fan": {"Sports": 0.7, "Fitness": 0.15, "Movies & TV": 0.15},
     "Student": {"Science": 0.3, "Books": 0.25, "Technology": 0.2, "Movies & TV": 0.15, "Personal finance": 0.1},
@@ -137,12 +195,11 @@ class Persona:
     def active(self) -> list[str]:
         return list(self.mix)
 
-    def _theme(self) -> dict:
-        return CATEGORIES[self.rng.choices(list(self.mix), weights=list(self.mix.values()))[0]]
+    def _theme(self) -> str:
+        return self.rng.choices(list(self.mix), weights=list(self.mix.values()))[0]
 
     def site(self) -> str:
-        return self.rng.choice(self._theme()["sites"])
+        return _pick_site(self.rng, CATEGORIES[self._theme()]["sites"])
 
     def query(self) -> str:
-        cat = self._theme()
-        return self.rng.choice(cat["queries"]).format(t=self.rng.choice(cat["topics"]))
+        return _pick_query(self.rng, self._theme())

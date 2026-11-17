@@ -314,7 +314,8 @@ class CrawlTargetFactory:
 
     def make(self, identity) -> Target:
         if self.domains is not None and (not self.seeds or self.rng.random() < self.domain_mix):
-            return Target(url=f"https://{self.domains.visit_host()}/", note="popular site")
+            site = self.domains.visit_host()
+            return Target(url=f"https://{site}" + ("" if "/" in site else "/"), note="popular site")
         seeds = self.seeds or ["https://en.wikipedia.org/wiki/Special:Random"]
         return Target(url=self.rng.choice(seeds))
 

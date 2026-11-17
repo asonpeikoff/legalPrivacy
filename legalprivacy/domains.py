@@ -55,10 +55,15 @@ class DomainPool:
         self._recent: deque[str] = deque(maxlen=60)
         self._seen_good: deque[str] = deque(maxlen=300)    # sites reached by clicking search results
 
-    def _themed(self) -> str | None:
+    def _themed(self, with_path: bool = False) -> str | None:
+        """A site from the persona or interests. Some are a section of a site ("reddit.com/r/datascience/");
+        with_path=False gives just the site's name (for DNS lookups)."""
         if self.interests is not None and self.rng.random() < self.interest_share:
             s = self.interests.site()
-            return s if safe_domain(s) else None
+            host = s.split("/", 1)[0]
+            if not safe_domain(host):
+                return None
+            return s if with_path else host
         return None
 
     def remember(self, host: str) -> None:
@@ -121,7 +126,10 @@ class DomainPool:
 
     def visit_host(self) -> str:
         """A site to open: My List first (if set), else one reached earlier via search, else a popular site."""
-        mine = self._themed() or self._mine()
+        themed = self._themed(with_path=True)
+        if themed and ("/" in themed or themed.startswith("www.")):
+            return themed                                   # exactly as listed
+        mine = themed or self._mine()
         if mine:
             return f"www.{mine}" if mine.count(".") == 1 and self.rng.random() < 0.6 else mine
         if self._seen_good and self.rng.random() < 0.5:

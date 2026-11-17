@@ -199,8 +199,9 @@ All optional:
 
 - **Active hours:** only make noise between set times
 - **Your own activity:** pause while you're using the connection, or run mostly while you're active
-- **Persona:** who the noise mostly looks like (Data scientist, Developer, Sports fan, Student, Home cook and
-  gardener, Traveller), followed mostly but not perfectly (60% by default)
+- **Persona:** who the noise mostly looks like (Data scientist by default, Developer, Sports fan, Student, Home
+  cook and gardener, Traveller, or neutral), followed mostly but not perfectly (90% by default). Searches are mostly
+  real people's searches on the theme; popular sites on the theme come up more often
 - **Package installs:** real `pip` (and `npm`) installs, downloads and uninstalls of popular packages, in
   legalPrivacy's own separate environment, removed again afterwards. On automatically for the Data scientist and
   Developer personas

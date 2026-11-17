@@ -341,17 +341,30 @@ def test_data_scientist_persona_is_followed_mostly_not_perfectly():
     from legalprivacy.controller import Controller
     c = Controller()
     c.apply_config({"extras": {"persona": "Data scientist"}})
-    assert c.profile.extras.persona_share == 0.6
+    assert c.profile.extras.persona_share == 0.9
     pool = c._domain_pool(random)
-    themed = {s for t in PERSONAS["Data scientist"] for s in CATEGORIES[t]["sites"]}
+    themed = {s.split("/")[0] for t in PERSONAS["Data scientist"] for s in CATEGORIES[t]["sites"]}
     picks = [pool.pick(browsable=True) for _ in range(3000)]
     share = sum(p in themed for p in picks) / len(picks)
-    assert 0.5 < share < 0.75                                   # mostly on theme, not all of it
+    assert 0.8 < share < 0.97                                   # mostly on theme, not all of it
     qs = c._query_source([])
     origins = [qs.next()[1] for _ in range(400)]
-    assert 0.45 < origins.count("interest") / len(origins) < 0.75
+    assert 0.75 < origins.count("interest") / len(origins) < 0.97
     try:
         c.apply_config({"extras": {"persona": "Astronaut"}})
         raise AssertionError("unknown persona accepted")
     except Exception as exc:
         assert "unknown persona" in str(exc)
+
+
+def test_popular_data_science_sites_come_up_more_and_real_searches_are_used():
+    from legalprivacy.interests import CATEGORIES, Persona, real_queries
+    rng = random.Random(5)
+    p = Persona(rng, "Data scientist")
+    picks = [p.site() for _ in range(6000)]
+    assert picks.count("arxiv.org") > 4 * picks.count("distill.pub")              # very high vs low
+    assert "www.reddit.com/r/datascience/" in picks                               # a section of a site, as listed
+    real = set(real_queries("Data science"))
+    assert len(real) > 5000
+    qs = [p.query() for _ in range(500)]
+    assert 0.65 < sum(q in real for q in qs) / len(qs) < 0.95                      # mostly real people's wording
