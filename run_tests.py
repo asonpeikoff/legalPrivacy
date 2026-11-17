@@ -17,6 +17,7 @@ import tests.test_controller
 import tests.test_humanize
 import tests.test_browser
 import tests.test_sources
+import tests.test_rate_dns
 
 MODULES = [
     tests.test_identity,
@@ -28,6 +29,7 @@ MODULES = [
     tests.test_humanize,
     tests.test_browser,
     tests.test_sources,
+    tests.test_rate_dns,
 ]
 
 
