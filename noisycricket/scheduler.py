@@ -327,15 +327,16 @@ class Runner:
                     target: Target, result: HitResult) -> None:
         self._hit_seq += 1
         status = f"HTTP {result.status}" if result.status else (result.error or "ERROR")
+        shown = target.url.split("/", 3)[-1] if target.kind == "dns" else target.url   # dns: just the name
         rec = {
             "seq": self._hit_seq, "ts": time.time(), "lane": lane.name, "engine": eng_name,
-            "url": target.url, "status": result.status, "ok": result.ok,
+            "url": shown, "status": result.status, "ok": result.ok,
             "error": result.error, "latency_ms": getattr(result, "latency_ms", None),
             "identity": getattr(identity, "id", None),
             "note": target.note, "role": target.role, "detail": getattr(result, "detail", None),
         }
         self.hit_log.append(rec)
-        short = target.url if len(target.url) <= 90 else target.url[:87] + "…"
+        short = shown if len(shown) <= 90 else shown[:87] + "…"
         tag = f" [{target.note}]" if target.note else (" [click]" if target.role == "result" else "")
         self._emit("info" if result.ok else "warn", lane.name,
                    f"{eng_name:6s} {short}{tag} → {status}"
