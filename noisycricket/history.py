@@ -212,3 +212,33 @@ def _finish(counts: Counter, used: list, errors: list, denylist, limit: int = 30
     safe = [(d, n) for d, n in counts.most_common() if safe_domain(d, denylist)]
     return {"sites": [list(x) for x in safe[:limit]], "browsers": used, "errors": errors,
             "filtered": len(counts) - len(safe)}
+
+
+def visit_events(since: float, until: float | None = None, files: list[dict] | None = None) -> dict:
+    """Every visit in the window as (unix time, site), across browsers. For the self-test only:
+    nothing leaves this computer and nothing is saved."""
+    until = until if until is not None else time.time()
+    files = history_files() if files is None else files
+    events, errors = [], []
+    for f in files:
+        try:
+            if f["kind"] == "chromium":
+                lo = int((since + _WEBKIT_OFFSET) * 1_000_000)
+                hi = int((until + _WEBKIT_OFFSET) * 1_000_000)
+                rows = _read_copy(f["path"], "SELECT u.url, v.visit_time FROM visits v JOIN urls u ON u.id = v.url "
+                                             "WHERE v.visit_time BETWEEN ? AND ?", (lo, hi))
+                conv = [(t / 1_000_000 - _WEBKIT_OFFSET, u) for u, t in rows]
+            else:
+                rows = _read_copy(f["path"], "SELECT p.url, h.visit_date FROM moz_historyvisits h JOIN moz_places p "
+                                             "ON p.id = h.place_id WHERE h.visit_date BETWEEN ? AND ?",
+                                  (int(since * 1_000_000), int(until * 1_000_000)))
+                conv = [(t / 1_000_000, u) for u, t in rows]
+        except (OSError, sqlite3.Error) as exc:
+            errors.append(f"{f['browser']} ({f['profile']}): {exc}")
+            continue
+        for t, u in conv:
+            s = site_of(u)
+            if s:
+                events.append((t, s))
+    events.sort()
+    return {"events": events, "errors": errors}

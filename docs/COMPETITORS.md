@@ -43,7 +43,7 @@ or filtered OpenNIC resolvers; a local dashboard with live activity.
 | Household masking (2–5 virtual people with their own hours) | NoisyCompany | Optional | planned |
 | Follow your real activity (blend with your traffic volume, or back off when you're busy) | DNoiSe, NoisyCompany netwatch | Optional | **added** |
 | Pi-hole / AdGuard Home integration | DNoiSe, NoisyCompany | Optional | planned |
-| Separability self-test (how easily noise is told apart) | NoisyCompany study | Tools tab | planned |
+| Separability self-test (how easily noise is told apart) | NoisyCompany study | Tools tab | **added** |
 | Data / energy estimate before running | NoisyCompany | Tools tab | **added** |
 | Local privacy check with advice | NoisyCompany | Tools tab | **added** |
 | Prometheus metrics | noisier, NoisyCompany | Optional endpoint | **added** |

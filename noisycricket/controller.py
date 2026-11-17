@@ -228,6 +228,32 @@ class Controller:
                 "actions_per_hour": round(actions_h), "hours_per_day": hours,
                 "real_browser": b_share > 0, "low_data": ex.low_data, "cap_mb": ex.daily_data_mb}
 
+    def selftest(self, days: float = 14) -> dict:
+        """How easily the noise could be told apart from your real browsing (local only)."""
+        import random as _r
+        from .history import visit_events
+        from .selftest import evaluate, simulate_noise
+        days = max(2.0, min(60.0, float(days)))
+        now = time.time()
+        since = now - days * 86400
+        real = visit_events(since, now)
+        hits = [h for h in (self.runner.hit_log if self.runner else []) if h["lane"] != "tor"]
+        session_span = (hits[-1]["ts"] - hits[0]["ts"]) if len(hits) > 1 else 0
+        if len(hits) >= 200 and session_span >= 86400:
+            import urllib.parse as up
+            noise = [(h["ts"], (up.urlparse(h["url"]).hostname if "://" in h["url"] else h["url"]) or "")
+                     for h in hits]
+            source = "this session's noise"
+        else:
+            noise = simulate_noise(self.profile, self._domain_pool(_r), since, now)
+            source = "noise simulated from your current settings"
+        ranks = {d: i for i, d in enumerate(self.feeds.items("tranco"))}
+        res = evaluate(real["events"], [(t, s.removeprefix("www.")) for t, s in noise if s], ranks)
+        res.update({"real_visits": len(real["events"]), "noise_events": len(noise), "noise_source": source,
+                    "days": days, "errors": real["errors"]})
+        self.log.info("tools", f"Self-test: {res.get('score', '—')}% ({res.get('verdict', res.get('error', ''))}).")
+        return res
+
     def privacy_check(self) -> list[dict]:
         from .nettools import privacy_check
         return privacy_check(self)

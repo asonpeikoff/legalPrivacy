@@ -176,6 +176,8 @@ class UIServer:
                                           {"Content-Disposition": "attachment; filename=noisycricket-activity.csv"})
                     if u.path == "/api/tools/estimate":
                         return self._json(ctl.estimate())
+                    if u.path == "/api/tools/selftest":
+                        return self._json(ctl.selftest(float((q.get("days") or ["14"])[0])))
                     if u.path == "/api/tools/privacy":
                         return self._json({"checks": ctl.privacy_check()})
                     if u.path == "/api/interests":

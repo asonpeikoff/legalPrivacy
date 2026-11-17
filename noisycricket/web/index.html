@@ -358,6 +358,11 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
 </section>
 <!-- TOOLS -->
 <section id="t-tools" class="tab">
+  <div class="card"><h3>Can the noise be told apart from you?</h3>
+    <p class="small mute">Compares your real browsing (your browsers' history, read on this computer only) with the noise, using only what your ISP or DNS provider could see: the hour, weekday, rhythm, how popular each site is, revisits and domain endings. 50% means it can't tell them apart; 100% means it's trivial. Nothing is sent or saved.</p>
+    <div class="row">Look at the last <input type="number" id="stDays" value="14" min="2" max="60" style="width:70px"> days <span class="small mute">(14 recommended, default)</span> <button id="stRun">Run self-test</button></div>
+    <div id="stOut" class="small" style="margin-top:8px"></div>
+  </div>
   <div class="card"><h3>How much data will this use?</h3>
     <p class="small mute">A rough estimate from your current settings (amount, mix, real browser, low-data mode, active hours, cap). Real pages vary a lot.</p>
     <div class="row"><button id="toolEst">Estimate</button></div>
@@ -812,6 +817,15 @@ $('#toolSpeed').onclick=async()=>{
     clearInterval(speedTimer); speedTimer=setInterval(async()=>{try{showSpeed(await api('/api/tools/speed'))}catch(e){}},700);
   }catch(e){toast(e.message,1);$('#toolSpeed').disabled=false}
 };
+$('#stRun').onclick=async()=>{const o=$('#stOut');o.textContent='Comparing… (reading history and simulating the noise takes a few seconds)';
+  try{const d=await api('/api/tools/selftest?days='+encodeURIComponent($('#stDays').value||14));
+    if(d.error){o.innerHTML=`${esc(d.error)}<div class="mute">${d.real_visits??0} of your visits found${(d.errors||[]).length?' — '+esc(d.errors.join('; ')):''}.</div>`;return}
+    const col=d.score<60?'var(--acc)':d.score<75?'var(--warn)':'var(--bad)';
+    const names={hour:'Hour of day',weekday:'Weekday',gap:'Rhythm (time between requests)',popularity:'How popular the sites are',revisit:'Revisiting the same sites',ending:'Domain endings'};
+    o.innerHTML=`<div style="font-size:28px;font-weight:700;color:${col}">${d.score}%</div><div><b>${esc(d.verdict)}</b> — compared ${d.compared} of your visits with ${d.compared} events of ${esc(d.noise_source)} over ${d.days} days.</div>`+
+      (d.tells.length?'<div style="margin-top:8px"><b>Biggest giveaways</b></div><table><tbody>'+d.tells.map(t=>`<tr><td>${esc(names[t.feature]||t.feature)} <span class="mute">(${t.auc}% alone)</span></td><td>${esc(t.advice)}</td></tr>`).join('')+'</tbody></table>':'<div style="margin-top:6px">No single giveaway stands out.</div>')+
+      `<details style="margin-top:6px"><summary class="mute">Each signal on its own</summary>${Object.entries(d.per_feature).map(([k,v])=>`${esc(names[k]||k)}: ${v}%`).join('<br>')}</details>`}
+  catch(e){o.textContent=e.message}};
 $('#toolEst').onclick=async()=>{try{const d=await api('/api/tools/estimate');
   $('#toolEstOut').innerHTML=`About <b>${d.mb_per_day} MB a day</b> (≈${d.gb_per_month} GB a month): ≈${d.actions_per_hour} actions an hour for ${d.hours_per_day} hours${d.real_browser?(d.low_data?', real browser without images':', real browser with images'):', plain HTTP'}${d.cap_mb?`, capped at ${d.cap_mb} MB a day`:''}.`}catch(e){$('#toolEstOut').textContent=e.message}};
 $('#toolPriv').onclick=async()=>{try{const d=await api('/api/tools/privacy');const ic={ok:'✅',warn:'⚠️',info:'ℹ️'};
