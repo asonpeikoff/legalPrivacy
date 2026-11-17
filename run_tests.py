@@ -22,6 +22,7 @@ import tests.test_mylist
 import tests.test_mix_mobile
 import tests.test_extras
 import tests.test_selftest
+import tests.test_cookies
 import tests.test_observe
 
 MODULES = [
@@ -39,6 +40,7 @@ MODULES = [
     tests.test_mix_mobile,
     tests.test_extras,
     tests.test_selftest,
+    tests.test_cookies,
     tests.test_observe,
 ]
 

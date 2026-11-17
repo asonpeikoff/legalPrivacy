@@ -58,7 +58,8 @@ class TransportConfig:
     browser_offscreen: bool = True    # clearnet: a real window parked off-screen (harder to flag than headless);
                                       # falls back to headless where there is no display
     browser_engine: str = "auto"      # clearnet: auto (match your browser) | chromium | firefox
-    cookie_days: int = 7              # clearnet: keep browser cookies between runs, wiped every N days (0 = never keep)
+    cookie_hours: float = 1.0         # clearnet: keep browser cookies this long, then start fresh (0 = never keep)
+    cookie_vary: bool = True          # clearnet: each jar lives 60-140% of cookie_hours, so wipes aren't on a fixed beat
     # --- tor lane only ---
     socks: str = DEFAULT_TOR_SOCKS
     control: str | None = None
@@ -380,7 +381,10 @@ def apply_overrides(profile: Profile, raw: dict[str, Any]) -> Profile:
                 **{k: v for k, v in merged.items() if k in EngineConfig.__dataclass_fields__})
     for name, raw_tr in (p.get("transports") or {}).items():
         if name in profile.transports:
-            merged = profile.transports[name].__dict__ | (raw_tr or {})
+            raw_tr = dict(raw_tr or {})
+            if "cookie_days" in raw_tr and "cookie_hours" not in raw_tr:      # settings from v2.8.0
+                raw_tr["cookie_hours"] = float(raw_tr["cookie_days"] or 0) * 24
+            merged = profile.transports[name].__dict__ | raw_tr
             profile.transports[name] = TransportConfig(
                 **{k: v for k, v in merged.items() if k in TransportConfig.__dataclass_fields__})
     contribute = p.get("contribute") or {}

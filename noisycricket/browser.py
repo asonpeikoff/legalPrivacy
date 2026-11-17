@@ -212,12 +212,14 @@ def _born_file(jar: Path) -> Path:
     return jar.with_suffix(".born")
 
 
-def _jar_born(jar: Path) -> float:
-    """When this cookie jar was first created (the weekly wipe counts from here, not from the last save)."""
+def _jar_born(jar: Path) -> tuple[float, float | None]:
+    """(when this cookie jar was first created, its own lifetime in seconds if one was drawn).
+    The wipe counts from creation, not from the last save."""
     try:
-        return float(_born_file(jar).read_text().strip())
-    except (OSError, ValueError):
-        return time.time()
+        parts = _born_file(jar).read_text().split()
+        return float(parts[0]), (float(parts[1]) if len(parts) > 1 else None)
+    except (OSError, ValueError, IndexError):
+        return time.time(), None
 
 
 class BrowserTransport(Transport):
@@ -227,8 +229,10 @@ class BrowserTransport(Transport):
                  stop_event: threading.Event | None = None, scale: Callable[[], float] = lambda: 1.0,
                  download_prob: float = 0.03, on_event: Callable[[str, str], None] | None = None,
                  rng: random.Random | None = None, low_data: bool = False, image_prob: float = 0.04,
-                 offscreen: bool = False, engine: str = "chromium", cookie_days: int = 7):
-        self.cookie_days = max(0, int(cookie_days or 0))   # 0 = forget cookies when a session ends
+                 offscreen: bool = False, engine: str = "chromium", cookie_hours: float = 1.0,
+                 cookie_vary: bool = True):
+        self.cookie_hours = max(0.0, float(cookie_hours or 0))   # 0 = forget cookies when a session ends
+        self.cookie_vary = bool(cookie_vary)
         self.engine = engine if engine in ("chromium", "firefox") else "chromium"
         self.offscreen = offscreen and not headless and self.engine == "chromium"
         self.low_data = low_data
@@ -308,33 +312,40 @@ class BrowserTransport(Transport):
             "brands": brands, "platform": plat, "platformVersion": "", "architecture": "x86",
             "model": "", "mobile": False}}
 
-    # ── cookies kept between runs (like a real browser), wiped every `cookie_days` ──
+    # ── cookies kept for a while (like a real browser), then wiped ──────────────
     def _jar(self, mobile: bool) -> Path:
         from .paths import app_dir
         return app_dir() / "browser" / f"cookies-{self.engine}-{'mobile' if mobile else 'desktop'}.json"
 
+    def _lifetime(self) -> float:
+        """Seconds a new jar lives: the setting, or 60-140% of it when 'vary' is on."""
+        base = self.cookie_hours * 3600
+        return base * random.uniform(0.6, 1.4) if self.cookie_vary else base
+
     def _load_jar(self, mobile: bool) -> str | None:
-        if not self.cookie_days:
+        if not self.cookie_hours:
             return None
         f = self._jar(mobile)
         try:
-            if f.exists() and time.time() - _jar_born(f) > self.cookie_days * 86400:
+            born, life = _jar_born(f)
+            life = life if life is not None else self.cookie_hours * 3600
+            if f.exists() and time.time() - born > life:
                 f.unlink(missing_ok=True)
                 _born_file(f).unlink(missing_ok=True)
-                self.on_event("info", f"Cleared browser cookies (older than {self.cookie_days} days)")
+                self.on_event("info", f"Cleared the noise browser's cookies (kept {life / 3600:.1f} hours)")
                 return None
             return str(f) if f.exists() else None
         except OSError:
             return None
 
     def _save_jar(self, s: dict) -> None:
-        if not self.cookie_days:
+        if not self.cookie_hours:
             return
         try:
             f = self._jar(bool(s.get("mobile")))
             f.parent.mkdir(parents=True, exist_ok=True)
             if not _born_file(f).exists():
-                _born_file(f).write_text(str(int(time.time())))
+                _born_file(f).write_text(f"{int(time.time())} {int(self._lifetime())}")
             s["ctx"].storage_state(path=str(f))
         except Exception:
             pass
