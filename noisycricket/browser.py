@@ -208,6 +208,18 @@ class PlaywrightActuator:
         return bool(self._stop and self._stop.is_set())
 
 
+def _born_file(jar: Path) -> Path:
+    return jar.with_suffix(".born")
+
+
+def _jar_born(jar: Path) -> float:
+    """When this cookie jar was first created (the weekly wipe counts from here, not from the last save)."""
+    try:
+        return float(_born_file(jar).read_text().strip())
+    except (OSError, ValueError):
+        return time.time()
+
+
 class BrowserTransport(Transport):
     is_browser = True
 
@@ -215,7 +227,8 @@ class BrowserTransport(Transport):
                  stop_event: threading.Event | None = None, scale: Callable[[], float] = lambda: 1.0,
                  download_prob: float = 0.03, on_event: Callable[[str, str], None] | None = None,
                  rng: random.Random | None = None, low_data: bool = False, image_prob: float = 0.04,
-                 offscreen: bool = False, engine: str = "chromium"):
+                 offscreen: bool = False, engine: str = "chromium", cookie_days: int = 7):
+        self.cookie_days = max(0, int(cookie_days or 0))   # 0 = forget cookies when a session ends
         self.engine = engine if engine in ("chromium", "firefox") else "chromium"
         self.offscreen = offscreen and not headless and self.engine == "chromium"
         self.low_data = low_data
@@ -262,10 +275,7 @@ class BrowserTransport(Transport):
 
     def close(self) -> None:
         for s in list(self._sessions.values()):
-            try:
-                s["ctx"].close()
-            except Exception:
-                pass
+            self._close_session(s)
         self._sessions.clear()
         for obj, meth in ((self._browser, "close"), (self._pw, "stop")):
             try:
@@ -298,6 +308,44 @@ class BrowserTransport(Transport):
             "brands": brands, "platform": plat, "platformVersion": "", "architecture": "x86",
             "model": "", "mobile": False}}
 
+    # ── cookies kept between runs (like a real browser), wiped every `cookie_days` ──
+    def _jar(self, mobile: bool) -> Path:
+        from .paths import app_dir
+        return app_dir() / "browser" / f"cookies-{self.engine}-{'mobile' if mobile else 'desktop'}.json"
+
+    def _load_jar(self, mobile: bool) -> str | None:
+        if not self.cookie_days:
+            return None
+        f = self._jar(mobile)
+        try:
+            if f.exists() and time.time() - _jar_born(f) > self.cookie_days * 86400:
+                f.unlink(missing_ok=True)
+                _born_file(f).unlink(missing_ok=True)
+                self.on_event("info", f"Cleared browser cookies (older than {self.cookie_days} days)")
+                return None
+            return str(f) if f.exists() else None
+        except OSError:
+            return None
+
+    def _save_jar(self, s: dict) -> None:
+        if not self.cookie_days:
+            return
+        try:
+            f = self._jar(bool(s.get("mobile")))
+            f.parent.mkdir(parents=True, exist_ok=True)
+            if not _born_file(f).exists():
+                _born_file(f).write_text(str(int(time.time())))
+            s["ctx"].storage_state(path=str(f))
+        except Exception:
+            pass
+
+    def _close_session(self, s: dict) -> None:
+        self._save_jar(s)
+        try:
+            s["ctx"].close()
+        except Exception:
+            pass
+
     def _session(self, identity) -> dict:
         key = getattr(identity, "id", 0)
         s = self._sessions.get(key)
@@ -305,10 +353,7 @@ class BrowserTransport(Transport):
             return s
         while len(self._sessions) >= 2:                    # an identity retires: close its context
             old_key = next(iter(self._sessions))
-            try:
-                self._sessions.pop(old_key)["ctx"].close()
-            except Exception:
-                pass
+            self._close_session(self._sessions.pop(old_key))
         rng = random.Random(f"{key}-{id(self)}")
         # The identity decides: phone (and which phone) or desktop. Older identities without
         # that information fall back to a random share.
@@ -325,11 +370,13 @@ class BrowserTransport(Transport):
             # No user_agent here: Playwright's own override keeps "HeadlessChrome" client hints
             # and a Linux navigator.platform. The DevTools override below sets everything at once.
             ctx = self._browser.new_context(viewport={"width": w, "height": h}, device_scale_factor=dpr,
-                                            is_mobile=True, has_touch=True, locale=lang)
+                                            is_mobile=True, has_touch=True, locale=lang,
+                                            storage_state=self._load_jar(True))
         else:
             (w, h), _ = rng.choices(DESKTOP_VIEWPORTS, weights=[v[1] for v in DESKTOP_VIEWPORTS])[0]
             vh = h - rng.choice([0, 70, 85, 110])          # browser chrome eats some height
-            ctx = self._browser.new_context(viewport={"width": w, "height": vh}, locale=lang)
+            ctx = self._browser.new_context(viewport={"width": w, "height": vh}, locale=lang,
+                                            storage_state=self._load_jar(False))
         if self.low_data:              # optional: skip images, video and fonts to save data
             ctx.route("**/*", lambda route: route.abort()
                       if route.request.resource_type in ("image", "media", "font") else route.continue_())
