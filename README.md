@@ -33,6 +33,7 @@ already has the recommended value, and settings save themselves as you change th
 | **My List** | Your own sites, which the noise visits most (see below) |
 | **ML** | How easily your traffic can be told apart from the noise (see below) |
 | **Tools** | Data-use estimate, privacy check, DNS leak check, speed test, clear the live log |
+| **Proof** | A live EtherApe-style map of every machine this computer talks to, 6 hours of traffic per minute with the noise on/off periods shaded, and whether the noise's rhythm looks like yours |
 
 The dashboard listens only on `127.0.0.1` and needs the token in its link. Settings live in
 `~/.noisycricket/config.yaml` (`%APPDATA%\noisyCricket` on Windows); set `CRICKET_HOME` to move them.
@@ -135,6 +136,28 @@ each site is, revisits and domain endings. A classifier tries to separate them, 
 - a score history, an optional daily automatic run, and a quick "would this look like noise?" check
 
 Nothing is sent anywhere; only the scores are kept.
+
+## Proof: is it working, and does it look like you?
+
+The **Proof** tab watches which addresses this computer is connected to, every 5 seconds,
+and sorts each connection by the program that owns it: **your apps**, **noisyCricket**
+(including the browser it drives) or **Tor**. Nothing is captured or read and no
+addresses are looked up. Your own connections are never named or saved; only
+per-minute counts are kept, for 7 days, on this computer.
+
+- **Live network map** (like EtherApe): a bubble per remote machine, colored by owner. Noise sites are named.
+- **Last 6 hours:** connections per minute, split by owner, with the minutes the noise was on shaded.
+  Stop the noise for a while, start it again, and the difference is visible.
+- **Off vs on:** how much the noise adds per minute.
+- **Does the noise look like you?** Compares the noise with your own traffic from the
+  minutes the noise was off: time of day, length of busy bursts, length of quiet gaps,
+  busyness of a busy minute. Each is a 0–100% similarity (1 − Kolmogorov–Smirnov distance).
+  It needs about an hour of your own activity with the noise off before it can judge.
+  The **ML** tab is the stronger test.
+
+On macOS, other programs' connections are only visible when noisyCricket runs as
+administrator; otherwise the tab shows the noise only and says so. The watcher can be
+switched off on the tab.
 
 ## DNS
 
