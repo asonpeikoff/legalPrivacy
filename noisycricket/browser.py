@@ -29,6 +29,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Callable
 
+from .useragents import DEFAULT_DEVICE, MOBILE_DEVICES
 from .humanize import HumanDriver, lognormal_clipped
 from .transports import ClearnetTransport, HitResult, Target, Transport
 
@@ -78,6 +79,28 @@ def find_browser() -> str | None:
     return None
 
 
+def find_playwright_firefox() -> str | None:
+    """Playwright's own Firefox build (installed with `python -m playwright install firefox`).
+    Playwright cannot drive an ordinary Firefox install, only this build."""
+    bases = [os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "")]
+    home = Path.home()
+    if sys.platform == "win32":
+        bases.append(os.path.join(os.environ.get("LOCALAPPDATA", str(home / "AppData" / "Local")), "ms-playwright"))
+        pats = ["firefox-*/firefox/firefox.exe"]
+    elif sys.platform == "darwin":
+        bases.append(str(home / "Library" / "Caches" / "ms-playwright"))
+        pats = ["firefox-*/firefox/Nightly.app/Contents/MacOS/firefox"]
+    else:
+        bases.append(str(home / ".cache" / "ms-playwright"))
+        pats = ["firefox-*/firefox/firefox"]
+    for base in filter(None, bases):
+        for pat in pats:
+            hits = sorted(glob.glob(os.path.join(base, pat)))
+            if hits:
+                return hits[-1]
+    return None
+
+
 def browser_support() -> tuple[bool, str]:
     """(available, human-readable reason)."""
     try:
@@ -100,32 +123,18 @@ class PlaywrightActuator:
         v = self.page.viewport_size or {"width": 1280, "height": 720}
         return v["width"], v["height"]
 
-    # Many sites scroll an inner container instead of the page itself; measure whichever
-    # element really scrolls, or depth would always read 0%.
-    _SCROLLER_JS = """() => {
-      const se = document.scrollingElement || document.documentElement;
-      if (se.scrollHeight > innerHeight + 40) return [se.scrollTop, se.scrollHeight];
-      let best = null, bh = 0;
-      for (const el of document.querySelectorAll('main, article, div, section')) {
-        if (el.clientHeight < innerHeight * 0.5 || el.scrollHeight <= el.clientHeight + 40) continue;
-        const oy = getComputedStyle(el).overflowY;
-        if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > bh) { best = el; bh = el.scrollHeight; }
-      }
-      return best ? [best.scrollTop, best.scrollHeight] : [se.scrollTop, se.scrollHeight];
-    }"""
-
-    def _scroller(self) -> tuple[float, int]:
-        try:
-            y, hgt = self.page.evaluate(self._SCROLLER_JS)
-            return float(y), int(hgt)
-        except Exception:
-            return 0.0, 0
-
     def page_height(self) -> int:
-        return self._scroller()[1]
+        try:
+            return int(self.page.evaluate("Math.max(document.documentElement.scrollHeight, "
+                                          "document.body ? document.body.scrollHeight : 0)"))
+        except Exception:
+            return 0
 
     def scroll_y(self) -> float:
-        return self._scroller()[0]
+        try:
+            return float(self.page.evaluate("window.scrollY"))
+        except Exception:
+            return 0.0
 
     def move(self, x: float, y: float) -> None:
         self.page.mouse.move(x, y)
@@ -160,6 +169,27 @@ class PlaywrightActuator:
                 return
             self.page.wait_for_timeout(min(250, left * 1000))
 
+    def select_text(self, x: float, y: float, dx: float) -> bool:
+        """Press, drag across a line of plain text, release: only on text, never on a link,
+        button or form field, so it can never click anything."""
+        try:
+            ok = self.page.evaluate(
+                "([x, y]) => { const e = document.elementFromPoint(x, y); if (!e) return false;"
+                " if (e.closest('a,button,input,select,textarea,label,summary,[onclick],[role=button],[contenteditable]')) return false;"
+                " return ['P','SPAN','LI','H1','H2','H3','H4','TD','BLOCKQUOTE','ARTICLE','DIV'].includes(e.tagName)"
+                " && (e.innerText || '').trim().length > 40; }", [x, y])
+            if not ok:
+                return False
+            m = self.page.mouse
+            m.down()
+            for i in range(1, 9):
+                m.move(x + dx * i / 8, y + (i % 3 - 1) * 0.6)
+                time.sleep(0.03)
+            m.up()
+            return True
+        except Exception:
+            return False
+
     def stopped(self) -> bool:
         return bool(self._stop and self._stop.is_set())
 
@@ -170,7 +200,12 @@ class BrowserTransport(Transport):
     def __init__(self, proxy: str | None = None, headless: bool = True, executable: str | None = None,
                  stop_event: threading.Event | None = None, scale: Callable[[], float] = lambda: 1.0,
                  download_prob: float = 0.03, on_event: Callable[[str, str], None] | None = None,
-                 rng: random.Random | None = None):
+                 rng: random.Random | None = None, low_data: bool = False, image_prob: float = 0.04,
+                 offscreen: bool = False, engine: str = "chromium"):
+        self.engine = engine if engine in ("chromium", "firefox") else "chromium"
+        self.offscreen = offscreen and not headless and self.engine == "chromium"
+        self.low_data = low_data
+        self.image_prob = 0.0 if low_data else image_prob     # no images loaded in low-data mode
         self.proxy, self.headless = proxy, headless
         self.executable = executable or find_browser()
         self.stop_event, self.scale, self.download_prob = stop_event, scale, download_prob
@@ -187,18 +222,29 @@ class BrowserTransport(Transport):
         if self._browser is not None:
             return
         from playwright.sync_api import sync_playwright
+        if self.engine == "firefox":
+            # Firefox (Gecko): its own TLS/HTTP fingerprint, the same as people browsing with Firefox.
+            self._pw = sync_playwright().start()
+            self._browser = self._pw.firefox.launch(headless=self.headless,
+                                                    proxy={"server": self.proxy} if self.proxy else None)
+            self._major = (self._browser.version or "0").split(".")[0]
+            self.on_event("info", f"Real browser started: Firefox {self._browser.version}"
+                                  f" ({'headless' if self.headless else 'visible'})")
+            return
         if not self.executable:
             raise RuntimeError("no Chromium-family browser found")
         self._pw = sync_playwright().start()
         args = ["--disable-blink-features=AutomationControlled", "--no-default-browser-check",
                 "--no-first-run", "--disable-background-networking"]
-        if hasattr(os, "geteuid") and os.geteuid() == 0:
+        if self.offscreen:                                 # a real window, placed where no screen is
+            args += ["--window-position=-32000,-32000", "--window-size=1366,850"]
+        if os.environ.get("CRICKET_NO_SANDBOX") == "1" or (hasattr(os, "geteuid") and os.geteuid() == 0):
             args.append("--no-sandbox")                    # Chromium refuses to sandbox as root
         self._browser = self._pw.chromium.launch(executable_path=self.executable, headless=self.headless,
                                                  args=args, proxy={"server": self.proxy} if self.proxy else None)
         self._major = (self._browser.version or "0").split(".")[0]
         self.on_event("info", f"Real browser started: {Path(self.executable).name} {self._browser.version}"
-                              f" ({'headless' if self.headless else 'visible'})")
+                              f" ({'headless' if self.headless else 'off-screen window' if self.offscreen else 'visible'})")
 
     def close(self) -> None:
         for s in list(self._sessions.values()):
@@ -215,6 +261,29 @@ class BrowserTransport(Transport):
                 pass
         self._browser = self._pw = None
 
+    def _desktop_override(self) -> dict | None:
+        """Headless Chromium says "HeadlessChrome" in its user agent and client hints, which no
+        real person's browser does. Present the same browser and version as a normal window."""
+        if not self.headless:
+            return None
+        exe = Path(self.executable or "").name.lower()
+        brand = ("Microsoft Edge" if "msedge" in exe else "Brave" if "brave" in exe
+                 else None if "chromium" in exe else "Google Chrome")
+        if sys.platform == "win32":
+            os_tok, plat = "Windows NT 10.0; Win64; x64", "Windows"
+        elif sys.platform == "darwin":
+            os_tok, plat = "Macintosh; Intel Mac OS X 10_15_7", "macOS"
+        else:
+            os_tok, plat = "X11; Linux x86_64", "Linux"
+        ua = (f"Mozilla/5.0 ({os_tok}) AppleWebKit/537.36 (KHTML, like Gecko) "
+              f"Chrome/{self._major}.0.0.0 Safari/537.36" + (" Edg/%s.0.0.0" % self._major if brand == "Microsoft Edge" else ""))
+        brands = [{"brand": "Not_A Brand", "version": "8"}, {"brand": "Chromium", "version": self._major}]
+        if brand:
+            brands.append({"brand": brand, "version": self._major})
+        return {"userAgent": ua, "userAgentMetadata": {
+            "brands": brands, "platform": plat, "platformVersion": "", "architecture": "x86",
+            "model": "", "mobile": False}}
+
     def _session(self, identity) -> dict:
         key = getattr(identity, "id", 0)
         s = self._sessions.get(key)
@@ -227,33 +296,64 @@ class BrowserTransport(Transport):
             except Exception:
                 pass
         rng = random.Random(f"{key}-{id(self)}")
-        mobile = rng.random() < MOBILE_SHARE
+        # The identity decides: phone (and which phone) or desktop. Older identities without
+        # that information fall back to a random share.
+        mobile = bool(identity.mobile) if hasattr(identity, "mobile") else rng.random() < MOBILE_SHARE
+        if self.engine == "firefox":
+            mobile = False          # Playwright's Firefox can't emulate a phone; those visits run as desktop
+        device = MOBILE_DEVICES.get(getattr(identity, "device", "") or "")
+        ios = bool(mobile and "iPhone" in (getattr(identity, "user_agent", "") or ""))
+        if mobile and device is None:
+            device = MOBILE_DEVICES[DEFAULT_DEVICE if ios else "Pixel 7"]
         lang = (getattr(identity, "accept_language", "") or "en-US").split(",")[0]
         if mobile:
-            (w, h), dpr, _ = rng.choices(MOBILE_VIEWPORTS, weights=[m[2] for m in MOBILE_VIEWPORTS])[0]
-            ua = (f"Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) "
-                  f"Chrome/{self._major}.0.0.0 Mobile Safari/537.36")
+            (w, h), dpr = device["viewport"], device["dpr"]
+            # No user_agent here: Playwright's own override keeps "HeadlessChrome" client hints
+            # and a Linux navigator.platform. The DevTools override below sets everything at once.
             ctx = self._browser.new_context(viewport={"width": w, "height": h}, device_scale_factor=dpr,
-                                            is_mobile=True, has_touch=True, user_agent=ua, locale=lang)
+                                            is_mobile=True, has_touch=True, locale=lang)
         else:
             (w, h), _ = rng.choices(DESKTOP_VIEWPORTS, weights=[v[1] for v in DESKTOP_VIEWPORTS])[0]
             vh = h - rng.choice([0, 70, 85, 110])          # browser chrome eats some height
             ctx = self._browser.new_context(viewport={"width": w, "height": vh}, locale=lang)
+        if self.low_data:              # optional: skip images, video and fonts to save data
+            ctx.route("**/*", lambda route: route.abort()
+                      if route.request.resource_type in ("image", "media", "font") else route.continue_())
         page = ctx.new_page()
+        counter = {"bytes": 0}
+        try:
+            page.on("response", lambda r: counter.__setitem__(
+                "bytes", counter["bytes"] + int(r.headers.get("content-length") or 0)))
+        except Exception:
+            pass
         cdp = None
-        if mobile:
-            try:
+        try:
+            if ios:
+                # iPhone Safari: its user agent, platform "iPhone", and no client hints at all
+                # (Safari sends none; leaving the metadata out makes Chromium send none either).
+                cdp = ctx.new_cdp_session(page)
+                cdp.send("Emulation.setUserAgentOverride", {
+                    "userAgent": identity.user_agent, "acceptLanguage": lang, "platform": "iPhone"})
+            elif mobile:
+                ua = (f"Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) "
+                      f"Chrome/{self._major}.0.0.0 Mobile Safari/537.36")
                 cdp = ctx.new_cdp_session(page)
                 cdp.send("Emulation.setUserAgentOverride", {
                     "userAgent": ua, "acceptLanguage": lang, "platform": "Linux armv8l",
                     "userAgentMetadata": {
                         "brands": [{"brand": "Chromium", "version": self._major},
+                                   {"brand": "Google Chrome", "version": self._major},
                                    {"brand": "Not-A.Brand", "version": "24"}],
                         "platform": "Android", "platformVersion": "10.0.0", "architecture": "",
                         "model": "K", "mobile": True}})
-            except Exception:
-                cdp = None
-        s = {"ctx": ctx, "page": page, "mobile": mobile, "cdp": cdp, "last_url": None}
+            elif self.engine == "chromium":
+                ov = self._desktop_override()
+                if ov:
+                    cdp = ctx.new_cdp_session(page)
+                    cdp.send("Emulation.setUserAgentOverride", {**ov, "acceptLanguage": lang})
+        except Exception:
+            cdp = None
+        s = {"ctx": ctx, "page": page, "mobile": mobile, "cdp": cdp, "last_url": None, "counter": counter}
         self._sessions[key] = s
         return s
 
@@ -268,24 +368,18 @@ class BrowserTransport(Transport):
             return HitResult(None, error=f"browser unavailable: {exc}")
         page, mobile = s["page"], s["mobile"]
         act = PlaywrightActuator(page, mobile, self.stop_event, s["cdp"])
+        bytes_before = s.get("counter", {}).get("bytes", 0)
         driver = HumanDriver(self.rng, act, scale=self.scale())
         how = "open"
         try:
             resp = None
-            from_serp = target.role == "result" and target.referer and s.get("serp_ref") == target.referer
-            if from_serp and not s.get("on_serp"):
-                try:                                           # back to the results, like pressing Back
-                    driver.pause(lognormal_clipped(driver.rng, 1.2, 0.5, 0.4, 4))
-                    page.go_back(wait_until="domcontentloaded", timeout=15000)
-                    s["on_serp"] = True
-                    driver.pause(lognormal_clipped(driver.rng, 2.5, 0.5, 0.8, 8))   # re-scan the list
-                except Exception:
-                    pass
-            if from_serp and s.get("on_serp"):
+            t_load = time.time()
+            if target.role == "result" and target.referer and s["last_url"] == target.referer:
                 resp, how = self._click_through(page, driver, target, mobile)
             if resp is None and how == "open":
                 resp = page.goto(target.url, referer=target.referer, wait_until="domcontentloaded",
                                  timeout=int(target.timeout * 1000))
+            load_ms = (time.time() - t_load) * 1000.0
             status = resp.status if resp is not None else 200
             title = (page.title() or "").lower()
             if ("/sorry/" in page.url or "captcha" in page.url.lower()
@@ -293,23 +387,27 @@ class BrowserTransport(Transport):
                                                 "access denied", "attention required"))
                     or (status == 202 and "duckduckgo" in page.url)):
                 status = 429          # a bot check: back off instead of counting it as a visit
-            dwell = target.dwell or 20.0
-            stats = driver.browse(max_seconds=dwell, min_seconds=dwell * 0.85)
-            downloaded = self._maybe_download(page)
+            stats = driver.serp() if target.role == "search" else driver.browse()
+            downloaded = self._maybe_download(page) or self._maybe_save_image(page)
             s["last_url"] = page.url
-            s["on_serp"] = target.role == "search"
-            if target.role == "search":
-                s["serp_ref"] = target.url
             html = page.content()[:2_000_000]
             parts = [f"{how} {'📱' if mobile else '🖥'}", f"{stats['scrolls']} scrolls",
-                     f"{int(stats['depth'] * 100)}% depth", f"{stats['seconds']:.0f}s reading"]
+                     f"{int(stats['depth'] * 100)}% depth", f"{stats['seconds']:.0f}s on page"]
+            if stats.get("serp"):
+                parts.insert(1, f"results: {stats['serp']}")
             if stats["back_scrolls"]:
                 parts.append(f"{stats['back_scrolls']} scroll-back")
+            if stats.get("selections"):
+                parts.append(f"{stats['selections']} text selected")
             if downloaded:
                 parts.append(downloaded)
             self.on_event("debug", f"{urllib.parse.urlparse(page.url).hostname}: " + ", ".join(parts))
             res = HitResult(status, html)
             res.detail = ", ".join(parts)
+            res.load_ms = load_ms
+            res.on_page_s = stats["seconds"]
+            # content-length is missing for some compressed responses, so this is a floor
+            res.bytes = max(len(html), s.get("counter", {}).get("bytes", 0) - bytes_before)
             return res
         except Exception as exc:
             msg = str(exc).splitlines()[0][:200]
@@ -342,8 +440,22 @@ class BrowserTransport(Transport):
         except Exception:
             return None, "open"
 
+    # Page JavaScript fetch() goes out through the browser's own network stack (its TLS and
+    # HTTP/2 fingerprint, cookies, cache). Playwright's context.request would not: it is a
+    # separate HTTP client with its own fingerprint, so it is not used for noise.
+    _FETCH_JS = """async ([u, cap, cors]) => {
+        const ac = new AbortController(); const t = setTimeout(() => ac.abort(), 30000);
+        try {
+            const r = await fetch(u, {credentials: 'include', mode: cors ? 'cors' : 'no-cors', signal: ac.signal});
+            if (r.type === 'opaque') { return [0, -1]; }            // cross-site image: fetched, size hidden
+            const n = +(r.headers.get('content-length') || 0);
+            if (n > cap) { ac.abort(); return [r.status, n]; }
+            const b = await r.arrayBuffer(); return [r.status, b.byteLength];
+        } catch (e) { return [-1, 0]; } finally { clearTimeout(t); }
+    }"""
+
     def _maybe_download(self, page) -> str | None:
-        """Occasionally fetch a linked document through the browser's own network stack, then discard it."""
+        """Occasionally fetch a linked document (same site) the way the browser would, then discard it."""
         if self.rng.random() >= self.download_prob:
             return None
         try:
@@ -357,9 +469,29 @@ class BrowserTransport(Transport):
             return None
         url = self.rng.choice(files)
         try:
-            r = page.context.request.get(url, timeout=30000, max_redirects=5)
-            size = len(r.body()) if int(r.headers.get("content-length") or 0) <= MAX_DOWNLOAD else 0
-            r.dispose()
-            return f"downloaded {Path(urllib.parse.urlparse(url).path).name} ({size // 1024} KB, discarded)"
+            status, size = page.evaluate(self._FETCH_JS, [url, MAX_DOWNLOAD, True])
         except Exception:
             return None
+        if status < 0:
+            return None
+        return f"downloaded {Path(urllib.parse.urlparse(url).path).name} ({max(size, 0) // 1024} KB, discarded)"
+
+    def _maybe_save_image(self, page) -> str | None:
+        """Now and then 'save' a picture from the page: fetch it again through the browser, discard it."""
+        if self.rng.random() >= self.image_prob:
+            return None
+        try:
+            srcs = page.eval_on_selector_all(
+                "img", "els => els.filter(e => e.naturalWidth >= 200 && e.naturalHeight >= 150"
+                       " && /^https?:/.test(e.currentSrc || e.src)).map(e => e.currentSrc || e.src)")
+        except Exception:
+            return None
+        if not srcs:
+            return None
+        src = self.rng.choice(srcs)
+        same = urllib.parse.urlparse(src).hostname == urllib.parse.urlparse(page.url).hostname
+        try:
+            status, _ = page.evaluate(self._FETCH_JS, [src, MAX_DOWNLOAD, same])
+        except Exception:
+            return None
+        return "saved an image (discarded)" if status >= 0 else None

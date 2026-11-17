@@ -1,7 +1,8 @@
 """In-memory event log shared by the scheduler, Tor manager and web UI.
 
 Every subsystem writes here, so the UI can show one filterable, live view of
-everything that is happening. A copy is mirrored to a rotating file on disk.
+everything that is happening. It lives in memory only: nothing is written to
+disk, and it is gone when the app stops (or when you clear it).
 """
 from __future__ import annotations
 
@@ -65,6 +66,11 @@ class EventLog:
         out = [e.to_dict() for e in items
                if LEVELS.get(e.level, 20) >= floor and (not sources or e.source in sources)]
         return out[-limit:]
+
+    def clear(self) -> None:
+        """Forget everything in the live log. Ids keep counting up so open UIs stay in sync."""
+        with self._lock:
+            self._buf.clear()
 
     def last_id(self) -> int:
         with self._lock:

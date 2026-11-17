@@ -18,7 +18,10 @@ import tests.test_humanize
 import tests.test_browser
 import tests.test_sources
 import tests.test_rate_dns
-import tests.test_sessions
+import tests.test_mylist
+import tests.test_mix_mobile
+import tests.test_extras
+import tests.test_selftest
 
 MODULES = [
     tests.test_identity,
@@ -31,7 +34,10 @@ MODULES = [
     tests.test_browser,
     tests.test_sources,
     tests.test_rate_dns,
-    tests.test_sessions,
+    tests.test_mylist,
+    tests.test_mix_mobile,
+    tests.test_extras,
+    tests.test_selftest,
 ]
 
 

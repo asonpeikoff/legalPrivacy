@@ -40,7 +40,8 @@ NEWS_FEEDS = [f"https://feeds.bbci.co.uk/news/{p}rss.xml" for p in
                "entertainment_and_arts/")]
 TRANCO_URL = "https://tranco-list.eu/top-1m.csv.zip"
 DENY_URL = "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/fakenews-gambling-porn/hosts"
-OPENNIC_URL = "https://api.opennicproject.org/geoip/?json&ipv=4&anon=true&pct=95&res=50"
+CRUX_URL = "https://raw.githubusercontent.com/zakird/crux-top-lists/main/data/global/current.csv.gz"
+OPENNIC_URL = "https://servers.opennic.org/"     # the public server table (features + Pass/Fail)
 DS_ROWS = "https://datasets-server.huggingface.co/rows"
 DATASETS = [  # (dataset, config, split, field, conservative max row index)
     ("microsoft/ms_marco", "v2.1", "train", "query", 800_000),
@@ -48,7 +49,7 @@ DATASETS = [  # (dataset, config, split, field, conservative max row index)
 ]
 # A shipped snapshot (data/feeds/snapshot.json.gz) means users never need to fetch these.
 # If they opt in to auto-refresh, sources are re-fetched only this rarely.
-TTL = {k: 90 * 86400 for k in ("trends", "wiki", "news", "dataset", "tranco", "deny", "opennic")}
+TTL = {k: 90 * 86400 for k in ("trends", "wiki", "news", "dataset", "tranco", "deny", "opennic", "crux")}
 _SKIP_WIKI = re.compile(r"^(Main_Page|Special:|Wikipedia:|Portal:|File:|Help:|Category:|Template:|Talk:|User:|-$)")
 
 
@@ -85,7 +86,7 @@ class FeedStore:
         self.fetchers: dict[str, Callable[[], list]] = fetchers or {
             "deny": self._fetch_deny, "trends": self._fetch_trends, "wiki": self._fetch_wiki,
             "news": self._fetch_news, "dataset": self._fetch_dataset, "tranco": self._fetch_tranco,
-            "opennic": self._fetch_opennic}
+            "opennic": self._fetch_opennic, "crux": self._fetch_crux}
         self.refreshing = False
         self._load()
 
@@ -106,7 +107,10 @@ class FeedStore:
 
     def _entry(self, name: str) -> dict:
         """User's own refreshed copy if any, else the snapshot shipped with the app."""
-        return self.data.get(name) or self.bundled.get(name) or {}
+        own = self.data.get(name)
+        if name == "opennic" and own and not all(str(x).count("|") >= 4 for x in own.get("items", [])):
+            own = None          # an older copy without the logging/encryption checks: don't trust it
+        return own or self.bundled.get(name) or {}
 
     def items(self, name: str) -> list:
         with self._lock:
@@ -240,17 +244,15 @@ class FeedStore:
                         break
         return out
 
+    def _fetch_crux(self) -> list[str]:
+        """Chrome's own top sites (CrUX): sites real Chrome users load most, top-1,000 bucket first.
+        Each item is 'host|bucket'. Safety-filtered like every other list."""
+        import gzip as _gz
+        raw = _gz.decompress(_get(CRUX_URL, timeout=120).content).decode("utf-8", "replace")
+        return parse_crux(raw, self.denylist())
+
     def _fetch_opennic(self) -> list[str]:
-        """OpenNIC Tier-2 resolvers with anonymized logs, >=95% reliable, one per admin: 'ip|name|loc'."""
-        import ipaddress
-        out = []
-        for s in _get(OPENNIC_URL).json():
-            try:
-                ipaddress.IPv4Address(s["ip"])
-            except (KeyError, ValueError):
-                continue
-            out.append(f"{s['ip']}|{s.get('short', '')}|{s.get('loc', '')}")
-        return out
+        return parse_opennic_servers(_get(OPENNIC_URL, timeout=40).text)
 
     def _fetch_deny(self) -> list[str]:
         txt = _get(DENY_URL, timeout=60).text
@@ -261,3 +263,55 @@ class FeedStore:
                 if host not in ("0.0.0.0", "localhost"):
                     out.append(host)
         return out
+
+
+def parse_opennic_servers(html: str) -> list[str]:
+    """OpenNIC servers from servers.opennic.org that pass every requirement:
+
+      * status Pass (the table's own reachability/correctness check),
+      * no logs kept, or logs anonymized,
+      * at least one encrypted protocol: DNSCrypt, DNS over HTTPS or DNS over TLS.
+
+    Returns 'ip|host|location|logs|protocols', no-logs servers first.
+    logs is "none" or "anonymized"; protocols is e.g. "DoH+DoT".
+    """
+    import ipaddress as _ip
+    out = []
+    for group, body in re.findall(r"<div name='ccg\[([A-Z]+)\]'[^>]*>(.*?)</div>", html, re.S):
+        for row in re.findall(r"<p><span>(.*?)</p>", body, re.S):
+            feats = set(re.findall(r"title='([^']+)'", row.split("</span>")[0]))
+            status = re.search(r"class='stat' title='([^']+)'", row)
+            host = re.search(r"<a id='([^']+)'", row)
+            ipv4 = re.search(r"class='mono ipv4'[^>]*>([^<&]+)", row)
+            place = re.search(r'class=\'host\' title="\(([^)]*)\)', row)
+            if not (status and host and ipv4) or status.group(1) != "Passing":
+                continue
+            logs = "none" if "No logs kept" in feats else "anonymized" if "Logs are anonymized" in feats else ""
+            protos = [name for label, name in (("DNScrypt", "DNSCrypt"), ("DNS over HTTP", "DoH"),
+                                              ("DNS over TLS", "DoT")) if label in feats]
+            if not logs or not protos:
+                continue
+            ip = ipv4.group(1).strip()
+            try:
+                _ip.IPv4Address(ip)
+            except ValueError:
+                continue
+            short = host.group(1).replace(".dns.opennic.glue", "")
+            loc = place.group(1).strip() if place and place.group(1).strip() else group
+            out.append((0 if logs == "none" else 1, f"{ip}|{short}|{loc}|{logs}|{'+'.join(protos)}"))
+    return [x for _, x in sorted(out, key=lambda t: t[0])]
+
+
+def parse_crux(csv_text: str, deny: set[str] | None = None, max_rank: int = 10_000) -> list[str]:
+    """'origin,rank' rows -> 'host|rank' for safe sites up to max_rank (1000 = top bucket)."""
+    out, seen = [], set()
+    for line in csv_text.splitlines()[1:]:
+        origin, _, rank = line.rpartition(",")
+        if not rank.isdigit() or int(rank) > max_rank or not origin.startswith("https://"):
+            continue
+        host = origin[len("https://"):].split("/")[0].split(":")[0].lower()
+        if host in seen or not safe_domain(host, deny):
+            continue
+        seen.add(host)
+        out.append(f"{host}|{rank}")
+    return out

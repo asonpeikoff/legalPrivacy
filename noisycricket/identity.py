@@ -18,61 +18,11 @@ import random
 import re
 from dataclasses import dataclass
 
-def _ua(ua: str, chromium: bool = False, mobile: bool = False,
-        platform: str = "Windows") -> dict:
-    return {"ua": ua, "chromium": chromium, "mobile": mobile, "platform": platform}
+from .useragents import PERSONAS, build_pool, sample_entry
 
-# Real strings observed in live traffic; refresh occasionally. Chrome/Edge use
-# the reduced UA (major-version only, frozen .0.0.0); Android freezes the OS
-# token at 10 and the device model at "K"; iOS freezes the OS token too.
-UA_POOL: dict[str, list[dict]] = {
-    "desktop-chrome": [
-        _ua("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
-            chromium=True, platform="Windows"),
-        _ua("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
-            chromium=True, platform="Windows"),
-        _ua("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36 Edg/157.0.0.0",
-            chromium=True, platform="Windows"),
-        _ua("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
-            chromium=True, platform="macOS"),
-        _ua("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
-            chromium=True, platform="Linux"),
-        # a legacy-major straggler: real populations always carry some
-        _ua("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            chromium=True, platform="Windows"),
-    ],
-    "desktop-firefox": [
-        _ua("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:158.0) "
-            "Gecko/20100101 Firefox/158.0", platform="Windows"),
-        _ua("Mozilla/5.0 (X11; Linux x86_64; rv:158.0) "
-            "Gecko/20100101 Firefox/158.0", platform="Linux"),
-        _ua("Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:158.0) "
-            "Gecko/20100101 Firefox/158.0", platform="macOS"),
-        # ESR long-tail: support branches linger for a year+
-        _ua("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) "
-            "Gecko/20100101 Firefox/140.0", platform="Windows"),
-    ],
-    "mobile": [
-        _ua("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/157.0.0.0 Mobile Safari/537.36",
-            chromium=True, mobile=True, platform="Android"),
-        _ua("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/152.0.0.0 Mobile Safari/537.36",
-            chromium=True, mobile=True, platform="Android"),
-        _ua("Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) "
-            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0.1 "
-            "Mobile/15E148 Safari/604.1", mobile=True, platform="iOS"),
-        _ua("Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) "
-            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.1 "
-            "Mobile/15E148 Safari/604.1", mobile=True, platform="iOS"),
-    ],
-}
+# The pool of user agents (browsers from the last two years, plus a few non-browser
+# clients). Built in useragents.py from ua_catalog.py. See that module for why.
+UA_POOL: dict[str, list[dict]] = build_pool()
 
 LANGUAGE_POOL = [
     "en-US,en;q=0.9",
@@ -82,7 +32,7 @@ LANGUAGE_POOL = [
     "de-DE,de;q=0.9,en;q=0.5",
 ]
 
-PERSONA_CLASSES = list(UA_POOL)
+PERSONA_CLASSES = list(PERSONAS)
 
 # fast / normal / slow pacing multipliers per persona
 PACE_MULTIPLIERS = {"fast": 0.6, "normal": 1.0, "slow": 1.8}
@@ -94,7 +44,6 @@ _CH_ANTIBRANDS = [
     '"Not?A_Brand";v="24"',
     '"Not A(Brand";v="99"',
 ]
-_EDGE_BRAND = "Microsoft Edge"
 
 _SEC_FETCH_NAV = {
     "Sec-Fetch-Dest": "document",
@@ -115,6 +64,7 @@ class Identity:
     mobile: bool = False
     platform: str = "Windows"
     gpc: bool = False         # Sec-GPC opt-in, pinned low-rate like real users
+    device: str = ""          # phone model to emulate (mobile identities), e.g. "iPhone 13"
 
     @property
     def pace_multiplier(self) -> float:
@@ -122,10 +72,10 @@ class Identity:
 
 
 def _client_hints(identity: Identity) -> dict[str, str]:
-    """Low-entropy client hints, brand version matched to the UA string.
+    """Low-entropy client hints, brand list matched to the UA string.
 
-    Only valid for Chromium personas — Firefox and Safari send none, and a
-    Sec-CH-UA on their UAs is an instant non-human tell.
+    Only valid for Chromium personas. Firefox sends none, and a Sec-CH-UA on a
+    Firefox UA is an instant non-human tell. Non-browser tools send none either.
     """
     if not identity.chromium:
         return {}
@@ -134,16 +84,15 @@ def _client_hints(identity: Identity) -> dict[str, str]:
         return {}
     v = major.group(1)
     notbrand = _CH_ANTIBRANDS[identity.id % len(_CH_ANTIBRANDS)]
-    is_edge = _EDGE_BRAND.lower() in identity.user_agent.lower()
-    first = f'"{_EDGE_BRAND}";v="{v}"' if is_edge else notbrand
-    last = notbrand if is_edge else f'"Google Chrome";v="{v}"'
-    brand_list = f'{first}, "Chromium";v="{v}", {last}'
-    hints = {
+    if "Chromium/" in identity.user_agent:  # Chromium-branded build
+        brand_list = f'"Chromium";v="{v}", {notbrand}'
+    else:                                   # Google Chrome
+        brand_list = f'{notbrand}, "Chromium";v="{v}", "Google Chrome";v="{v}"'
+    return {
         "Sec-CH-UA": brand_list,
         "Sec-CH-UA-Mobile": "?1" if identity.mobile else "?0",
         "Sec-CH-UA-Platform": f'"{identity.platform}"',
     }
-    return hints
 
 
 def _query_taste(rng: random.Random, wordlist: list[str], size: int = 12) -> list[str]:
@@ -158,10 +107,16 @@ def _query_taste(rng: random.Random, wordlist: list[str], size: int = 12) -> lis
     return rng.sample(pool, min(size, len(pool)))
 
 
-def make_identity(rng: random.Random, ident_id: int, wordlist: list[str]) -> Identity:
-    """Build one pinned identity from the shared RNG."""
-    persona = rng.choice(PERSONA_CLASSES)
-    entry = rng.choice(UA_POOL[persona])
+def make_identity(rng: random.Random, ident_id: int, wordlist: list[str],
+                  entry: dict | None = None) -> Identity:
+    """Build one pinned identity from the shared RNG.
+
+    `entry` is the user agent chosen by the UaChooser (rotation or pin). Without it, a
+    user agent is drawn from the library the same way the chooser does.
+    """
+    if entry is None:
+        entry = sample_entry(rng)
+    persona = entry.get("persona", "own")
     return Identity(
         id=ident_id,
         persona=persona,
@@ -173,6 +128,7 @@ def make_identity(rng: random.Random, ident_id: int, wordlist: list[str]) -> Ide
         mobile=entry["mobile"],
         platform=entry["platform"],
         gpc=rng.random() < 0.06,
+        device=entry.get("device", ""),
     )
 
 

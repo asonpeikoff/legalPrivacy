@@ -145,3 +145,71 @@ profile:
         assert p.engines["search"].budget_per_day == 80
     finally:
         os.remove(path)
+
+
+def test_ua_pool_is_built_from_the_last_two_years_of_releases():
+    import datetime as dt
+    from noisycricket import ua_catalog
+    from noisycricket.useragents import build_pool
+    # at least two years back (the builder keeps a 60-day margin on top)
+    cutoff = (dt.date.today() - dt.timedelta(days=730)).isoformat()
+    for table in (ua_catalog.CHROME, ua_catalog.CHROMIUM, ua_catalog.FIREFOX):
+        assert len(table) >= 25
+        assert min(d for _, d, _ in table) <= cutoff
+    pool = build_pool()
+    assert set(pool) == {"desktop-chrome", "desktop-firefox", "desktop-chromium", "mobile-chrome", "mobile-iphone"}
+    assert not any("Edg/" in e["ua"] for ps in pool.values() for e in ps)
+    assert all("iPhone" in e["ua"] and not e["chromium"] for e in pool["mobile-iphone"])   # Safari: no client hints
+    assert all(e["ua"].startswith("Mozilla/5.0 (") for ps in pool.values() for e in ps)   # browsers only
+
+
+def test_most_common_versions_dominate_but_old_ones_stay_possible():
+    from noisycricket import ua_catalog
+    w = sorted((x[2] for x in ua_catalog.FIREFOX), reverse=True)
+    top3 = sum(w[:3]) / sum(w)
+    assert 0.5 < top3 < 0.9
+    assert all(x > 0 for x in w)
+
+
+def test_client_hints_match_chrome_chromium_and_are_absent_for_firefox_and_tools():
+    from noisycricket.identity import Identity, _client_hints
+    from noisycricket.useragents import build_pool
+    pool = build_pool()
+    chrome = next(e for e in pool["desktop-chrome"] if e["ua"].startswith("Mozilla/5.0 (Windows"))
+    ch = Identity(id=1, persona="desktop-chrome", user_agent=chrome["ua"], accept_language="en-US",
+                  pace="normal", query_taste=[], chromium=True)
+    assert '"Google Chrome"' in _client_hints(ch)["Sec-CH-UA"]
+    cr = pool["desktop-chromium"][0]
+    chromium = Identity(id=2, persona="desktop-chromium", user_agent=cr["ua"], accept_language="en-US",
+                        pace="normal", query_taste=[], chromium=True)
+    hints = _client_hints(chromium)["Sec-CH-UA"]
+    assert '"Chromium"' in hints and "Google Chrome" not in hints
+    ff = Identity(id=3, persona="desktop-firefox", user_agent=pool["desktop-firefox"][0]["ua"],
+                  accept_language="en-US", pace="normal", query_taste=[])
+    assert _client_hints(ff) == {}
+
+
+def test_chooser_rotates_per_hour_or_day_and_pins_on_request():
+    import random
+    from noisycricket.config import IdentityConfig
+    from noisycricket.useragents import UaChooser, library
+    clock = {"t": 1_800_000_000.0}
+    cfg = IdentityConfig(ua_mode="rotate", rotate_every="hour")
+    ch = UaChooser(random.Random(1), cfg, clock=lambda: clock["t"])
+    first = ch.choose()
+    assert ch.choose() is first                      # same hour: same browser
+    clock["t"] += 3700
+    assert ch.choose() is not None                   # next hour: a fresh draw
+    own = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Safari/537.36"
+    pin_own = UaChooser(random.Random(2), IdentityConfig(ua_mode="pin", ua_pin="own", own_ua=own))
+    assert pin_own.choose()["ua"] == own
+    lib_id = library()[0]["id"]
+    pin_lib = UaChooser(random.Random(3), IdentityConfig(ua_mode="pin", ua_pin=lib_id))
+    assert pin_lib.choose()["id"] == lib_id
+
+
+def test_identity_settings_round_trip_and_validate():
+    from noisycricket.config import Profile, apply_overrides, profile_to_dict, ConfigError
+    p = Profile(name="t")
+    apply_overrides(p, {"identity": {"ua_mode": "pin", "ua_pin": "own", "own_ua": "Mozilla/5.0 X"}})
+    assert p.identity.ua_mode == "pin" and profile_to_dict(p)["profile"]["identity"]["own_ua"] == "Mozilla/5.0 X"

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import socket
 import threading
@@ -62,7 +63,9 @@ class UIServer:
     def _bind(port: int) -> ThreadingHTTPServer:
         for p in (port, 0):
             try:
-                srv = ThreadingHTTPServer(("127.0.0.1", p), BaseHTTPRequestHandler)
+                # CRICKET_BIND=0.0.0.0 is only for running inside a container, whose port is then
+                # published to 127.0.0.1 on the host (see docs/DOCKER.md). Default: this computer only.
+                srv = ThreadingHTTPServer((os.environ.get("CRICKET_BIND", "127.0.0.1"), p), BaseHTTPRequestHandler)
                 srv.daemon_threads = True
                 return srv
             except OSError:
@@ -152,6 +155,51 @@ class UIServer:
                                  f"{e['level'].upper():5s} [{e['source']}] {e['message']}"
                                  for e in ctl.log.since(0, "debug", limit=5000)]
                         return self._send(200, "\n".join(lines).encode(), "text/plain; charset=utf-8")
+                    if u.path == "/api/tools/resolvers":
+                        return self._json(ctl.resolvers_check())
+                    if u.path == "/api/mylist":
+                        return self._json(ctl.mylist_state())
+                    if u.path == "/api/useragents":
+                        return self._json(ctl.ua_state())
+                    if u.path == "/api/tools/speed":
+                        return self._json(ctl.speed_status())
+                    if u.path in ("/api/hits.json", "/api/hits.csv"):
+                        rows = ctl.hits(0)
+                        if u.path.endswith(".json"):
+                            return self._send(200, json.dumps(rows, indent=1).encode(), "application/json",
+                                              {"Content-Disposition": "attachment; filename=noisycricket-activity.json"})
+                        import csv
+                        import io
+                        buf = io.StringIO()
+                        cols = ["seq", "ts", "lane", "engine", "url", "status", "ok", "latency_ms", "note", "role", "detail", "error"]
+                        w = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
+                        w.writeheader()
+                        w.writerows(rows)
+                        return self._send(200, buf.getvalue().encode(), "text/csv; charset=utf-8",
+                                          {"Content-Disposition": "attachment; filename=noisycricket-activity.csv"})
+                    if u.path == "/api/tools/estimate":
+                        return self._json(ctl.estimate())
+                    if u.path == "/api/tools/selftest":
+                        return self._json(ctl.selftest(float((q.get("days") or ["14"])[0])))
+                    if u.path == "/api/ml":
+                        return self._json(ctl.ml_state())
+                    if u.path == "/api/ml/predict":
+                        g = lambda k, d: (q.get(k) or [d])[0]                     # noqa: E731
+                        return self._json(ctl.ml_predict(g("site", ""), int(g("hour", "12")), int(g("weekday", "2"))))
+                    if u.path == "/api/tools/privacy":
+                        return self._json({"checks": ctl.privacy_check()})
+                    if u.path == "/api/interests":
+                        return self._json(ctl.interests_state())
+                    if u.path == "/metrics":
+                        if not ctl.profile.extras.metrics:
+                            return self._json({"error": "metrics are off (Settings → Extras)"}, 404)
+                        st = ctl.state()
+                        lines = ["# noisyCricket metrics", f"noisycricket_running {int(bool(st['running']))}",
+                                 f"noisycricket_bytes_today {st.get('bytes_today', 0)}"]
+                        for ln in st["lanes"]:
+                            lines += [f'noisycricket_hits_total{{lane="{ln["name"]}"}} {ln["hits"]}',
+                                      f'noisycricket_failures_total{{lane="{ln["name"]}"}} {ln["failures"]}']
+                        return self._send(200, ("\n".join(lines) + "\n").encode(), "text/plain; version=0.0.4")
                     if u.path == "/api/doctor":
                         return self._json({"checks": ctl.doctor()})
                 except Exception as exc:
@@ -195,6 +243,23 @@ class UIServer:
                         ctl.update_app(body)
                     elif path == "/api/wizard":
                         return self._json(ctl.wizard(body))
+                    elif path == "/api/mylist":
+                        return self._json(ctl.mylist_save(body))
+                    elif path == "/api/mylist/bookmarks":
+                        return self._json(ctl.mylist_bookmarks(body.get("urls")))
+                    elif path == "/api/mylist/scan":
+                        return self._json(ctl.mylist_scan(body.get("days", 30)))
+                    elif path == "/api/mylist/watch":
+                        return self._json(ctl.mylist_watch(str(body.get("action")), body.get("hours")))
+                    elif path == "/api/useragents":
+                        return self._json(ctl.ua_save(body))
+                    elif path == "/api/useragents/detect":
+                        return self._json(ctl.ua_detect())
+                    elif path == "/api/tools/speed":
+                        return self._json(ctl.speed_start())
+                    elif path == "/api/logs/clear":
+                        ctl.log.clear()
+                        return self._json({"ok": True})
                     elif path == "/api/shutdown":
                         self._json({"ok": True})
                         threading.Thread(target=srv.shutdown, daemon=True).start()

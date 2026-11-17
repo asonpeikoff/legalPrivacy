@@ -45,6 +45,7 @@ class HitResult:
         self.error = error
         self.latency_ms: float | None = None
         self.detail: str | None = None       # e.g. "click, 4 scrolls, 38% depth" from the browser
+        self.bytes: int = 0                  # approximate data moved (0 = use len(html))
 
     @property
     def ok(self) -> bool:
@@ -219,8 +220,11 @@ class TorTransport(Transport):
 # Tor Browser (Firefox ESR based) presents one uniform fingerprint to everyone so users blend
 # into a single large anonymity set. Onion traffic that wears a random Chrome UA would stand
 # out, so the onion lane mimics Tor Browser's uniform headers instead of per-identity ones.
+from .useragents import latest_firefox_esr  # noqa: E402
+
 TOR_BROWSER_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; rv:153.0) Gecko/20100101 Firefox/153.0",
+    "User-Agent": f"Mozilla/5.0 (Windows NT 10.0; rv:{latest_firefox_esr()}.0) "
+                  f"Gecko/20100101 Firefox/{latest_firefox_esr()}.0",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.5",
     "Accept-Encoding": "gzip, deflate, br",

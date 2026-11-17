@@ -6,8 +6,8 @@ a day/night curve, and leaves some hours almost empty, the way a person is busy,
 then away. "steady" keeps the same amount every hour.
 
 Benchmark used to label the slider: active US desktop users run about 126 Google
-searches a month (SparkToro, 2024), roughly 4 a day; about 2.7 per internet user
-per day worldwide. Noise only hides you if it is at least comparable to your real
+searches a month (SparkToro/Datos, 2024), roughly 4 a day on average. That is a mean
+pulled up by heavy users (median ~53 a month, under 2 a day) and excludes mobile apps. Noise only hides you if it is at least comparable to your real
 activity, so even the middle levels are deliberately busier than that average.
 """
 from __future__ import annotations
@@ -19,7 +19,10 @@ from dataclasses import dataclass
 from .pacing import diurnal_factor
 
 # searches per hour at each slider level (1..10)
-SEARCHES_PER_HOUR = [0.5, 1, 1.5, 2.5, 4, 6, 9, 13, 20, 30]
+# The top is kept low enough that no one search engine sees bot-like volume from your
+# address: at level 10 the busiest engine (Google, ~35% of searches) gets about 7 an hour,
+# and engines.py also caps every engine at 8 searches in any hour.
+SEARCHES_PER_HOUR = [0.5, 1, 1.5, 2.5, 4, 6, 8, 11, 15, 20]
 LEVEL_NAMES = ["barely there", "very light", "light", "light-moderate", "moderate",
                "moderate-busy", "busy", "very busy", "heavy", "very heavy"]
 AVG_PERSON_SEARCHES_PER_DAY = 4.2      # SparkToro 2024, active US desktop users (126/month)
@@ -28,13 +31,16 @@ AVG_PERSON_SEARCHES_PER_DAY = 4.2      # SparkToro 2024, active US desktop users
 @dataclass
 class RateConfig:
     mode: str = "random"          # random (recommended) | steady
-    level: float = 5.0            # 1..10 slider
+    level: float = 5.0            # 1..10 slider: the average amount, in both modes
+    randomness: float = 1.0       # 0 = steady .. 1 = fully random; in between = partly each
 
     def validate(self) -> None:
         if self.mode not in ("random", "steady"):
             raise ValueError("rate.mode must be random or steady")
         if not 1 <= float(self.level) <= 10:
             raise ValueError("rate.level must be between 1 and 10")
+        if not 0 <= float(self.randomness) <= 1:
+            raise ValueError("rate.randomness must be between 0 and 1")
 
 
 def searches_per_hour(level: float) -> float:
@@ -57,16 +63,35 @@ def describe(level: float, search_share: float) -> dict:
 
 
 class RatePlanner:
+    """Hourly plan. Real activity drifts: it never jumps from busy to dead in one hour.
+
+    * busy/quiet level is a smoothed random walk (each hour keeps most of the last one),
+    * each day gets its own overall volume (some days heavier than others),
+    * "away" spells last several hours and ramp in and out instead of switching off.
+    """
+
     def __init__(self, rng: random.Random, cfg: RateConfig):
         self.rng, self.cfg = rng, cfg
+        self._wobble = 0.0            # log of the smoothed busy/quiet level
+        self._away = False
+        self._away_level = 1.0        # 1.0 when at the computer, ramps toward 0.1 when away
+        self._day_mult = 1.0
+        self._last_hour = -1
 
     def actions_for_hour(self, hour: int, search_share: float) -> float:
         """Total actions (all engines) planned for the given local hour."""
         base = searches_per_hour(self.cfg.level) / max(search_share, 0.05)
-        if self.cfg.mode == "steady":
+        r = 0.0 if self.cfg.mode == "steady" else min(1.0, max(0.0, float(self.cfg.randomness)))
+        if r == 0:
             return base
-        if self.rng.random() < 0.12:                      # away from the computer this hour
-            return base * self.rng.uniform(0.0, 0.15)
-        wobble = self.rng.lognormvariate(0.0, 0.5)        # some hours busy, some quiet
+        if self._last_hour < 0 or hour <= self._last_hour:     # first plan, or a new day
+            self._day_mult = self.rng.lognormvariate(0.0, 0.25)
+        self._last_hour = hour
+        self._wobble = 0.65 * self._wobble + self.rng.gauss(0.0, 0.3)
+        self._away = self.rng.random() < (0.6 if self._away else 0.06)   # spells of several hours
+        target = 0.05 if self._away else 1.0
+        step = 0.6 if self._away else 0.35                            # settle away over ~2-3 h, return slower
+        self._away_level += (target - self._away_level) * step          # glide, don't cut
         day = diurnal_factor(hour + self.rng.uniform(0, 1)) / 0.95
-        return base * wobble * day
+        random_factor = math.exp(self._wobble) * day * self._day_mult * self._away_level
+        return base * ((1 - r) + r * random_factor)        # partly steady, partly random

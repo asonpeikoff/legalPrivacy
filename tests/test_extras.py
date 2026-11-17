@@ -1,0 +1,278 @@
+"""Optional extras: active hours, data cap, typos, search-engine weights, browser-like DNS,
+hover and text selection, polite mode, settings validation."""
+import os
+import random
+import struct
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from noisycricket import engines  # noqa: E402
+from noisycricket.config import ConfigError, Profile, apply_overrides  # noqa: E402
+from noisycricket.engines import ENGINE_NAMES, add_typo, build_dns_query, pick_search_endpoint  # noqa: E402
+from noisycricket.humanize import HumanDriver  # noqa: E402
+from noisycricket.rate import RatePlanner  # noqa: E402
+from noisycricket.scheduler import Runner, build_lanes  # noqa: E402
+from noisycricket.transports import HitResult  # noqa: E402
+
+
+def _runner(extras, probe=None):
+    p = Profile(name="t")
+    apply_overrides(p, {"extras": extras, "rate": {"mode": "steady", "level": 5}})
+    return Runner(profile=p, lanes=build_lanes(p, ["w"]), wordlist=["w"], sleep_fn=lambda s: None,
+                  probe_fn=probe or (lambda *a: HitResult(200, "x" * 1000)),
+                  rate=RatePlanner(random.Random(1), p.rate), mix=True)
+
+
+def test_active_hours_rest_outside_the_window_and_wrap_past_midnight():
+    r = _runner({"active_hours": True, "active_from": 8, "active_to": 22})
+    assert r.plan_hour(3) == 0 and all(b.per_day == 0 for l in r.lanes for b in l.budgets.values())
+    assert r.plan_hour(12) > 0
+    night = _runner({"active_hours": True, "active_from": 20, "active_to": 2})
+    assert night.plan_hour(23) > 0 and night.plan_hour(1) > 0 and night.plan_hour(10) == 0
+
+
+def test_daily_data_cap_pauses_until_tomorrow():
+    from noisycricket.scheduler import MaxFailuresExceeded
+    r = _runner({"daily_data_mb": 0.002})               # 2 kB
+    r.plan_hour(12)
+    hit_cap = False
+    for _ in range(10):
+        try:
+            r.run_once(wait=False)
+        except MaxFailuresExceeded as exc:
+            hit_cap = "data cap" in str(exc)
+            break
+    assert hit_cap and r.bytes_today >= 2000
+    r.reset_budgets()
+    assert r.bytes_today == 0
+
+
+def test_typos_are_small_human_slips():
+    rng = random.Random(3)
+    q = "best hiking boots for beginners"
+    for _ in range(50):
+        t = add_typo(rng, q)
+        assert t != q and abs(len(t) - len(q)) <= 1 and t.split()[0] == "best"
+
+
+def test_search_engine_weights_and_caps_apply():
+    engines._ENGINE_HITS.clear()
+    engines.configure_search({n: (10 if n == "Bing" else 0) for n in ENGINE_NAMES})
+    picks = {pick_search_endpoint(random.Random(i), now=1e6 + i) for i in range(8)}
+    assert picks == {"https://www.bing.com/search?q="}
+    engines._ENGINE_HITS.clear()
+    engines.configure_search({})
+    try:
+        apply_overrides(Profile(name="t"), {"extras": {"search_engines": {n: 0 for n in ENGINE_NAMES}}})
+        raise AssertionError("all engines off was accepted")
+    except ConfigError:
+        pass
+
+
+def test_dns_questions_for_aaaa_and_https_records():
+    for qt, code in (("A", 1), ("AAAA", 28), ("HTTPS", 65)):
+        pkt = build_dns_query("example.com", 7, qt)
+        assert struct.unpack(">HH", pkt[-4:]) == (code, 1)
+
+
+class _Page:
+    mobile = False
+    def __init__(self): self.y, self.sel = 0.0, 0
+    def viewport(self): return (1280, 720)
+    def page_height(self): return 8000
+    def scroll_y(self): return self.y
+    def move(self, x, y): pass
+    def wheel(self, dy): self.y = max(0.0, min(8000 - 720, self.y + dy))
+    def sleep(self, s): pass
+    def stopped(self): return False
+    def select_text(self, x, y, dx):
+        self.sel += 1
+        return True
+
+
+def test_reading_includes_hovers_and_occasional_text_selection():
+    tot = {"hovers": 0, "selections": 0}
+    for seed in range(80):
+        s = HumanDriver(random.Random(seed), _Page()).browse()
+        tot["hovers"] += s["hovers"]
+        tot["selections"] += s["selections"]
+    assert tot["hovers"] > 20 and 0 < tot["selections"] < tot["hovers"]
+
+
+def test_polite_mode_avoids_the_same_site_within_a_minute():
+    from noisycricket.transports import Target
+    got = []
+    r = _runner({"polite": True}, lambda lane, ident, target: (got.append(target.url), HitResult(200, ""))[1])
+    r.plan_hour(12)
+    r.clock = lambda: 1000.0
+    r._host_last["same.example"] = 990.0                     # visited 10 s ago
+    queue = [Target(url="https://same.example/a"), Target(url="https://other.example/b")]
+    r._make_target = lambda lane, eng, ident: queue.pop(0) if queue else Target(url="https://x.example/")
+    for lane in r.lanes:                                      # only page-type engines this time
+        lane.engines = [e for e in lane.engines if e == "crawl"] or lane.engines
+    r.run_once(wait=False)
+    assert got == ["https://other.example/b"]
+    r2 = _runner({"polite": False}, lambda lane, ident, target: (got.append(target.url), HitResult(200, ""))[1])
+    r2.plan_hour(12)
+    r2._host_last["same.example"] = r2.clock() - 10
+    r2._make_target = lambda lane, eng, ident: Target(url="https://same.example/a")
+    got.clear()
+    r2.run_once(wait=False)
+    assert got == ["https://same.example/a"]                  # off: no change
+
+
+def test_interest_personas_are_stable_within_a_period_and_change_after():
+    from noisycricket.interests import CATEGORIES, Interests
+    t = [0.0]
+    it = Interests(random.Random(1), None, 3, 10, "salt", clock=lambda: t[0])
+    first = it.active()
+    assert len(first) == 3 and all(c in CATEGORIES for c in first)
+    t[0] = 9 * 86400
+    assert it.active() == first
+    changed = False
+    for k in range(1, 6):
+        t[0] = k * 10 * 86400 + 1
+        changed |= it.active() != first
+    assert changed
+    other = Interests(random.Random(1), None, 3, 10, "another-salt", clock=lambda: 0.0)
+    assert sorted(CATEGORIES)  # and different installs usually differ:
+    assert other.active() != first or len(CATEGORIES) <= 3
+    only = Interests(random.Random(2), ["Cooking", "Books"], 3, 10, "s")
+    assert set(only.active()) == {"Cooking", "Books"}
+
+
+def test_interest_share_steers_sites_and_searches():
+    from noisycricket.domains import DomainPool
+    from noisycricket.interests import CATEGORIES, Interests
+    from noisycricket.queries import QuerySource
+    it = Interests(random.Random(3), ["Gardening"], 1, 10, "s")
+    pool = DomainPool(random.Random(4), None)
+    pool.interests, pool.interest_share = it, 0.5
+    picks = [pool.pick(browsable=True) for _ in range(1000)]
+    share = sum(p in CATEGORIES["Gardening"]["sites"] for p in picks) / len(picks)
+    assert 0.38 < share < 0.62
+    qs = QuerySource(random.Random(5), None)
+    qs.interests, qs.interest_share = it, 1.0
+    q, origin = qs.next()
+    assert origin == "interest"
+
+
+def test_netwatch_rate_excludes_our_own_bytes_and_tracks_idle():
+    from noisycricket.netwatch import NetWatch, total_bytes
+    vals, t = [1_000_000, 1_000_000 + 250_000], [0.0]
+    nw = NetWatch(reader=lambda: vals.pop(0), clock=lambda: t[0])
+    nw.sample()
+    t[0] = 10.0
+    rate = nw.sample(own_bytes_since_last=50_000)
+    assert abs(rate - 160.0) < 0.5                         # 200 kB in 10 s = 160 kbit/s
+    assert total_bytes() is None or total_bytes() >= 0     # real counters readable here (or unknown)
+
+
+def test_backoff_pauses_while_busy():
+    r = _runner({"activity": "backoff", "busy_kbps": 100})
+    from noisycricket.netwatch import NetWatch
+    nw = NetWatch(reader=lambda: 0)
+    nw.rate_kbps = 900.0
+    r._netwatch, r._nw_next, r._nw_bytes, r._nw_said = nw, 1e18, 0, ""
+    slept = []
+    r.sleep_fn = slept.append
+    assert r._activity_says_wait() and slept == [30.0]
+    nw.rate_kbps = 5.0
+    assert not r._activity_says_wait()
+
+
+def test_estimate_and_privacy_check_have_the_expected_shape():
+    import tempfile
+    os.environ["CRICKET_HOME"] = tempfile.mkdtemp()
+    from noisycricket.controller import Controller
+    c = Controller()
+    e = c.estimate()
+    assert e["mb_per_day"] >= 0 and e["gb_per_month"] >= 0 and e["hours_per_day"] == 15.0
+    c.apply_config({"extras": {"daily_data_mb": 1}})
+    assert c.estimate()["mb_per_day"] <= 1
+    names = {x["name"] for x in c.privacy_check()}
+    assert {"Content blocker", "VPN", "Encrypted DNS", "Real browser for noise"} <= names
+
+
+def test_betting_and_adult_names_are_filtered_without_blocking_lookalikes():
+    from noisycricket.safety import safe_domain
+    for bad in ("www.betano.pe", "crocobet.com", "1xbet.com", "dpbossnet.me", "hi.faphouse2.com",
+                "javwow.com", "olxtoto818.com", "slots77.com", "livecamrips.to"):
+        assert not safe_domain(bad), bad
+    for ok in ("www.betterhelp.com", "alphabet.com", "www.tibet.net", "beta.nptel.ac.in", "hindi.news18.com",
+               "slotted.example.com", "www.youtube.com", "dictionary.cambridge.org"):
+        assert safe_domain(ok), ok
+
+
+def test_crux_only_reranks_sites_already_on_the_safe_list():
+    from noisycricket.domains import DomainPool
+    from noisycricket.feeds import parse_crux
+
+    class Store:
+        def items(self, name):
+            return {"tranco": ["alpha-example.com", "beta-example.org", "gamma-example.net"],
+                    "crux": ["gamma-example.net|1000", "only-in-crux.example|1000"]}.get(name, [])
+        def denylist(self):
+            return set()
+    pool = DomainPool(random.Random(1), Store())
+    picks = [pool.pick() for _ in range(3000)]
+    assert "only-in-crux.example" not in picks                   # never a source on its own
+    assert picks.count("gamma-example.net") > picks.count("beta-example.org")   # boosted by real browsing
+    pool.site_list = "tranco"
+    pool._boost_cache = None
+    assert pool._crux_boost() == {}
+    assert parse_crux("origin,rank\nhttps://www.example.com,1000\nhttps://www.betano.pe,1000\nhttps://x.example,100000\n") \
+        == ["www.example.com|1000"]
+
+
+def test_household_members_keep_their_devices_and_follow_their_hours():
+    from noisycricket.household import Household
+    from noisycricket.useragents import sample_entry
+    t = [1_800_000_000.0]
+    hh = Household(4, "salt", clock=lambda: t[0], sample_entry=sample_entry)
+    ms = hh.members()
+    assert len(ms) == 4 and ms[0]["entry"] is None and all(m["entry"] for m in ms[1:])
+    assert hh.members() is ms                                         # same period: same people
+    rng = random.Random(1)
+    for h in (3, 10, 20):
+        picks = [hh.pick(rng, h)["id"] for _ in range(2000)]
+        awake = {m["id"] for m in ms if hh._awake(m["hours"], h)}
+        if awake and len(awake) < len(ms):
+            assert sum(p in awake for p in picks) / len(picks) > 0.7      # mostly whoever's awake
+    redrawn = False
+    for k in range(1, 8):                                             # a later period: new people
+        t[0] = 1_800_000_000.0 + k * 100 * 86400
+        redrawn |= [(m["rhythm"], (m["entry"] or {}).get("ua")) for m in hh.members()] != \
+                   [(m["rhythm"], (m["entry"] or {}).get("ua")) for m in ms]
+    assert redrawn
+
+
+def test_household_identities_come_from_several_browsers():
+    r = _runner({"household": True, "household_size": 4, "interest_salt": "abc"})
+    uas = {r._entry_for_next_identity()["ua"] for _ in range(200)}
+    assert len(uas) >= 2
+
+
+def test_top_result_is_clicked_about_half_the_time():
+    import noisycricket.engines as E
+    from noisycricket.engines import SearchTargetFactory
+    real = E.extract_result_links
+    E.extract_result_links = lambda html, u: [f"https://r{i}.example.com/" for i in range(10)]
+    try:
+        f = SearchTargetFactory(rng=random.Random(2), words=["w"])
+        picks = [f.result_target("", "https://www.google.com/search?q=x").url for _ in range(4000)]
+    finally:
+        E.extract_result_links = real
+    assert 0.45 < picks.count("https://r0.example.com/") / len(picks) < 0.55
+
+
+def test_offline_onion_sites_are_quiet_and_rested():
+    from noisycricket.scheduler import _onion_offline
+    r = _runner({})
+    assert _onion_offline(HitResult(None, error="SOCKS error: Host unreachable"))
+    assert not _onion_offline(HitResult(None, error="HTTP 500"))
+    url = "http://" + "a" * 56 + ".onion/"
+    r._onion_seen_dead(url)
+    assert not r._onion_is_dead(url)                           # one miss: try again later
+    r._onion_seen_dead(url)
+    assert r._onion_is_dead(url)                               # two misses: rest it for hours

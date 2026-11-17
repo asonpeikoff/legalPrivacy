@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import random
 import sys
 import threading
@@ -12,9 +13,17 @@ from typing import Callable
 
 from .config import Profile
 from .identity import Identity, make_identity
+from .useragents import UaChooser
 from .events import EventLog
-from .pacing import Budget, Pacer
+from .pacing import Budget, Pacer, SessionPacer
 from .transports import ClearnetTransport, HitResult, Target, TorTransport, Transport
+
+
+def _onion_offline(result) -> bool:
+    """Tor reports an unreachable .onion (offline, moved, or descriptor not found) with these."""
+    e = (result.error or "").lower()
+    return any(k in e for k in ("host unreachable", "ttl expired", "general socks server failure",
+                                "0x04", "0x06", "0x01", "connection refused", "timed out", "timeout"))
 
 
 class MaxFailuresExceeded(RuntimeError):
@@ -56,7 +65,8 @@ def build_lanes(profile: Profile, wordlist: list[str],
                 rng: random.Random | None = None,
                 tor_gate: Callable[[], bool] | None = None,
                 tor_endpoint: Callable[[], tuple[str, str | None]] | None = None,
-                clearnet_transport: Transport | None = None) -> list[Lane]:
+                clearnet_transport: Transport | None = None,
+                plain_transport: Transport | None = None) -> list[Lane]:
     """Build the active lanes.
 
     The tor lane exists only when Tor is enabled. It carries the onion engine
@@ -79,6 +89,10 @@ def build_lanes(profile: Profile, wordlist: list[str],
             engines=names,
             budgets={n: _budget(n, share) for n in names},
         ))
+        page_engines = [n for n in names if n != "dns"]   # DNS lookups are not browser work
+        if plain_transport is not None and page_engines:
+            lanes.append(Lane(name="clearnet-plain", transport=plain_transport, engines=page_engines,
+                              budgets={n: _budget(n, share) for n in page_engines}))
 
     if tr.get("tor") and tr["tor"].enabled:
         t = tr["tor"]
@@ -113,9 +127,9 @@ class Runner:
     queries: object | None = None      # QuerySource shared by all lanes (live/real queries)
     domains: object | None = None      # DomainPool (real popular domains)
     click_prob: float = 0.6            # chance a search is followed by opening a result
-    rate: object | None = None         # RatePlanner: hourly plan (legacy app mode)
-    sessions: object | None = None     # SessionPlanner: human sessions + breaks (app mode)
+    rate: object | None = None         # RatePlanner: hourly plan (app mode). None = daily budgets (CLI/tests)
     dns_plan: object | None = None     # DnsPlan: which resolver DNS noise uses
+    mix: bool = False                  # app mode: lane shares + pattern from profile.traffic
 
     def __post_init__(self) -> None:
         self.rng = random.Random()
@@ -132,8 +146,22 @@ class Runner:
         self.hour: int | None = None
         self.hour_target = 0.0
         self._pace: tuple[float, float] | None = None   # (min_delay, max_delay) for this hour
-        self.activity: dict = {"state": "starting"}       # what is happening right now (for the UI)
-        self.session_no = 0
+        self._sessions = SessionPacer(self.rng)          # app mode: irregular "sittings"
+        tc = getattr(self.profile, "traffic", None)
+        self._mobile_now = tc.mobile_share if tc else 0.35
+        self._lane_factor: dict[str, float] = {}
+        self._lane_wobble: dict[str, float] = {}
+        self._mobile_wobble = 0.0
+        self._alt_lane, self._alt_left = None, 0
+        self.bytes_today = 0
+        self._host_last: dict[str, float] = {}
+        ex = getattr(self.profile, "extras", None)
+        if ex is not None:
+            from .engines import configure_search
+            configure_search(ex.search_engines, ex.typos)
+        self._ua = UaChooser(self.rng, self.profile.identity,
+                             mobile=lambda: (self._mobile_now, tc.device if tc else "iPhone 13"))
+        self._hour_end = 0.0
 
     def _emit(self, level: str, source: str, msg: str, **data) -> None:
         if self.log:
@@ -156,11 +184,64 @@ class Runner:
                 "engines": {e: {"spent": b.spent, "per_day": b.per_day, "failures": b.failures}
                             for e, b in lane.budgets.items()},
             })
-        return {"lanes": lanes, "paused": self.paused, "uptime": int(time.time() - self.started_at)}
+        ex = getattr(self.profile, "extras", None)
+        return {"lanes": lanes, "paused": self.paused, "uptime": int(time.time() - self.started_at),
+                "current": dict(self.current) if getattr(self, "current", None) else None,
+                "bytes_today": self.bytes_today, "data_cap_mb": ex.daily_data_mb if ex else 0}
 
     # ── hourly plan (app mode) ──────────────────────────────────────────────
+    def _lane_base(self) -> dict[str, float]:
+        """Relative weight of each lane from Settings → Traffic mix."""
+        tc = self.profile.traffic
+        names = {l.name for l in self.lanes}
+        has_plain = "clearnet-plain" in names
+        main_is_browser = type(next((l.transport for l in self.lanes if l.name == "clearnet"), None)).__name__ \
+            == "BrowserTransport"
+        base = {"clearnet": tc.browser + (0 if has_plain or main_is_browser else tc.plain),
+                "clearnet-plain": tc.plain, "tor": tc.onion}
+        return {n: max(0.0, base.get(n, 1.0)) for n in names}
+
+    def _update_mix(self) -> None:
+        """Once an hour: move the lane shares and the phone share according to the pattern."""
+        tc = self.profile.traffic
+        base = self._lane_base()
+        if tc.pattern == "drift":                         # wander slowly; each hour keeps most of the last
+            for n in base:
+                self._lane_wobble[n] = 0.7 * self._lane_wobble.get(n, 0.0) + self.rng.gauss(0, 0.35)
+                self._lane_factor[n] = math.exp(self._lane_wobble[n])
+            self._mobile_wobble = 0.7 * self._mobile_wobble + self.rng.gauss(0, 0.3)
+            self._mobile_now = min(0.95, max(0.0, tc.mobile_share * math.exp(self._mobile_wobble)))
+        elif tc.pattern == "alternate":                   # one kind at a time, for 1-3 hours
+            if self._alt_left <= 0 or self._alt_lane not in base:
+                live = [n for n, w in base.items() if w > 0] or list(base)
+                self._alt_lane = self.rng.choices(live, weights=[base[n] or 1 for n in live])[0]
+                self._alt_left = self.rng.randint(1, 3)
+                self._mobile_now = 0.9 if self.rng.random() < tc.mobile_share else 0.05
+            self._alt_left -= 1
+            # the active kind gets ~95% of this hour whatever its weight; the rest share ~5%
+            others = sum(w for n, w in base.items() if n != self._alt_lane) or 1.0
+            self._lane_factor = {n: (1.0 / (base[n] or 1.0) if n == self._alt_lane else 0.05 / others)
+                                 for n in base}
+        else:                                             # blend: the same mix every hour
+            self._lane_factor = {n: 1.0 for n in base}
+            self._mobile_now = tc.mobile_share
+
     def engine_shares(self) -> dict[tuple[str, str], float]:
-        """(lane, engine) -> share of all actions, from the engines' relative weights."""
+        """(lane, engine) -> share of all actions.
+
+        App mode (mix): lane shares from Settings → Traffic mix (moved by the pattern), then
+        the engines' relative weights inside each lane. Otherwise: engine weights only."""
+        if self.mix and getattr(self.profile, "traffic", None) is not None:
+            base = self._lane_base()
+            lane_w = {n: base[n] * self._lane_factor.get(n, 1.0) for n in base}
+            tot_l = sum(lane_w.values()) or 1.0
+            out = {}
+            for lane in self.lanes:
+                ew = {e: max(0.0, float(self.profile.engines[e].budget_per_day)) for e in lane.engines}
+                tot_e = sum(ew.values()) or 1.0
+                for e, v in ew.items():
+                    out[(lane.name, e)] = lane_w[lane.name] / tot_l * v / tot_e
+            return out
         w = {}
         for lane in self.lanes:
             for e in lane.engines:
@@ -177,10 +258,21 @@ class Runner:
 
     def plan_hour(self, hour: int) -> float:
         """Set this hour's per-engine allowances and pacing from the RatePlanner."""
+        if self.mix:
+            self._update_mix()
+        if not self._active_hour(hour):                  # outside your active hours: nothing this hour
+            self.hour, self.hour_target = hour, 0.0
+            for lane in self.lanes:
+                for b in lane.budgets.values():
+                    b.per_day, b.spent = 0, 0
+            self._emit("info", "scheduler", f"Hour {hour:02d}:00 is outside your active hours: resting.")
+            return 0.0
         shares = self.engine_shares()
         search_share = sum(v for (ln, e), v in shares.items() if e == "search") or 0.3
         total = self.rate.actions_for_hour(hour, search_share)
         self.hour, self.hour_target = hour, total
+        now = time.localtime()
+        self._hour_end = self.clock() + (3600 - now.tm_min * 60 - now.tm_sec)
         for lane in self.lanes:
             for e, b in lane.budgets.items():
                 x = total * shares.get((lane.name, e), 0)
@@ -194,6 +286,73 @@ class Runner:
                    f"({self.profile.rate.mode}, level {self.profile.rate.level:g}).")
         return total
 
+    def _activity_says_wait(self) -> bool:
+        """Settings → Extras → Your own activity. True = skip a turn (after sleeping)."""
+        ex = getattr(self.profile, "extras", None)
+        if ex is None or ex.activity == "off":
+            return False
+        if not hasattr(self, "_netwatch"):
+            from .netwatch import NetWatch
+            self._netwatch, self._nw_next, self._nw_bytes, self._nw_said = NetWatch(), 0.0, 0, ""
+        now = time.monotonic()
+        if now >= self._nw_next:
+            self._netwatch.sample(self.bytes_today - self._nw_bytes)
+            self._nw_bytes, self._nw_next = self.bytes_today, now + 15
+        nw = self._netwatch
+        if ex.activity == "backoff" and nw.rate_kbps > ex.busy_kbps:
+            if self._nw_said != "busy":
+                self._emit("info", "scheduler", f"You're using the connection ({nw.rate_kbps:.0f} kbit/s): "
+                                                "pausing noise until it quietens.")
+                self._nw_said = "busy"
+            self.sleep_fn(30.0)
+            return True
+        if ex.activity == "follow" and nw.idle_for() > 600 and self.rng.random() < 0.8:
+            if self._nw_said != "idle":
+                self._emit("info", "scheduler", "You've been idle for 10 minutes: noise slows down until you're back.")
+                self._nw_said = "idle"
+            self.sleep_fn(30.0)
+            return True
+        self._nw_said = ""
+        return False
+
+    def _entry_for_next_identity(self) -> dict:
+        """Whose browser makes the next requests: you, or (household masking) another member."""
+        ex = getattr(self.profile, "extras", None)
+        if ex is None or not ex.household:
+            return self._ua.choose()
+        if not hasattr(self, "_household"):
+            from .household import Household
+            from .useragents import sample_entry
+            tc = self.profile.traffic
+            self._household = Household(ex.household_size, ex.interest_salt, sample_entry=sample_entry,
+                                        mobile_share=tc.mobile_share, device=tc.device)
+        member = self._household.pick(self.rng)
+        return member["entry"] if member["entry"] is not None else self._ua.choose()
+
+    def _onion_seen_dead(self, url: str) -> None:
+        import urllib.parse as _up
+        host = _up.urlparse(url).hostname or ""
+        dead = self.__dict__.setdefault("_onion_dead", {})
+        fails, _ = dead.get(host, (0, 0.0))
+        fails += 1
+        dead[host] = (fails, time.time() + (6 * 3600 if fails >= 2 else 0))   # two misses: rest it 6 hours
+
+    def _onion_is_dead(self, url: str) -> bool:
+        import urllib.parse as _up
+        fails, until = self.__dict__.get("_onion_dead", {}).get(_up.urlparse(url).hostname or "", (0, 0.0))
+        return fails >= 2 and time.time() < until
+
+    def _active_hour(self, hour: int) -> bool:
+        ex = getattr(self.profile, "extras", None)
+        if ex is None or not ex.active_hours:
+            return True
+        a, b = int(ex.active_from), int(ex.active_to)
+        return (a <= hour < b) if a < b else (hour >= a or hour < b) if a > b else True
+
+    def _data_capped(self) -> bool:
+        ex = getattr(self.profile, "extras", None)
+        return bool(ex and ex.daily_data_mb > 0 and self.bytes_today >= ex.daily_data_mb * 1_000_000)
+
     def reset_budgets(self) -> None:
         for lane in self.lanes:
             for b in lane.budgets.values():
@@ -201,6 +360,7 @@ class Runner:
                 b.history.clear()
             lane.hits_by_identity = lane.consecutive_failures = 0
         self.day_failures = self.day_onion_failures = 0
+        self.bytes_today = 0
         self._emit("info", "scheduler", "New day — daily budgets reset.")
 
     def _probe(self, lane: Lane, identity: Identity, target: Target) -> HitResult:
@@ -210,7 +370,8 @@ class Runner:
             return self._dns_probe(target)
         t0 = time.time()
         res = lane.transport.hit(identity, target)
-        res.latency_ms = (time.time() - t0) * 1000.0
+        total = (time.time() - t0) * 1000.0
+        res.latency_ms = getattr(res, "load_ms", None) or total     # page load only; time on page separate
         return res
 
     def _dns_probe(self, target: Target) -> HitResult:
@@ -227,17 +388,20 @@ class Runner:
             return HitResult(None, error="lookup via your normal DNS failed")
         noise = DnsNoise(self.rng, self.wordlist, self.domains)
         if noise.fire(packet, server, timeout=target.timeout):
-            return HitResult(200, "")
-        if self.dns_plan is not None and hasattr(self.dns_plan, "mark_failed"):
-            self.dns_plan.mark_failed(server)          # next lookups move to another / the fallback
-        return HitResult(None, error=f"no answer from {server}")
+            ex = getattr(self.profile, "extras", None)
+            if ex is not None and ex.browser_dns:        # browsers also ask for IPv6 and HTTPS records
+                for qtype in ("AAAA", "HTTPS"):
+                    noise.fire(build_dns_query(domain, self.rng.randint(0, 0xFFFF), qtype), server, timeout=1.5)
+            res = HitResult(200, "")
+            res.bytes = 300 if ex is not None and ex.browser_dns else 100
+            return res
+        return HitResult(None, error=f"dns query to {server} failed")
 
     def _dns_label(self, server: str) -> str:
         if self.dns_plan is not None:
             for ip, label in self.dns_plan.secure_servers():
                 if ip == server:
-                    fb = any(r["ip"] == ip and r["role"] == "fallback" for r in self.dns_plan.cfg.resolvers)
-                    return f"{label}{' (fallback)' if fb else ''} {ip}"
+                    return f"{label} ({ip})"
         return server
 
     def _local_hour(self) -> float | None:
@@ -254,7 +418,8 @@ class Runner:
         limit = getattr(lane.transport, "identities_per_circuit", None) or 10
         if lane.identity is None or lane.hits_by_identity >= limit:
             self._ident_counter += 1
-            lane.identity = make_identity(self.rng, self._ident_counter, self.wordlist)
+            lane.identity = make_identity(self.rng, self._ident_counter, self.wordlist,
+                                          entry=self._entry_for_next_identity())
             lane.pacer = Pacer(self.rng,
                                pace_multiplier=lane.identity.pace_multiplier,
                                realtime_scale=self.profile.realtime_scale)
@@ -285,15 +450,28 @@ class Runner:
         lane, eng_name = self.rng.choices(options, weights=weights)[0]
         identity, pacer = self._identity_pacer_for(lane)
         target = self._make_target(lane, eng_name, identity)
-        self._execute(lane, eng_name, identity, pacer, target)
-        if wait:
-            pacer.wait(hour)
-        return True
-
-    def _execute(self, lane: Lane, eng_name: str, identity: Identity, pacer: Pacer, target: Target,
-                 settle: bool = True) -> HitResult:
-        """Make one request and do all the bookkeeping (counts, failures, log, backoff)."""
-        result = self._probe(lane, identity, target)
+        ex = getattr(self.profile, "extras", None)
+        if ex is not None and ex.polite and target.kind != "dns" and target.role != "search":
+            import urllib.parse as _up
+            for _ in range(3):                            # polite: no site twice within a minute
+                host = _up.urlparse(target.url).hostname or ""
+                if self.clock() - self._host_last.get(host, -1e9) >= 60:
+                    break
+                target = self._make_target(lane, eng_name, identity)
+        self.current = {"lane": lane.name, "engine": eng_name, "url": target.url, "started": time.time(),
+                        "role": target.role}
+        try:
+            result = self._probe(lane, identity, target)
+        finally:
+            self.current = None
+        if eng_name == "onion" and not result.ok and _onion_offline(result):
+            result.error = "site offline (common for .onion sites; skipped for a while)"
+            result.offline = True
+            self._onion_seen_dead(target.url)
+        if target.kind != "dns":
+            import urllib.parse as _up
+            self._host_last[_up.urlparse(target.url).hostname or ""] = self.clock()
+        self.bytes_today += int(getattr(result, "bytes", 0) or len(result.html or ""))
         budget = lane.budgets[eng_name]
         if result.ok:
             budget.record_hit(self.clock())
@@ -304,8 +482,7 @@ class Runner:
             lane.last_error = None
             if getattr(lane.transport, "dimmed", False):
                 lane.transport.dimmed = False
-            if settle:
-                self._settle(lane, eng_name, target, result)
+            self._settle(lane, eng_name, target, result)
         else:
             budget.record_failure(self.clock())
             lane.failures_total += 1
@@ -329,12 +506,23 @@ class Runner:
                 self.day_failures += 1
         total_failures, onion_failures = self.day_failures, self.day_onion_failures
         self._record_hit(lane, eng_name, identity, target, result)
+        if self._data_capped():
+            raise MaxFailuresExceeded("daily data cap reached")
         if total_failures > self.profile.daily_max_failures or \
                 onion_failures > self.profile.daily_max_failures * 3:
             raise MaxFailuresExceeded("daily_max_failures exceeded — stopping run")
         if result.dim_transport and hasattr(lane.transport, "dimmed"):
             lane.transport.dimmed = True
-        return result
+        if wait:
+            if self.rate is None or pacer.backoff_pending():
+                pacer.wait(hour)                       # CLI/tests, or honouring a failure backoff
+            else:
+                # app mode: irregular sittings whose hourly total still fits the hour
+                hits_left = sum(b.remaining for ln in self.lanes for b in ln.budgets.values())
+                seconds_left = max(60.0, self._hour_end - self.clock())
+                gap = self._sessions.next_gap(hits_left, seconds_left, self.profile.realtime_scale)
+                pacer.sleep_fn(gap)
+        return True
 
     def _record_hit(self, lane: Lane, eng_name: str, identity: Identity,
                     target: Target, result: HitResult) -> None:
@@ -347,11 +535,12 @@ class Runner:
             "error": result.error, "latency_ms": getattr(result, "latency_ms", None),
             "identity": getattr(identity, "id", None),
             "note": target.note, "role": target.role, "detail": getattr(result, "detail", None),
+            "on_page_s": round(getattr(result, "on_page_s", 0) or 0, 1),
         }
         self.hit_log.append(rec)
         short = shown if len(shown) <= 90 else shown[:87] + "…"
         tag = f" [{target.note}]" if target.note else (" [click]" if target.role == "result" else "")
-        self._emit("info" if result.ok else "warn", lane.name,
+        self._emit("info" if result.ok or getattr(result, "offline", False) else "warn", lane.name,
                    f"{eng_name:6s} {short}{tag} → {status}"
                    + (f" ({rec['latency_ms']:.0f} ms)" if rec["latency_ms"] else ""), **{"hit": rec["seq"]})
         if self.verbose:
@@ -410,7 +599,11 @@ class Runner:
                     rng=self.rng, seeds=list(tor_cfg.onion_seeds) if tor_cfg and tor_cfg.onion_seeds else [],
                     max_depth=self.profile.engines["onion"].max_depth,
                     follow_offsite=bool(tor_cfg.onion_follow_offsite) if tor_cfg else True)
-            return lane.onion_factory.make(identity)
+            for _ in range(8):                       # skip sites that were offline recently
+                t = lane.onion_factory.make(identity)
+                if not self._onion_is_dead(t.url):
+                    return t
+            return t
         if eng_name == "search":
             if lane.follow_next is not None:
                 nxt, lane.follow_next = lane.follow_next, None
@@ -463,193 +656,31 @@ class Runner:
                 self.reset_budgets()
                 self.paused = False if self.paused == "failures" else self.paused
             if self.rate is not None and now.tm_hour != self.hour:
+                first = self.hour is None
                 total = self.plan_hour(now.tm_hour)
-                # start somewhere inside the hour, never in a burst on the hour mark
-                self.sleep_fn(self.rng.uniform(0, min(600.0, 3600.0 / max(total, 0.25))) * self.profile.realtime_scale)
+                # first plan after Start: begin within seconds. Later hours: a short, random offset,
+                # never a burst exactly on the hour mark.
+                wait = self.rng.uniform(3, 20) if first else self.rng.uniform(0, min(120.0, 3600.0 / max(total, 0.25)))
+                if first:
+                    self._emit("info", "scheduler", f"First action in about {wait:.0f} seconds.")
+                self.sleep_fn(wait * self.profile.realtime_scale)
                 continue
             if self.paused:
                 self.sleep_fn(1.0)
                 continue
+            if self._activity_says_wait():
+                continue
             try:
                 worked = self.run_once()
             except MaxFailuresExceeded as exc:
-                self._emit("error", "scheduler", f"{exc}. Pausing until tomorrow.")
+                self._emit("warn" if "data cap" in str(exc) else "error", "scheduler",
+                           f"{str(exc)[0].upper()}{str(exc)[1:]}. Pausing until tomorrow.")
                 self.paused = "failures"           # auto-resumes at the next day reset
                 continue
             if not worked:
                 self.sleep_fn(2.0)       # all budgets spent or lanes gated: idle politely
         self.close()
         self._emit("info", "scheduler", "Noise generation stopped.")
-
-    # ── human sessions (app mode) ───────────────────────────────────────────
-    def _sleep(self, seconds: float) -> None:
-        self.sleep_fn(max(0.0, seconds) * self.profile.realtime_scale)
-
-    def _now(self) -> float:
-        return float(self.clock())
-
-    def run_sessions(self) -> None:
-        """Alternate browsing sessions and breaks until stopped."""
-        self._emit("info", "scheduler", "Noise generation started (human-like sessions).")
-        last = None
-        while not self._stopped():
-            now = time.localtime()
-            if now.tm_yday != self.day:
-                self.day = now.tm_yday
-                self.reset_budgets()
-                if self.paused == "failures":
-                    self.paused = False
-            if self.paused:
-                self.activity = {"state": "paused"}
-                self._sleep(1.0)
-                continue
-            block = self.sessions.next_block(now.tm_hour + now.tm_min / 60, last)
-            if block.kind == "break":
-                until = time.time() + block.seconds * self.profile.realtime_scale
-                self.activity = {"state": "break", "until": until, "since": time.time()}
-                if block.seconds > 30:
-                    self._emit("info", "scheduler", f"Taking a break for about {block.seconds / 60:.0f} min "
-                               f"(until {time.strftime('%H:%M', time.localtime(until))}), like a person stepping away.")
-                self._background_lookups(block.seconds)
-                last = "break"
-                continue
-            lane = next((l for l in self.lanes if l.name == block.lane and l.open), None) \
-                or next((l for l in self.lanes if l.name == "clearnet"), None)
-            if lane is None:
-                self.activity = {"state": "waiting", "why": "waiting for Tor to connect"}
-                self._sleep(5)
-                continue
-            try:
-                if lane.name == "tor":
-                    self._onion_session(lane, block.seconds)
-                else:
-                    self._web_session(lane, block.seconds)
-            except MaxFailuresExceeded as exc:
-                self._emit("error", "scheduler", f"{exc}. Pausing until tomorrow.")
-                self.paused = "failures"
-            last = "session"
-        self.activity = {"state": "stopped"}
-        self.close()
-        self._emit("info", "scheduler", "Noise generation stopped.")
-
-    def _background_lookups(self, seconds: float) -> None:
-        """During a break: mostly quiet, with the odd background DNS lookup (devices do that)."""
-        end = self._now() + seconds * self.profile.realtime_scale
-        lane = next((l for l in self.lanes if l.name == "clearnet" and "dns" in l.engines), None)
-        while not self._stopped() and self._now() < end:
-            gap = min(end - self._now(), self.rng.uniform(120, 900) * self.profile.realtime_scale)
-            self.sleep_fn(max(0.0, gap))
-            if lane and not self._stopped() and self._now() < end and self.rng.random() < 0.5:
-                ident, pacer = self._identity_pacer_for(lane)
-                self._execute(lane, "dns", ident, pacer, self._make_target(lane, "dns", ident))
-
-    def _set_doing(self, **kw) -> None:
-        self.activity.update(kw)
-
-    def _web_session(self, lane: Lane, seconds: float) -> None:
-        from .engines import CrawlTargetFactory, SearchTargetFactory
-        from .sessions import related_query
-        sp = self.sessions
-        end = self._now() + seconds * self.profile.realtime_scale
-        identity, pacer = self._identity_pacer_for(lane)
-        engines = set(lane.engines)
-        self.session_no += 1
-        if lane.search_factory is None:
-            lane.search_factory = SearchTargetFactory(rng=self.rng, words=self.wordlist, queries=self.queries,
-                                                      html_mode=not getattr(lane.transport, "is_browser", False))
-        sf = lane.search_factory
-        crawl = CrawlTargetFactory(rng=self.rng, seeds=[], domains=self.domains)
-        theme, origin = (sf.queries.next(identity) if "search" in engines else ("", "none"))
-        self.activity = {"state": "session", "session": self.session_no, "lane": lane.name, "theme": theme,
-                         "since": time.time(), "until": time.time() + seconds * self.profile.realtime_scale,
-                         "steps": 0, "doing": "starting"}
-        self._emit("info", "scheduler", f"Session {self.session_no} started ({seconds / 60:.0f} min)"
-                   + (f" — topic: “{theme}”" if theme else ""))
-        query = theme
-        serp: tuple[str, str] | None = None
-        visited: set[str] = set()
-        last_role, last_html, last_url = None, "", ""
-        blocked = 0                                        # search engines showing bot checks
-        if "search" not in engines or ("crawl" in engines and self.rng.random() < 0.15):
-            last_role = "open_site"                       # sometimes start by opening a familiar site
-            self.activity["theme"] = "popular sites"
-        while not self._stopped() and self._now() < end:
-            if last_role == "open_site" or (blocked >= 2 and not last_html):
-                target, role, eng = crawl.make(identity), "page", "crawl"
-                last_role = None
-            else:
-                step = sp.next_step(last_role, serp is not None) if "search" in engines and blocked < 2 \
-                    else "follow"
-                target, role, eng = None, "page", "search"
-                if step == "search":
-                    target, role = sf.make_for(query, origin), "search"
-                elif step == "related_search":
-                    nq = related_query(self.rng, last_html, query) if last_role == "page" else None
-                    if nq:
-                        query, origin = nq, "related to last page"
-                    else:
-                        query, origin = sf.queries.next(identity)
-                    target, role = sf.make_for(query, origin), "search"
-                elif step in ("result", "another_result") and serp:
-                    target = sf.result_target(serp[1], serp[0], exclude=visited)
-                elif step == "follow" and last_html:
-                    target = crawl.next_from(last_html, last_url)
-                    eng = "crawl" if "crawl" in engines else "search"
-                elif step == "follow" and blocked >= 2:
-                    target, eng = crawl.make(identity), "crawl"
-                if target is None:                         # nothing to click: search something related
-                    query, origin = sf.queries.next(identity)
-                    target, role = sf.make_for(query, origin), "search"
-            target.dwell = sp.dwell(role)
-            host = (target.url.split("/")[2] if "://" in target.url else target.url)
-            self._set_doing(doing=("searching “%s”" % query) if role == "search" else f"reading {host}",
-                            steps=self.activity.get("steps", 0) + 1, theme=query)
-            if eng not in lane.budgets:
-                eng = next(iter(lane.budgets))
-            result = self._execute(lane, eng, identity, pacer, target, settle=False)
-            visited.add(target.url)
-            if result.ok:
-                last_html, last_url = result.html or "", target.url
-                if role == "search":
-                    serp = (target.url, last_html)
-                last_role = "search" if role == "search" else "page"
-                if not getattr(lane.transport, "is_browser", False):
-                    self._sleep(target.dwell)              # plain HTTP: time spent "reading"
-            else:
-                if role == "search":
-                    blocked += 1
-                    sf._engine = None                      # a person would try another search engine
-                    if blocked == 2:
-                        self._emit("warn", "scheduler", "Search engines are showing bot checks; browsing sites "
-                                   "directly for the rest of this session.")
-                    last_role = None
-                last_html = "" if role == "search" else last_html
-            if "dns" in engines and self.rng.random() < 0.4:
-                for _ in range(self.rng.randint(1, 2)):
-                    self._execute(lane, "dns", identity, pacer, self._make_target(lane, "dns", identity))
-            self._sleep(sp.think())
-        self._emit("info", "scheduler", f"Session {self.session_no} ended after {self.activity.get('steps', 0)} steps.")
-
-    def _onion_session(self, lane: Lane, seconds: float) -> None:
-        sp = self.sessions
-        end = self._now() + seconds * self.profile.realtime_scale
-        identity, pacer = self._identity_pacer_for(lane)
-        self.session_no += 1
-        self.activity = {"state": "session", "session": self.session_no, "lane": "tor", "theme": "onion sites",
-                         "since": time.time(), "until": time.time() + seconds * self.profile.realtime_scale,
-                         "steps": 0, "doing": "starting"}
-        self._emit("info", "scheduler", f"Session {self.session_no} started on Tor ({seconds / 60:.0f} min).")
-        while not self._stopped() and self._now() < end and lane.open:
-            target = self._make_target(lane, "onion", identity)
-            target.dwell = sp.dwell("page")
-            self._set_doing(doing=f"reading {target.url.split('/')[2][:16]}….onion",
-                            steps=self.activity.get("steps", 0) + 1)
-            result = self._execute(lane, "onion", identity, pacer, target)
-            if result.ok:
-                self._sleep(target.dwell)
-            else:
-                self._sleep(self.rng.uniform(10, 40))     # onion sites are often slow or offline
-            self._sleep(sp.think())
 
     def close(self) -> None:
         """Release transport resources (real browsers) from the thread that used them."""

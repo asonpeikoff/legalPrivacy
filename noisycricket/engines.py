@@ -36,6 +36,64 @@ SEARCH_ENGINE_TIERS: list[tuple[str, float]] = [
 ]
 SEARCH_ENDPOINTS = [url for url, _ in SEARCH_ENGINE_TIERS]
 SEARCH_WEIGHTS = [w for _, w in SEARCH_ENGINE_TIERS]
+ENGINE_NAMES = ["Google", "DuckDuckGo", "Bing", "Brave", "Startpage", "Ecosia", "Mojeek", "Qwant", "DuckDuckGo Lite"]
+# Settings → Search engines: relative weights by name. Empty = the defaults above.
+SEARCH_OPTIONS: dict = {"weights": {}, "typos": False}
+
+
+def configure_search(weights: dict | None = None, typos: bool = False) -> None:
+    SEARCH_OPTIONS["weights"] = dict(weights or {})
+    SEARCH_OPTIONS["typos"] = bool(typos)
+
+
+def _current_weights() -> list[float]:
+    custom = SEARCH_OPTIONS["weights"]
+    if not custom:
+        return list(SEARCH_WEIGHTS)
+    return [float(custom.get(n, 0.0)) for n in ENGINE_NAMES]
+
+
+def add_typo(rng, query: str) -> str:
+    """One small, human slip in one word: swapped, doubled or dropped letter."""
+    words = query.split(" ")
+    idx = [i for i, w in enumerate(words) if len(w) >= 5 and w.isalpha()]
+    if not idx:
+        return query
+    i = rng.choice(idx)
+    w = words[i]
+    j = rng.randint(1, len(w) - 2)
+    kind = rng.random()
+    if kind < 0.45 and w[j] != w[j + 1]:
+        w = w[:j] + w[j + 1] + w[j] + w[j + 2:]          # swap two letters
+    elif kind < 0.75:
+        w = w[:j] + w[j] + w[j:]                         # double a letter
+    else:
+        w = w[:j] + w[j + 1:]                            # drop a letter
+    words[i] = w
+    return " ".join(words)
+
+# No search engine gets more than this many searches from us in any hour, whatever the
+# level: well under the volume that triggers CAPTCHAs or rate limits for one address.
+MAX_SEARCHES_PER_ENGINE_PER_HOUR = 8
+_ENGINE_HITS: dict[str, list[float]] = {}
+_ENGINE_LOCK = __import__("threading").Lock()
+
+
+def pick_search_endpoint(rng, now: float | None = None) -> str:
+    """Weighted engine choice that skips any engine already at its hourly cap."""
+    import time as _t
+    now = _t.time() if now is None else now
+    with _ENGINE_LOCK:
+        for hits in _ENGINE_HITS.values():
+            hits[:] = [t for t in hits if now - t < 3600]
+        weights = _current_weights()
+        allowed = [(ep, w) for ep, w in zip(SEARCH_ENDPOINTS, weights)
+                   if w > 0 and len(_ENGINE_HITS.get(ep, [])) < MAX_SEARCHES_PER_ENGINE_PER_HOUR]
+        pool = allowed or [(ep, w) for ep, w in zip(SEARCH_ENDPOINTS, weights) if w > 0] \
+            or list(zip(SEARCH_ENDPOINTS, SEARCH_WEIGHTS))
+        ep = rng.choices([p for p, _ in pool], weights=[w for _, w in pool])[0]
+        _ENGINE_HITS.setdefault(ep, []).append(now)
+        return ep
 
 # Curated thematic pools of real internet search topics:
 REAL_INTERNET_THEMES: dict[str, list[str]] = {
@@ -113,11 +171,7 @@ def load_wordlist(path: str, fallback: list[str] | None = None) -> list[str]:
 
 
 _SEARCH_HOSTS = ("google.", "duckduckgo.", "bing.", "brave.", "startpage.", "ecosia.", "mojeek.", "qwant.",
-                 "yahoo.", "yandex.", "baidu.", "microsoft.")
-_ENGINE_BRANDS = ("google", "duckduckgo", "bing", "brave", "startpage", "ecosia", "mojeek", "qwant", "microsoft")
-# engines whose results are in the HTML itself (needed when not using a real browser)
-_SERVER_RENDERED = ("html.duckduckgo.com", "lite.duckduckgo.com", "bing.com", "search.brave.com",
-                    "mojeek.com", "startpage.com")
+                 "yahoo.", "yandex.", "baidu.")
 
 
 def _unwrap_redirect(href: str, base: str) -> str:
@@ -148,15 +202,11 @@ def extract_result_links(html: str, search_url: str, limit: int = 12) -> list[st
         pass
     seen_hosts: set[str] = set()
     out: list[str] = []
-    for href, text in zip(parser.links, parser.texts):
+    for href in parser.links:
         u = _unwrap_redirect(href, search_url)
         p = urllib.parse.urlparse(u)
         host = (p.hostname or "").lower()
         if p.scheme not in ("http", "https") or not host or any(h in host for h in _SEARCH_HOSTS):
-            continue
-        if any(b in u.lower() for b in _ENGINE_BRANDS):        # the engine's own social profiles, apps…
-            continue
-        if len(" ".join(text.split())) < 12:                    # organic results have real titles
             continue
         if host in seen_hosts or not safe_domain(host):
             continue
@@ -182,52 +232,36 @@ class SearchTargetFactory:
             self.queries = QuerySource(self.rng, None, words=self.words)
 
     def make(self, identity) -> Target:
-        query, origin = self.queries.next(identity)
-        return self.make_for(query, origin)
-
-    def make_for(self, query: str, origin: str | None = None) -> Target:
-        # a person sticks with one search engine for a while: reuse it ~85% of the time
-        if getattr(self, "_engine", None) is None or self.rng.random() < 0.15:
-            pool = [(u, w) for u, w in SEARCH_ENGINE_TIERS
-                    if not self.html_mode or any(h in u for h in _SERVER_RENDERED) or "duckduckgo.com/?q=" in u]
-            self._engine = self.rng.choices([u for u, _ in pool], weights=[w for _, w in pool])[0]
-        endpoint = self._engine
+        endpoint = pick_search_endpoint(self.rng)
         if self.html_mode and "duckduckgo.com/?q=" in endpoint and "lite." not in endpoint:
             endpoint = "https://html.duckduckgo.com/html/?q="     # the JS-free results page
+        query, origin = self.queries.next(identity)
+        if SEARCH_OPTIONS["typos"] and self.rng.random() < 0.08:
+            query = add_typo(self.rng, query)
         return Target(url=endpoint + urllib.parse.quote_plus(query), note=origin, role="search")
 
-    def result_target(self, html: str, search_url: str, exclude: set | None = None) -> Target | None:
-        links = [u for u in extract_result_links(html, search_url) if not exclude or u not in exclude]
+    def result_target(self, html: str, search_url: str) -> Target | None:
+        links = extract_result_links(html, search_url)
         if not links:
             return None
-        weights = [1.0 / (i + 1) ** 1.2 for i in range(len(links))]      # top results get most clicks
+        # the top result about half the time, the rest falling off with position
+        weights = [1.0] + [1.0 / (i + 1) ** 1.2 for i in range(1, len(links))]
+        rest = sum(weights[1:])
+        if rest:
+            weights = [rest] + weights[1:]
         return Target(url=self.rng.choices(links, weights=weights)[0], referer=search_url, role="result")
 
 
 class _LinkExtractor(HTMLParser):
-    """Collects hrefs (self.links) and, in parallel, each link's visible text (self.texts)."""
-
     def __init__(self) -> None:
         super().__init__()
         self.links: list[str] = []
-        self.texts: list[str] = []
-        self._open: int | None = None
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag.lower() == "a":
             for k, v in attrs:
                 if k.lower() == "href" and v:
                     self.links.append(v)
-                    self.texts.append("")
-                    self._open = len(self.links) - 1
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag.lower() == "a":
-            self._open = None
-
-    def handle_data(self, data: str) -> None:
-        if self._open is not None:
-            self.texts[self._open] += data
 
 
 @dataclass
@@ -271,7 +305,6 @@ class CrawlTargetFactory:
 _SKIP_EXT = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico", ".css", ".js", ".json", ".xml",
              ".pdf", ".zip", ".mp4", ".mp3", ".woff", ".woff2", ".rss", ".atom")
 _SKIP_PATH = ("login", "signin", "sign-in", "signup", "register", "logout", "account", "cart", "checkout",
-              "legal", "terms", "privacy", "policy", "cookie", "contact", "careers", "advertis",
               "action=edit", "action=history", "special:", "/edit", "oldid=", "printable=", "share", "mailto")
 
 
@@ -286,12 +319,15 @@ def _looks_like_page(p) -> bool:
 
 
 
-def build_dns_query(domain: str, qid: int) -> bytes:
-    """One A-record DNS question, header + punctuated labels."""
+QTYPE = {"A": 1, "AAAA": 28, "HTTPS": 65}
+
+
+def build_dns_query(domain: str, qid: int, qtype: str = "A") -> bytes:
+    """One DNS question (A by default; AAAA or HTTPS too), header + punctuated labels."""
     header = struct.pack(">HHHHHH", qid, 0x0100, 1, 0, 0, 0)
     q = b"".join(bytes([len(part)]) + part.encode("ascii", "ignore")
                  for part in domain.split(".") if part) + b"\x00"
-    return header + q + struct.pack(">HH", 1, 1)
+    return header + q + struct.pack(">HH", QTYPE[qtype], 1)
 
 
 def parse_dns_names(answer: bytes) -> list[str]:
@@ -360,10 +396,8 @@ class DnsNoise:
         try:
             sock.settimeout(timeout)
             sock.sendto(packet, (server, 53))
-            while True:
-                data, addr = sock.recvfrom(1500)
-                if addr[0] == server and data[:2] == packet[:2]:   # reply from the IP we asked, same id
-                    return len(data) >= 12
+            data, _ = sock.recvfrom(512)
+            return len(data) >= 12
         except OSError:
             return False
         finally:

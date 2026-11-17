@@ -50,10 +50,9 @@ def test_plan_hour_sets_budgets_and_spreads_pacing():
     assert lo < 3600 / total < hi                                  # spread across the hour, not a burst
 
 
-def test_dns_defaults_to_your_normal_resolver():
-    assert Profile(name="t").dns.mode == "system"
-    plan = DnsPlan(random.Random(1), DnsConfig())
-    assert all(plan.pick()[0] == "system" for _ in range(20))
+def test_dns_defaults_to_mix_with_only_opennic_on():
+    cfg = Profile(name="t").dns
+    assert cfg.mode == "mix" and cfg.opennic is True and cfg.quad9 is False and cfg.custom == []
 
 
 def test_recommended_resolvers_primaries_then_fallback():
@@ -112,3 +111,54 @@ def test_bad_dns_settings_rejected():
             raise AssertionError(f"accepted {bad}")
         except ConfigError:
             pass
+
+
+def test_hourly_level_glides_instead_of_jumping():
+    rp = RatePlanner(random.Random(3), RateConfig(mode="random", level=5))
+    xs = [rp.actions_for_hour(h % 24, 0.3) for h in range(24 * 60)]
+    same_day = [(a, b) for i, (a, b) in enumerate(zip(xs, xs[1:])) if (i + 1) % 24 != 0]
+    assert max(abs(a - b) / max(a, b) for a, b in same_day) < 0.95  # no hour-to-hour cliffs
+    assert any(x < 2 for x in xs)                                   # but away spells still happen
+
+
+def test_partial_randomness_scales_between_steady_and_random():
+    import statistics
+    def spread(r):
+        rp = RatePlanner(random.Random(5), RateConfig(mode="random", level=5, randomness=r))
+        xs = [rp.actions_for_hour(h % 24, 0.3) for h in range(24 * 40)]
+        return statistics.pstdev(xs) / statistics.mean(xs)
+    assert spread(0.0) < 1e-9 < spread(0.3) < spread(1.0)
+
+
+def test_top_level_stays_gentle_and_no_engine_exceeds_its_hourly_cap():
+    from noisycricket.engines import MAX_SEARCHES_PER_ENGINE_PER_HOUR, _ENGINE_HITS, pick_search_endpoint
+    from noisycricket.rate import searches_per_hour
+    assert searches_per_hour(10) <= 20
+    _ENGINE_HITS.clear()
+    rng, t0 = random.Random(1), 1_000_000.0
+    picks = [pick_search_endpoint(rng, now=t0 + i) for i in range(40)]
+    assert max(picks.count(p) for p in set(picks)) <= MAX_SEARCHES_PER_ENGINE_PER_HOUR
+    _ENGINE_HITS.clear()
+
+
+def test_opennic_filter_keeps_only_passing_encrypted_no_or_anonymized_log_servers():
+    from noisycricket.feeds import parse_opennic_servers
+    row = ("<p><span> {feats}</span><span class='host' title=\"(Paris, FR)\"><a id='{h}.dns.opennic.glue' href='x'>{h}</a></span>"
+           "<span class='mono ipv4'>{ip}</span><span class='stat' title='{st}'>x</span></p>")
+    f = lambda *t: "".join(f"<i style='color:#000;' title='{x}'>i</i>" for x in t)   # noqa: E731
+    html = "<div name='ccg[FR]' style=''>" + "".join([
+        row.format(feats=f("No logs kept", "DNS over TLS"), h="ns1.fr", ip="1.1.1.10", st="Passing"),
+        row.format(feats=f("Logs are anonymized", "DNScrypt"), h="ns2.fr", ip="1.1.1.11", st="Passing"),
+        row.format(feats=f("No logs kept"), h="ns3.fr", ip="1.1.1.12", st="Passing"),              # no encryption
+        row.format(feats=f("No logs kept", "DNS over HTTP"), h="ns4.fr", ip="1.1.1.13", st="Extended failure"),
+        row.format(feats=f("DNS over HTTP"), h="ns5.fr", ip="1.1.1.14", st="Passing"),             # logs unknown
+    ]) + "</div>"
+    got = parse_opennic_servers(html)
+    assert got == ["1.1.1.10|ns1.fr|Paris, FR|none|DoT", "1.1.1.11|ns2.fr|Paris, FR|anonymized|DNSCrypt"]
+
+
+def test_no_log_opennic_servers_are_preferred():
+    cfg = DnsConfig(mode="secure", opennic=True)
+    plan = DnsPlan(random.Random(2), cfg, ["1.0.0.1|a|X|none|DoT", "1.0.0.2|b|X|anonymized|DoH"])
+    picks = [plan.pick()[0] for _ in range(2000)]
+    assert 2.4 < picks.count("1.0.0.1") / picks.count("1.0.0.2") < 3.8

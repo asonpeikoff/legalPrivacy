@@ -55,6 +55,8 @@ class TransportConfig:
     proxy: str | None = None          # clearnet: http:// or socks5:// URL
     browser: str = "auto"             # clearnet: auto | on | off — drive a real browser like a person
     browser_visible: bool = False     # clearnet: show the browser window instead of running headless
+    browser_offscreen: bool = False   # clearnet: a real window, but parked off-screen (real graphics, not seen)
+    browser_engine: str = "auto"      # clearnet: auto (match your browser) | chromium | firefox
     # --- tor lane only ---
     socks: str = DEFAULT_TOR_SOCKS
     control: str | None = None
@@ -71,6 +73,8 @@ class TransportConfig:
     def validate(self, name: str) -> None:
         if self.browser not in ("auto", "on", "off"):
             raise ConfigError(f"transport '{name}': browser must be auto, on or off")
+        if self.browser_engine not in ("auto", "chromium", "firefox"):
+            raise ConfigError(f"transport '{name}': browser_engine must be auto, chromium or firefox")
         if self.identities_per_circuit < 1:
             raise ConfigError(f"transport '{name}': identities_per_circuit >= 1")
 
@@ -93,46 +97,149 @@ class RelayConfig:
             )
 
 
-RECOMMENDED_RESOLVERS = [
-    {"ip": "80.152.203.134", "name": "OpenNIC ns2.de", "role": "primary", "enabled": True,
-     "note": "OpenNIC, Germany (admin keke); anonymized logs"},
-    {"ip": "193.31.24.55", "name": "OpenNIC ns3.de", "role": "primary", "enabled": True,
-     "note": "OpenNIC, Germany (admin Koby, sponsored by n4x2.com)"},
-    {"ip": "80.153.146.105", "name": "OpenNIC ns4.de", "role": "primary", "enabled": True,
-     "note": "OpenNIC, Germany"},
-    {"ip": "9.9.9.9", "name": "Quad9", "role": "fallback", "enabled": True,
-     "note": "Used only if the primaries are down or slow. Blocks malware domains, DNSSEC"},
-]
-
-
 @dataclass
 class DnsConfig:
     """Which resolver the DNS noise uses. See noisycricket/dnsplan.py."""
-    mode: str = "system"          # system (your normal DNS, recommended) | secure | mix
-    resolvers: list[dict] = field(default_factory=lambda: [dict(r) for r in RECOMMENDED_RESOLVERS])
-    slow_ms: int = 250            # a primary slower than this counts as "not working fast"
-    system_share: float = 0.7     # mix mode: share of time on your normal DNS
+    mode: str = "mix"             # mix (default: blocks on your normal DNS + OpenNIC) | system | secure
+    opennic: bool = True          # include OpenNIC no-log servers in the "secure" set
+    quad9: bool = False           # include Quad9 (9.9.9.9 / 149.112.112.112) in the "secure" set
+    custom: list[str] = field(default_factory=list)   # extra resolver IPs, your choice
+    system_share: float = 0.5     # mix mode: share of time on your normal DNS
     block_minutes: list[int] = field(default_factory=lambda: [10, 60])   # mix mode: switch every 10-60 min
 
     def validate(self) -> None:
         import ipaddress
         if self.mode not in ("system", "secure", "mix"):
             raise ConfigError("dns.mode must be system, secure or mix")
-        clean = []
-        for r in self.resolvers:
-            ip = str(r.get("ip", "")).strip()
+        for ip in self.custom:
             try:
-                ipaddress.ip_address(ip)
+                ipaddress.ip_address(ip.strip())
             except ValueError as exc:
-                raise ConfigError(f"DNS resolver '{ip}' is not an IP address") from exc
-            role = r.get("role", "primary")
-            if role not in ("primary", "fallback"):
-                raise ConfigError("DNS resolver role must be primary or fallback")
-            clean.append({"ip": ip, "name": str(r.get("name") or ip)[:40], "role": role,
-                          "enabled": bool(r.get("enabled", True)), "note": str(r.get("note", ""))[:160]})
-        self.resolvers = clean
+                raise ConfigError(f"dns.custom: '{ip}' is not an IP address") from exc
         if not 0 <= self.system_share <= 1:
             raise ConfigError("dns.system_share must be between 0 and 1")
+
+
+@dataclass
+class IdentityConfig:
+    """Which user agent the plain-HTTP noise sends. See noisycricket/useragents.py."""
+    ua_mode: str = "pin"          # pin (default: your own browser's, recommended) | rotate
+    rotate_every: str = "hour"    # hour | day   (rotate mode: how often the choice changes)
+    ua_pin: str = "own"           # pin mode: "own" or a library id. "own" with no UA yet = rotate until known
+    own_ua: str = ""              # your browser's user agent (stored only on this computer)
+
+    def validate(self) -> None:
+        if self.ua_mode not in ("rotate", "pin"):
+            raise ConfigError("identity.ua_mode must be rotate or pin")
+        if self.rotate_every not in ("hour", "day"):
+            raise ConfigError("identity.rotate_every must be hour or day")
+        if len(self.own_ua) > 600:
+            raise ConfigError("identity.own_ua is too long")
+
+
+@dataclass
+class ExtrasConfig:
+    """Optional extras: active hours, interests, household, activity-aware pacing and more."""
+    active_hours: bool = False    # only make noise between active_from and active_to (local time)
+    active_from: int = 8
+    active_to: int = 23
+    search_engines: dict = field(default_factory=dict)   # engine -> relative weight 0..10; {} = defaults
+    typos: bool = False           # occasionally misspell a word in a search, as people do
+    low_data: bool = False        # real browser skips images, video and fonts
+    daily_data_mb: float = 0.0    # stop for the day after this much data; 0 = no cap
+    polite: bool = False          # at least a minute between visits to the same site
+    browser_dns: bool = True      # look names up like a browser: A, plus AAAA and HTTPS records
+    interests: bool = False       # interest personas: a few steady themes at a time
+    interest_list: list = field(default_factory=list)   # themes allowed ([] = all)
+    interest_active: int = 3      # how many themes at once
+    interest_rotate_days: int = 10
+    interest_share: float = 0.3   # share of visits and searches that follow the themes
+    interest_salt: str = ""       # random, set on first use: keeps your themes yours
+    activity: str = "off"         # your own activity: off | backoff | follow
+    busy_kbps: int = 400          # backoff: pause while your own traffic is above this
+    metrics: bool = False         # Prometheus metrics at /metrics (needs the dashboard token)
+    site_list: str = "both"       # both = Tranco re-ranked by Chrome's real browsing (CrUX), default | tranco
+    household: bool = False       # noise from a virtual household of several people
+    household_size: int = 3       # 2..5 people, member 1 = you
+
+    def validate(self) -> None:
+        from .engines import ENGINE_NAMES
+        for k in ("active_from", "active_to"):
+            if not 0 <= int(getattr(self, k)) <= 23:
+                raise ConfigError(f"extras.{k} must be an hour from 0 to 23")
+        if self.daily_data_mb < 0:
+            raise ConfigError("extras.daily_data_mb must be 0 or more")
+        for name, w in self.search_engines.items():
+            if name not in ENGINE_NAMES:
+                raise ConfigError(f"extras.search_engines: unknown engine '{name}'")
+            if float(w) < 0:
+                raise ConfigError("extras.search_engines weights must be 0 or more")
+        if self.search_engines and not any(float(w) > 0 for w in self.search_engines.values()):
+            raise ConfigError("Leave at least one search engine on.")
+        from .interests import CATEGORIES
+        for c in self.interest_list:
+            if c not in CATEGORIES:
+                raise ConfigError(f"extras.interest_list: unknown theme '{c}'")
+        if not 1 <= int(self.interest_active) <= len(CATEGORIES):
+            raise ConfigError("extras.interest_active is out of range")
+        if not 1 <= int(self.interest_rotate_days) <= 365:
+            raise ConfigError("extras.interest_rotate_days must be 1 to 365")
+        if not 0 <= float(self.interest_share) <= 1:
+            raise ConfigError("extras.interest_share must be between 0 and 1")
+        if self.activity not in ("off", "backoff", "follow"):
+            raise ConfigError("extras.activity must be off, backoff or follow")
+        if not 2 <= int(self.household_size) <= 5:
+            raise ConfigError("extras.household_size must be 2 to 5")
+        if self.site_list not in ("both", "tranco"):
+            raise ConfigError("extras.site_list must be both or tranco")
+        if int(self.busy_kbps) < 10:
+            raise ConfigError("extras.busy_kbps must be at least 10")
+
+
+@dataclass
+class TrafficConfig:
+    """What kinds of noise run, in what proportions, and how the mix changes over time.
+
+    Clearnet noise never goes through Tor in these mixes; .onion noise always does.
+    """
+    pattern: str = "drift"        # drift (default) | blend | alternate
+    browser: float = 100.0        # clearnet pages in a real browser (relative weight)
+    plain: float = 0.0            # clearnet pages over plain HTTP (no JavaScript, no scrolling)
+    onion: float = 15.0           # Tor .onion sites (only when Tor is on)
+    mobile_share: float = 0.55    # share of noise identities that are phones (most browsing is on phones)
+    device: str = "iPhone 13"     # phone to emulate, or "mix"
+
+    def validate(self) -> None:
+        from .useragents import MOBILE_DEVICES
+        if self.pattern not in ("drift", "blend", "alternate"):
+            raise ConfigError("traffic.pattern must be drift, blend or alternate")
+        for k in ("browser", "plain", "onion"):
+            if float(getattr(self, k)) < 0:
+                raise ConfigError(f"traffic.{k} must be 0 or more")
+        if not 0 <= self.mobile_share <= 1:
+            raise ConfigError("traffic.mobile_share must be between 0 and 1")
+        if self.device != "mix" and self.device not in MOBILE_DEVICES:
+            raise ConfigError("traffic.device: unknown phone '" + self.device + "'")
+
+
+@dataclass
+class MyListConfig:
+    """Your own sites (My List). Page visits and DNS lookups come from here first."""
+    enabled: bool = False
+    sites: list[str] = field(default_factory=list)   # site names, most-visited first
+    weights: dict = field(default_factory=dict)        # site -> how often, 1 (rarely) .. 10 (very often)
+    random_share: float = 0.3     # share of visits/lookups from the other sources instead
+    watch_started: float = 0.0    # "recording" window start (unix time); 0 = not recording
+    watch_hours: float = 24.0     # recording window length
+
+    def validate(self) -> None:
+        if not 0 <= self.random_share <= 1:
+            raise ConfigError("mylist.random_share must be between 0 and 1")
+        if not 1 <= self.watch_hours <= 72:
+            raise ConfigError("mylist.watch_hours must be between 1 and 72")
+        for s in self.sites:
+            if not s or " " in s or "/" in s or "." not in s or len(s) > 253:
+                raise ConfigError(f"mylist: '{s}' is not a site name like example.com")
 
 
 @dataclass
@@ -163,6 +270,10 @@ class Profile:
     queries: "QuerySources" = field(default_factory=lambda: QuerySources())
     rate: "RateConfig" = field(default_factory=lambda: RateConfig())
     dns: "DnsConfig" = field(default_factory=lambda: DnsConfig())
+    identity: "IdentityConfig" = field(default_factory=lambda: IdentityConfig())
+    mylist: "MyListConfig" = field(default_factory=lambda: MyListConfig())
+    traffic: "TrafficConfig" = field(default_factory=lambda: TrafficConfig())
+    extras: "ExtrasConfig" = field(default_factory=lambda: ExtrasConfig())
 
     def active_engines(self, transport: str) -> list[str]:
         """Engines a lane runs. Onion is Tor-only; clearnet engines run on Tor
@@ -208,12 +319,16 @@ def profile_to_dict(profile: Profile) -> dict[str, Any]:
         "queries": asdict(profile.queries),
         "rate": asdict(profile.rate),
         "dns": asdict(profile.dns),
+        "identity": asdict(profile.identity),
+        "mylist": asdict(profile.mylist),
+        "traffic": asdict(profile.traffic),
+        "extras": asdict(profile.extras),
     }}
 
 
 def save_profile(profile: Profile, path: str) -> None:
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    tmp = path + ".tmp"
+    tmp = f"{path}.{os.getpid()}.{__import__('threading').get_ident()}.tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
         yaml.safe_dump(profile_to_dict(profile), fh, sort_keys=False)
     os.replace(tmp, path)
@@ -247,17 +362,67 @@ def apply_overrides(profile: Profile, raw: dict[str, Any]) -> Profile:
         merged = profile.rate.__dict__ | p["rate"]
         profile.rate = RateConfig(**{k: v for k, v in merged.items() if k in RateConfig.__dataclass_fields__})
         profile.rate.level = float(profile.rate.level)
+        profile.rate.randomness = float(profile.rate.randomness)
         try:
             profile.rate.validate()
         except ValueError as exc:
             raise ConfigError(str(exc)) from exc
     if p.get("dns"):
         merged = profile.dns.__dict__ | p["dns"]
-        if merged.get("reset_resolvers"):
-            merged["resolvers"] = [dict(r) for r in RECOMMENDED_RESOLVERS]
+        if isinstance(merged.get("custom"), str):
+            merged["custom"] = [x.strip() for x in merged["custom"].replace(",", "\n").splitlines() if x.strip()]
         profile.dns = DnsConfig(**{k: v for k, v in merged.items() if k in DnsConfig.__dataclass_fields__})
         profile.dns.system_share = float(profile.dns.system_share)
         profile.dns.validate()
+    if p.get("identity"):
+        merged = profile.identity.__dict__ | p["identity"]
+        profile.identity = IdentityConfig(**{k: str(v) for k, v in merged.items()
+                                             if k in IdentityConfig.__dataclass_fields__})
+        profile.identity.validate()
+    if p.get("extras"):
+        m = profile.extras.__dict__ | p["extras"]
+        profile.extras = ExtrasConfig(
+            active_hours=bool(m["active_hours"]), active_from=int(m["active_from"]), active_to=int(m["active_to"]),
+            search_engines={str(k): float(v) for k, v in (m.get("search_engines") or {}).items()},
+            typos=bool(m["typos"]), low_data=bool(m["low_data"]), daily_data_mb=float(m["daily_data_mb"]),
+            polite=bool(m["polite"]), browser_dns=bool(m["browser_dns"]),
+            interests=bool(m["interests"]), interest_list=[str(x) for x in (m.get("interest_list") or [])],
+            interest_active=int(m["interest_active"]), interest_rotate_days=int(m["interest_rotate_days"]),
+            interest_share=float(m["interest_share"]), interest_salt=str(m.get("interest_salt") or ""),
+            activity=str(m["activity"]), busy_kbps=int(m["busy_kbps"]), metrics=bool(m["metrics"]),
+            site_list="tranco" if m.get("site_list") == "tranco" else "both",
+            household=bool(m.get("household")), household_size=int(m.get("household_size") or 3))
+        if (profile.extras.interests or profile.extras.household) and not profile.extras.interest_salt:
+            import secrets as _s
+            profile.extras.interest_salt = _s.token_hex(8)
+        profile.extras.validate()
+    if p.get("traffic"):
+        merged = profile.traffic.__dict__ | p["traffic"]
+        profile.traffic = TrafficConfig(
+            pattern=str(merged["pattern"]), browser=float(merged["browser"]), plain=float(merged["plain"]),
+            onion=float(merged["onion"]), mobile_share=float(merged["mobile_share"]), device=str(merged["device"]))
+        profile.traffic.validate()
+    if p.get("mylist"):
+        merged = profile.mylist.__dict__ | p["mylist"]
+        sites = merged.get("sites") or []
+        if isinstance(sites, str):
+            sites = sites.replace(",", "\n").splitlines()
+        clean = []
+        for x in sites:
+            x = str(x).strip().lower().removeprefix("https://").removeprefix("http://").split("/")[0]
+            x = x.removeprefix("www.")
+            if x and x not in clean:
+                clean.append(x)
+        merged["sites"] = clean
+        weights = {str(k).lower().removeprefix("www."): float(v)
+                   for k, v in (merged.get("weights") or {}).items()}
+        profile.mylist = MyListConfig(
+            enabled=bool(merged.get("enabled")), sites=clean,
+            weights={k: min(10.0, max(1.0, v)) for k, v in weights.items() if k in clean},
+            random_share=float(merged.get("random_share", 0.3)),
+            watch_started=float(merged.get("watch_started") or 0),
+            watch_hours=float(merged.get("watch_hours", 24)))
+        profile.mylist.validate()
     if "daily_max_failures" in p:
         profile.daily_max_failures = int(p["daily_max_failures"])
     for name, eng in profile.engines.items():

@@ -20,11 +20,10 @@ import yaml
 from . import __version__
 from .config import (ConfigError, Profile, apply_overrides, load_profile,
                      profile_to_dict, save_profile)
-from .engines import load_wordlist
+from .engines import ENGINE_NAMES, SEARCH_WEIGHTS, load_wordlist
 from .dnsplan import DnsPlan
 from .domains import DomainPool
-from .rate import describe as describe_rate
-from .sessions import SessionPlanner
+from .rate import RatePlanner, describe as describe_rate
 from .events import EventLog
 from .feeds import FeedStore
 from .queries import QueryConfig, QuerySource
@@ -38,13 +37,26 @@ PRESETS = {   # budgets per day: search / crawl / dns / onion
     "normal": {"search": 120, "crawl": 40,  "dns": 200, "onion": 40},
     "heavy":  {"search": 300, "crawl": 100, "dns": 500, "onion": 100},
 }
+def wipe_old_log_files() -> None:
+    """Delete any cricket.log left by an older version. The app keeps no log files."""
+    for name in ("cricket.log", "cricket.log.1"):
+        try:
+            (app_dir() / name).unlink()
+        except OSError:
+            pass
+
+
 APP_DEFAULTS = {"autostart": False, "open_browser": True, "port": 8765, "intensity": "normal",
-                "auto_refresh_sources": False}   # off: use the snapshot shipped with the app (no lookups)
+                "auto_refresh_sources": False,   # off: use the snapshot shipped with the app (no lookups)
+                "ml_auto": False, "ml_history": []}
 
 
 class Controller:
     def __init__(self, profile_path: str | None = None):
-        self.log = EventLog(file_path=app_dir() / "cricket.log")
+        wipe_old_log_files()                      # older versions wrote cricket.log to disk
+        self.log = EventLog()                     # live log is memory-only (never written to disk)
+        self._save_lock = threading.RLock()       # autosave: concurrent saves are serialised
+        threading.Thread(target=self._ml_auto_loop, daemon=True, name="ml-auto").start()
         self.profile_path = profile_path or str(config_path())
         self.first_run = not Path(self.profile_path).exists()
         self.app: dict[str, Any] = dict(APP_DEFAULTS)
@@ -52,9 +64,6 @@ class Controller:
         self._load()
         self.tor: TorManager | None = None
         self.feeds = FeedStore(self.log)
-        import random as _r
-        self.dns_plan = DnsPlan(_r.Random(), self.profile.dns, self.feeds.items("opennic"))
-        self._dns_timer = False
         self._feed_timer_started = False
         self.runner: Runner | None = None
         self._thread: threading.Thread | None = None
@@ -77,14 +86,17 @@ class Controller:
             self.log.error("app", f"Could not read config ({exc}); using defaults.")
 
     def _save(self) -> None:
-        data = profile_to_dict(self.profile)
-        data["app"] = self.app
-        path = Path(self.profile_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
-        tmp.replace(path)
-        self.first_run = False
+        # Settings save themselves, so two saves can arrive together: serialise them, and give
+        # each its own temporary file so one can never move the other's away.
+        with self._save_lock:
+            data = profile_to_dict(self.profile)
+            data["app"] = self.app
+            path = Path(self.profile_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_name(f"{path.name}.{threading.get_ident()}.tmp")
+            tmp.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+            tmp.replace(path)
+            self.first_run = False
 
     def wizard(self, answers: dict[str, Any]) -> dict:
         """Apply the 2–3 first-run answers and save.
@@ -106,6 +118,10 @@ class Controller:
 
     def apply_config(self, raw: dict[str, Any], save: bool = True) -> dict:
         """Validate+apply a partial profile dict. Takes effect on next (re)start."""
+        with self._save_lock:
+            return self._apply_config(raw, save)
+
+    def _apply_config(self, raw: dict[str, Any], save: bool = True) -> dict:
         new = copy.deepcopy(self.profile)
         tor_raw = (raw.get("transports") or {}).get("tor") or {}
         if "onion_seeds" in tor_raw:
@@ -126,7 +142,7 @@ class Controller:
         return self.state()
 
     def update_app(self, raw: dict[str, Any]) -> None:
-        for k in ("autostart", "open_browser", "auto_refresh_sources"):
+        for k in ("autostart", "open_browser", "auto_refresh_sources", "ml_auto"):
             if k in raw:
                 self.app[k] = bool(raw[k])
         self._save()
@@ -148,6 +164,243 @@ class Controller:
                                   bridges=cfg.bridges, auto_install=cfg.auto_install)
         return self.tor
 
+    # ── Tools tab: network checks (user-initiated, clearnet only) ───────────
+    def resolvers_check(self) -> dict:
+        from . import nettools
+        dns = self.profile.dns
+        secure: list[str] = []
+        if dns.opennic:
+            secure += [x.split("|")[0] for x in self.feeds.items("opennic")]
+        if dns.quad9:
+            secure += ["9.9.9.9", "149.112.112.112"]
+        secure += list(dns.custom)
+        return nettools.dns_leak_check(secure)
+
+    def speed_start(self) -> dict:
+        from . import nettools
+        st = getattr(self, "_speed", None)
+        if st and st.get("state") == "running":
+            return st
+        self._speed = {"state": "running", "progress": "Starting…", "result": None}
+        proxy = self.profile.transports.clearnet.proxy
+
+        def work():
+            res = nettools.speed_test(proxy, progress=lambda s: self._speed.update(progress=s))
+            self._speed.update(state="done", progress="", result=res)
+            self.log.info("tools", f"Speed test: down {res['down_mbps']} Mbit/s, up {res['up_mbps']} Mbit/s"
+                          + (f" ({'; '.join(res['errors'])})" if res["errors"] else ""))
+        threading.Thread(target=work, daemon=True).start()
+        return self._speed
+
+    # ── My List ──────────────────────────────────────────────────────────────
+    def _domain_pool(self, _r):
+        ml = self.profile.mylist
+        pool = DomainPool(_r.Random(), self.feeds, my_sites=ml.sites if ml.enabled else None,
+                          random_share=ml.random_share, my_weights=ml.weights)
+        pool.interests, pool.interest_share = self._interests(), self.profile.extras.interest_share
+        pool.site_list = self.profile.extras.site_list
+        return pool
+
+    def interests_state(self) -> dict:
+        from .interests import CATEGORIES
+        it = self._interests()
+        ex = self.profile.extras
+        hh = []
+        if ex.household and ex.interest_salt:
+            from .household import Household
+            from .useragents import sample_entry
+            hh = Household(ex.household_size, ex.interest_salt, sample_entry=sample_entry,
+                           mobile_share=self.profile.traffic.mobile_share, device=self.profile.traffic.device).describe()
+        return {"themes": list(CATEGORIES), "active": it.active() if it else [], "household": hh}
+
+    def estimate(self) -> dict:
+        """Rough data use before running (idea from NoisyCompany): per day and per month."""
+        from .rate import searches_per_hour
+        prof, ex, tc = self.profile, self.profile.extras, self.profile.traffic
+        eng = {n: (c.budget_per_day if c.enabled else 0) for n, c in prof.engines.items()}
+        if not self._tor_cfg().enabled:
+            eng["onion"] = 0
+        tot = sum(eng.values()) or 1
+        actions_h = searches_per_hour(prof.rate.level) / max(eng.get("search", 0) / tot, 0.05)
+        hours = 15.0
+        if ex.active_hours:
+            a, b = ex.active_from, ex.active_to
+            hours = float((b - a) % 24 or 24)
+        page_mb = 0.4 if ex.low_data else 2.5            # a real-browser page with images vs without
+        b_share = (tc.browser / ((tc.browser + tc.plain) or 1)) if self.browser_info()["active"] else 0.0
+        per_page = b_share * page_mb + (1 - b_share) * 0.15
+        per = {"search": per_page, "crawl": per_page, "dns": 0.0003, "onion": 0.4}
+        mb_h = actions_h * sum(eng[n] / tot * per.get(n, 0.2) for n in eng)
+        day = mb_h * hours
+        if ex.daily_data_mb:
+            day = min(day, ex.daily_data_mb)
+        return {"mb_per_day": round(day, 1), "gb_per_month": round(day * 30 / 1000, 2),
+                "actions_per_hour": round(actions_h), "hours_per_day": hours,
+                "real_browser": b_share > 0, "low_data": ex.low_data, "cap_mb": ex.daily_data_mb}
+
+    def selftest(self, days: float = 14) -> dict:
+        """How easily the noise could be told apart from your real browsing (local only)."""
+        import random as _r
+        from .history import visit_events
+        from .selftest import evaluate, simulate_noise
+        days = max(2.0, min(60.0, float(days)))
+        now = time.time()
+        since = now - days * 86400
+        real = visit_events(since, now)
+        hits = [h for h in (self.runner.hit_log if self.runner else []) if h["lane"] != "tor"]
+        session_span = (hits[-1]["ts"] - hits[0]["ts"]) if len(hits) > 1 else 0
+        if len(hits) >= 200 and session_span >= 86400:
+            import urllib.parse as up
+            noise = [(h["ts"], (up.urlparse(h["url"]).hostname if "://" in h["url"] else h["url"]) or "")
+                     for h in hits]
+            source = "this session's noise"
+        else:
+            noise = simulate_noise(self.profile, self._domain_pool(_r), since, now)
+            source = "noise simulated from your current settings"
+        ranks = {d: i for i, d in enumerate(self.feeds.items("tranco"))}
+        res = evaluate(real["events"], [(t, s.removeprefix("www.")) for t, s in noise if s], ranks)
+        res.update({"real_visits": len(real["events"]), "noise_events": len(noise), "noise_source": source,
+                    "days": days, "errors": real["errors"], "ran_at": now})
+        model = res.pop("_model", None)
+        if model is not None:
+            self._ml_model, self._ml_ranks = model, ranks
+            hist = list(self.app.get("ml_history") or [])[-29:] + [[round(now), res["score"]]]
+            self.app["ml_history"] = hist             # scores only: no browsing data is kept
+            self._save()
+        self._ml_last = res
+        self.log.info("tools", f"Self-test: {res.get('score', '—')}% ({res.get('verdict', res.get('error', ''))}).")
+        return res
+
+    def ml_state(self) -> dict:
+        return {"last": getattr(self, "_ml_last", None), "history": self.app.get("ml_history") or [],
+                "auto": bool(self.app.get("ml_auto")), "can_predict": getattr(self, "_ml_model", None) is not None}
+
+    def ml_predict(self, site: str, hour: int, weekday: int) -> dict:
+        from .history import site_of
+        from .selftest import predict
+        if getattr(self, "_ml_model", None) is None:
+            raise ConfigError("Run the test once first: predictions use its model.")
+        host = site_of(site if "://" in site else "https://" + site) or ""
+        if not host:
+            raise ConfigError("Enter a site like example.com")
+        return {"site": host, "hour": hour, "weekday": weekday,
+                "noise_probability": predict(self._ml_model, host, int(hour) % 24, int(weekday) % 7, self._ml_ranks)}
+
+    def _ml_auto_loop(self) -> None:
+        """Settings → ML → run automatically: once a day, in the background."""
+        while True:
+            time.sleep(600)
+            try:
+                hist = self.app.get("ml_history") or []
+                if self.app.get("ml_auto") and (not hist or time.time() - hist[-1][0] > 86400):
+                    self.selftest(14)
+            except Exception as exc:  # keep the loop alive; report
+                self.log.warn("tools", f"Automatic self-test failed: {exc}")
+
+    def privacy_check(self) -> list[dict]:
+        from .nettools import privacy_check
+        return privacy_check(self)
+
+    def mylist_state(self) -> dict:
+        from .history import history_files
+        ml = self.profile.mylist
+        now = time.time()
+        ends = ml.watch_started + ml.watch_hours * 3600 if ml.watch_started else 0
+        return {"enabled": ml.enabled, "sites": ml.sites, "weights": ml.weights, "random_share": ml.random_share,
+                "watch_hours": ml.watch_hours, "watch_started": ml.watch_started, "watch_ends": ends,
+                "watch_done": bool(ml.watch_started) and now >= ends, "now": now,
+                "browsers": sorted({f"{f['browser']} ({f['profile']})" for f in history_files()}),
+                "running": self.running}
+
+    def mylist_scan(self, days: float) -> dict:
+        from .history import top_sites
+        days = max(1.0, min(365.0, float(days)))
+        res = top_sites(time.time() - days * 86400, denylist=self.feeds.denylist())
+        self.log.info("mylist", f"Scanned browser history (last {days:g} days): {len(res['sites'])} sites found.")
+        return res
+
+    def mylist_watch(self, action: str, hours: float | None = None) -> dict:
+        from .history import top_sites
+        ml = self.profile.mylist
+        if action == "start":
+            self.apply_config({"mylist": {"watch_started": time.time(),
+                                          "watch_hours": float(hours or ml.watch_hours)}})
+            self.log.info("mylist", f"Recording your sites for {self.profile.mylist.watch_hours:g} hours.")
+            return self.mylist_state()
+        if action == "cancel":
+            self.apply_config({"mylist": {"watch_started": 0}})
+            return self.mylist_state()
+        if action == "collect":
+            if not ml.watch_started:
+                raise ConfigError("Not recording.")
+            end = min(time.time(), ml.watch_started + ml.watch_hours * 3600)    # cut off at the window end
+            res = top_sites(ml.watch_started, end, denylist=self.feeds.denylist())
+            self.apply_config({"mylist": {"watch_started": 0}})
+            self.log.info("mylist", f"Recording collected: {len(res['sites'])} sites.")
+            return res
+        raise ConfigError(f"unknown action {action}")
+
+    def mylist_bookmarks(self, urls: list | None = None) -> dict:
+        """Bookmarks from your browsers, or the links from a bookmarks export file (the page
+        extracts just the links and sends those, never titles)."""
+        from .history import bookmark_sites, sites_from_urls
+        if urls is not None:
+            res = sites_from_urls([str(u) for u in urls[:50_000]], self.feeds.denylist())
+        else:
+            res = bookmark_sites(self.feeds.denylist())
+        self.log.info("mylist", f"Imported addresses: {len(res['sites'])} sites found.")
+        return res
+
+    def mylist_save(self, body: dict) -> dict:
+        keep = {k: body[k] for k in ("enabled", "sites", "weights", "random_share") if k in body}
+        self.apply_config({"mylist": keep})
+        return self.mylist_state()
+
+    # ── user agents (Settings) ─────────────────────────────────────────────
+    def ua_state(self) -> dict:
+        from .useragents import library
+        ident = self.profile.identity
+        rows = [{"id": e["id"], "ua": e["ua"], "group": e["group"], "platform": e["platform"],
+                 "release": e["release"], "share": e["share"]} for e in library()]
+        return {"mode": ident.ua_mode, "rotate_every": ident.rotate_every, "pin": ident.ua_pin,
+                "own_ua": ident.own_ua, "library": rows, "running": self.running,
+                "applies_to": "Plain-HTTP lane. The real-browser lane always sends its own browser's "
+                              "user agent, and the onion lane always uses Tor Browser's fixed one."}
+
+    def ua_save(self, body: dict) -> dict:
+        allowed = {k: str(body[k]) for k in ("ua_mode", "rotate_every", "ua_pin", "own_ua") if k in body}
+        cur = self.profile.identity
+        mode = allowed.get("ua_mode", cur.ua_mode)
+        pin = allowed.get("ua_pin", cur.ua_pin)
+        own = allowed.get("own_ua", cur.own_ua).strip()
+        if mode == "pin" and not pin:
+            raise ConfigError("Choose what to pin to first.")
+        if mode == "pin" and pin == "own" and not own:
+            raise ConfigError("Paste or detect your browser's user agent first.")
+        self.apply_config({"identity": allowed})
+        return self.ua_state()
+
+    def _learn_own_ua(self) -> None:
+        """Default is your own browser's user agent. If it isn't known yet, read it once from the
+        installed browser; if that isn't possible, say so (noise rotates until it's pasted)."""
+        ident = self.profile.identity
+        if ident.ua_mode != "pin" or ident.ua_pin != "own" or ident.own_ua.strip():
+            return
+        res = self.ua_detect() if self.browser_info()["available"] else {"error": "no browser to read it from"}
+        if res.get("ua"):
+            self.apply_config({"identity": {"own_ua": res["ua"]}})
+            self.log.info("app", "Learned your browser's user agent; noise now looks like your browser.")
+        else:
+            self.log.warn("app", "Couldn't read your browser's user agent (" + res.get("error", "?") + "). "
+                                 "Noise rotates browsers until you paste it in Settings → User agent.")
+
+    def ua_detect(self) -> dict:
+        from .useragents import detect_own_ua
+        return detect_own_ua()
+
+    def speed_status(self) -> dict:
+        return getattr(self, "_speed", None) or {"state": "idle"}
+
     def tor_action(self, action: str) -> dict:
         tm = self.tor_manager()
         if action == "start":
@@ -164,48 +417,11 @@ class Controller:
             raise ConfigError(f"unknown tor action '{action}'")
         return self.tor_state()
 
-    def tor_selftest(self) -> None:
-        """User-initiated check: can we reach a site through Tor, and an onion site?"""
-        tm = self.tor_manager()
-        self.tor_test = {"running": True, "ts": time.time()}
-
-        def go():
-            import requests
-            from .onion import BUILTIN_ONION_SEEDS
-            from .transports import explain_tor_error
-            res = {"running": False, "ts": time.time()}
-            if not tm.ready:
-                res["summary"] = "Tor isn't ready yet — start it and wait for 100%."
-                self.tor_test = res
-                return
-            proxies = {"http": f"socks5h://test:test@{tm.socks_addr}", "https": f"socks5h://test:test@{tm.socks_addr}"}
-            try:
-                t0 = time.time()
-                j = requests.get("https://check.torproject.org/api/ip", proxies=proxies, timeout=60).json()
-                res["exit"] = {"ok": bool(j.get("IsTor")), "ip": j.get("IP"), "ms": round((time.time() - t0) * 1000)}
-            except Exception as exc:
-                res["exit"] = {"ok": False, "error": explain_tor_error(str(exc), tm.socks_addr)}
-            url = BUILTIN_ONION_SEEDS[1][1]                     # The Tor Project's own onion site
-            try:
-                t0 = time.time()
-                r = requests.get(url, proxies=proxies, timeout=90)
-                res["onion"] = {"ok": r.status_code < 400, "status": r.status_code, "url": url,
-                                "ms": round((time.time() - t0) * 1000)}
-            except Exception as exc:
-                res["onion"] = {"ok": False, "url": url, "error": explain_tor_error(str(exc), tm.socks_addr)}
-            ok = res["exit"]["ok"] and res["onion"]["ok"]
-            res["summary"] = ("Tor works: traffic leaves through the Tor network and onion sites load."
-                              if ok else "Tor test found a problem — see details.")
-            self.log.add("info" if ok else "warn", "tor", "Self-test: " + res["summary"])
-            self.tor_test = res
-        threading.Thread(target=go, daemon=True, name="tor-selftest").start()
-
     def tor_state(self) -> dict:
         tm = self.tor_manager()
         d = tm.snapshot()
         d["enabled"] = self._tor_cfg().enabled
         d["circuits"] = tm.circuits()
-        d["selftest"] = getattr(self, "tor_test", None)
         return d
 
     # ── realism helpers ─────────────────────────────────────────────────────
@@ -226,14 +442,41 @@ class Controller:
                                          "Using plain HTTP instead.")
             return None
         from .browser import BrowserTransport
-        return BrowserTransport(proxy=cfg.proxy, headless=not cfg.browser_visible, executable=info["detail"],
+        engine = self._browser_engine()
+        return BrowserTransport(proxy=cfg.proxy, headless=not (cfg.browser_visible or cfg.browser_offscreen),
+                                engine=engine,
+                                offscreen=cfg.browser_offscreen and not cfg.browser_visible, executable=info["detail"],
+                                low_data=self.profile.extras.low_data,
                                 stop_event=stop, scale=lambda: self.profile.realtime_scale,
                                 on_event=lambda lvl, msg: self.log.add(lvl, "browser", msg))
+
+    def _interests(self):
+        ex = self.profile.extras
+        if not ex.interests:
+            return None
+        import random as _r
+        from .interests import Interests
+        return Interests(_r.Random(), ex.interest_list, ex.interest_active, ex.interest_rotate_days, ex.interest_salt)
+
+    def _browser_engine(self) -> str:
+        """auto = match your own browser: Firefox if your user agent is Firefox and Playwright's
+        Firefox is installed; otherwise Chromium."""
+        from .browser import find_playwright_firefox
+        want = self.profile.transports["clearnet"].browser_engine
+        if want == "auto":
+            want = "firefox" if "Firefox/" in self.profile.identity.own_ua else "chromium"
+        if want == "firefox" and not find_playwright_firefox():
+            self.log.warn("browser", "Firefox engine wanted, but Playwright's Firefox isn't installed "
+                                     "(run: python -m playwright install firefox). Using Chromium.")
+            return "chromium"
+        return want
 
     def _query_source(self, words):
         import random as _r
         q = self.profile.queries
-        return QuerySource(_r.Random(), self.feeds, QueryConfig(q.live, q.dataset, q.builtin, q.words), words)
+        qs = QuerySource(_r.Random(), self.feeds, QueryConfig(q.live, q.dataset, q.builtin, q.words), words)
+        qs.interests, qs.interest_share = self._interests(), self.profile.extras.interest_share
+        return qs
 
     def _start_feed_timer(self) -> None:
         """Only if the user opted in: re-fetch sources when they are ~3 months old."""
@@ -278,31 +521,31 @@ class Controller:
                         return True
                     return False
             self._start_feed_timer()
-            lanes = build_lanes(prof, words, tor_gate=gate, clearnet_transport=self._clearnet_transport(self._stop))
+            self._learn_own_ua()
+            browser_tr = self._clearnet_transport(self._stop)
+            plain_tr = None
+            if browser_tr is not None and prof.traffic.plain > 0:      # both kinds of clearnet noise
+                from .transports import ClearnetTransport
+                plain_tr = ClearnetTransport(proxy=prof.transports["clearnet"].proxy)
+            lanes = build_lanes(prof, words, tor_gate=gate, clearnet_transport=browser_tr,
+                                plain_transport=plain_tr)
             if not lanes:
                 raise ConfigError("Nothing to run: enable clearnet noise or Tor/onion noise in Settings.")
             import random as _r
             self.runner = Runner(profile=prof, lanes=lanes, wordlist=words, log=self.log,
                                  stop_event=self._stop, sleep_fn=lambda s: self._stop.wait(s),
-                                 queries=self._query_source(words), domains=DomainPool(_r.Random(), self.feeds),
-                                 sessions=SessionPlanner(_r.Random(), prof.rate.mode, prof.rate.level,
-                                                         onion_share=self._onion_share()),
-                                 dns_plan=self._fresh_dns_plan())
+                                 queries=self._query_source(words), domains=self._domain_pool(_r),
+                                 rate=RatePlanner(_r.Random(), prof.rate),
+                                 dns_plan=DnsPlan(_r.Random(), prof.dns, self.feeds.items("opennic")),
+                                 mix=True)
             self._thread = threading.Thread(target=self._run_loop, daemon=True, name="cricket-runner")
             self._thread.start()
             self.log.info("app", "Started: lanes = " + ", ".join(
                 f"{l.name}[{'/'.join(l.engines)}]" for l in lanes))
 
-    def _onion_share(self) -> float:
-        t = self._tor_cfg()
-        if not (t.enabled and t.onion and self.profile.engines["onion"].enabled):
-            return 0.0
-        w = {n: e.budget_per_day for n, e in self.profile.engines.items() if e.enabled}
-        return min(0.6, w.get("onion", 0) / max(1, sum(w.values())) * 1.5)
-
     def _run_loop(self) -> None:
         try:
-            self.runner.run_sessions()
+            self.runner.run_forever()
         except Exception as exc:
             self.log.error("scheduler", f"Runner crashed: {exc!r}")
 
@@ -315,6 +558,8 @@ class Controller:
         self.log.info("app", "Stopped.")
         if stop_tor and self.tor:
             self.tor.stop()
+        wipe_old_log_files()
+        self.log.clear()                          # nothing from this run is kept after quitting
 
     def pause(self, paused: bool) -> None:
         if self.runner:
@@ -333,8 +578,8 @@ class Controller:
             import random as _r
             r = Runner(profile=prof, lanes=lanes, wordlist=words, log=self.log, sleep_fn=lambda s: None,
                        local_hour_fn=lambda: 12.0, queries=self._query_source(words),
-                       domains=DomainPool(_r.Random(), self.feeds),
-                       dns_plan=self._fresh_dns_plan())
+                       domains=self._domain_pool(_r),
+                       dns_plan=DnsPlan(_r.Random(), prof.dns, self.feeds.items("opennic")))
             try:
                 r.run_once(wait=False)
             except MaxFailuresExceeded as exc:
@@ -352,38 +597,21 @@ class Controller:
         return {
             "version": __version__, "first_run": self.first_run, "running": self.running,
             "paused": stats.get("paused", False), "uptime": stats.get("uptime", 0) if self.running else 0,
+            "current": stats.get("current") if self.running else None,
             "lanes": stats["lanes"], "app": self.app,
+            "bytes_today": stats.get("bytes_today", 0) if self.running else 0,
+            "data_cap_mb": self.profile.extras.daily_data_mb,
+            "engine_names": ENGINE_NAMES, "engine_defaults": dict(zip(ENGINE_NAMES, SEARCH_WEIGHTS)),
             "profile": profile_to_dict(self.profile)["profile"],
             "tor": self.tor_state(), "log_last_id": self.log.last_id(),
             "builtin_onion_seeds": [{"name": n, "url": u} for n, u in BUILTIN_ONION_SEEDS],
-            "config_path": self.profile_path, "log_path": str(app_dir() / "cricket.log"),
+            "config_path": self.profile_path,
             "presets": PRESETS, "browser": self.browser_info(), "feeds": self.feeds.status(),
             "feeds_refreshing": self.feeds.refreshing,
             "rate_info": [describe_rate(lv, self._search_share()) for lv in range(1, 11)],
-            "activity": (self.runner.activity if self.runner and self.running else {"state": "stopped"}),
+            "hour_target": round(self.runner.hour_target) if self.runner and self.running else None,
             "opennic": [x.split("|") for x in self.feeds.items("opennic")],
-            "dns": self.dns_plan.report(),
         }
-
-    def _fresh_dns_plan(self) -> DnsPlan:
-        """Point the shared plan at the current settings; re-check resolvers if they'll be used."""
-        self.dns_plan.cfg = self.profile.dns
-        if self.profile.dns.mode != "system":
-            self.dns_plan.check_async()
-            if not self._dns_timer:
-                self._dns_timer = True
-
-                def loop():
-                    while True:
-                        time.sleep(600)
-                        if self.running and self.profile.dns.mode != "system":
-                            self.dns_plan.check_async()
-                threading.Thread(target=loop, daemon=True, name="dns-recheck").start()
-        return self.dns_plan
-
-    def check_dns(self) -> None:
-        self.dns_plan.cfg = self.profile.dns
-        self.dns_plan.check_async()
 
     def _search_share(self) -> float:
         e = self.profile.engines
