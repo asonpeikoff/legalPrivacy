@@ -55,6 +55,8 @@ class TransportConfig:
     proxy: str | None = None          # clearnet: http:// or socks5:// URL
     browser: str = "auto"             # clearnet: auto | on | off — drive a real browser like a person
     browser_visible: bool = False     # clearnet: show the browser window instead of running headless
+    browser_offscreen: bool = False   # clearnet: a real window, but parked off-screen (real graphics, not seen)
+    browser_engine: str = "auto"      # clearnet: auto (match your browser) | chromium | firefox
     # --- tor lane only ---
     socks: str = DEFAULT_TOR_SOCKS
     control: str | None = None
@@ -71,6 +73,8 @@ class TransportConfig:
     def validate(self, name: str) -> None:
         if self.browser not in ("auto", "on", "off"):
             raise ConfigError(f"transport '{name}': browser must be auto, on or off")
+        if self.browser_engine not in ("auto", "chromium", "firefox"):
+            raise ConfigError(f"transport '{name}': browser_engine must be auto, chromium or firefox")
         if self.identities_per_circuit < 1:
             raise ConfigError(f"transport '{name}': identities_per_circuit >= 1")
 
@@ -100,7 +104,7 @@ class DnsConfig:
     opennic: bool = True          # include OpenNIC no-log servers in the "secure" set
     quad9: bool = False           # include Quad9 (9.9.9.9 / 149.112.112.112) in the "secure" set
     custom: list[str] = field(default_factory=list)   # extra resolver IPs, your choice
-    system_share: float = 0.7     # mix mode: share of time on your normal DNS
+    system_share: float = 0.5     # mix mode: share of time on your normal DNS
     block_minutes: list[int] = field(default_factory=lambda: [10, 60])   # mix mode: switch every 10-60 min
 
     def validate(self) -> None:
@@ -119,9 +123,9 @@ class DnsConfig:
 @dataclass
 class IdentityConfig:
     """Which user agent the plain-HTTP noise sends. See noisycricket/useragents.py."""
-    ua_mode: str = "rotate"       # rotate (default) | pin
+    ua_mode: str = "pin"          # pin (default: your own browser's, recommended) | rotate
     rotate_every: str = "hour"    # hour | day   (rotate mode: how often the choice changes)
-    ua_pin: str = ""              # pin mode: "own" or a library id
+    ua_pin: str = "own"           # pin mode: "own" or a library id. "own" with no UA yet = rotate until known
     own_ua: str = ""              # your browser's user agent (stored only on this computer)
 
     def validate(self) -> None:
@@ -154,6 +158,9 @@ class ExtrasConfig:
     activity: str = "off"         # your own activity: off | backoff | follow
     busy_kbps: int = 400          # backoff: pause while your own traffic is above this
     metrics: bool = False         # Prometheus metrics at /metrics (needs the dashboard token)
+    site_list: str = "both"       # both = Tranco re-ranked by Chrome's real browsing (CrUX), default | tranco
+    household: bool = False       # noise from a virtual household of several people
+    household_size: int = 3       # 2..5 people, member 1 = you
 
     def validate(self) -> None:
         from .engines import ENGINE_NAMES
@@ -181,6 +188,10 @@ class ExtrasConfig:
             raise ConfigError("extras.interest_share must be between 0 and 1")
         if self.activity not in ("off", "backoff", "follow"):
             raise ConfigError("extras.activity must be off, backoff or follow")
+        if not 2 <= int(self.household_size) <= 5:
+            raise ConfigError("extras.household_size must be 2 to 5")
+        if self.site_list not in ("both", "tranco"):
+            raise ConfigError("extras.site_list must be both or tranco")
         if int(self.busy_kbps) < 10:
             raise ConfigError("extras.busy_kbps must be at least 10")
 
@@ -195,7 +206,7 @@ class TrafficConfig:
     browser: float = 100.0        # clearnet pages in a real browser (relative weight)
     plain: float = 0.0            # clearnet pages over plain HTTP (no JavaScript, no scrolling)
     onion: float = 15.0           # Tor .onion sites (only when Tor is on)
-    mobile_share: float = 0.35    # share of noise identities that are phones
+    mobile_share: float = 0.55    # share of noise identities that are phones (most browsing is on phones)
     device: str = "iPhone 13"     # phone to emulate, or "mix"
 
     def validate(self) -> None:
@@ -317,7 +328,7 @@ def profile_to_dict(profile: Profile) -> dict[str, Any]:
 
 def save_profile(profile: Profile, path: str) -> None:
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    tmp = path + ".tmp"
+    tmp = f"{path}.{os.getpid()}.{__import__('threading').get_ident()}.tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
         yaml.safe_dump(profile_to_dict(profile), fh, sort_keys=False)
     os.replace(tmp, path)
@@ -378,8 +389,10 @@ def apply_overrides(profile: Profile, raw: dict[str, Any]) -> Profile:
             interests=bool(m["interests"]), interest_list=[str(x) for x in (m.get("interest_list") or [])],
             interest_active=int(m["interest_active"]), interest_rotate_days=int(m["interest_rotate_days"]),
             interest_share=float(m["interest_share"]), interest_salt=str(m.get("interest_salt") or ""),
-            activity=str(m["activity"]), busy_kbps=int(m["busy_kbps"]), metrics=bool(m["metrics"]))
-        if profile.extras.interests and not profile.extras.interest_salt:
+            activity=str(m["activity"]), busy_kbps=int(m["busy_kbps"]), metrics=bool(m["metrics"]),
+            site_list="tranco" if m.get("site_list") == "tranco" else "both",
+            household=bool(m.get("household")), household_size=int(m.get("household_size") or 3))
+        if (profile.extras.interests or profile.extras.household) and not profile.extras.interest_salt:
             import secrets as _s
             profile.extras.interest_salt = _s.token_hex(8)
         profile.extras.validate()

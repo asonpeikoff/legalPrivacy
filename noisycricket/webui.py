@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import socket
 import threading
@@ -62,7 +63,9 @@ class UIServer:
     def _bind(port: int) -> ThreadingHTTPServer:
         for p in (port, 0):
             try:
-                srv = ThreadingHTTPServer(("127.0.0.1", p), BaseHTTPRequestHandler)
+                # CRICKET_BIND=0.0.0.0 is only for running inside a container, whose port is then
+                # published to 127.0.0.1 on the host (see docs/DOCKER.md). Default: this computer only.
+                srv = ThreadingHTTPServer((os.environ.get("CRICKET_BIND", "127.0.0.1"), p), BaseHTTPRequestHandler)
                 srv.daemon_threads = True
                 return srv
             except OSError:
@@ -176,6 +179,8 @@ class UIServer:
                                           {"Content-Disposition": "attachment; filename=noisycricket-activity.csv"})
                     if u.path == "/api/tools/estimate":
                         return self._json(ctl.estimate())
+                    if u.path == "/api/tools/selftest":
+                        return self._json(ctl.selftest(float((q.get("days") or ["14"])[0])))
                     if u.path == "/api/tools/privacy":
                         return self._json({"checks": ctl.privacy_check()})
                     if u.path == "/api/interests":

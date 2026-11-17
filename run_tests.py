@@ -21,6 +21,7 @@ import tests.test_rate_dns
 import tests.test_mylist
 import tests.test_mix_mobile
 import tests.test_extras
+import tests.test_selftest
 
 MODULES = [
     tests.test_identity,
@@ -36,6 +37,7 @@ MODULES = [
     tests.test_mylist,
     tests.test_mix_mobile,
     tests.test_extras,
+    tests.test_selftest,
 ]
 
 

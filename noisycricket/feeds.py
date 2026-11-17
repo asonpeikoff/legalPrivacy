@@ -40,6 +40,7 @@ NEWS_FEEDS = [f"https://feeds.bbci.co.uk/news/{p}rss.xml" for p in
                "entertainment_and_arts/")]
 TRANCO_URL = "https://tranco-list.eu/top-1m.csv.zip"
 DENY_URL = "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/fakenews-gambling-porn/hosts"
+CRUX_URL = "https://raw.githubusercontent.com/zakird/crux-top-lists/main/data/global/current.csv.gz"
 OPENNIC_URL = "https://servers.opennic.org/"     # the public server table (features + Pass/Fail)
 DS_ROWS = "https://datasets-server.huggingface.co/rows"
 DATASETS = [  # (dataset, config, split, field, conservative max row index)
@@ -48,7 +49,7 @@ DATASETS = [  # (dataset, config, split, field, conservative max row index)
 ]
 # A shipped snapshot (data/feeds/snapshot.json.gz) means users never need to fetch these.
 # If they opt in to auto-refresh, sources are re-fetched only this rarely.
-TTL = {k: 90 * 86400 for k in ("trends", "wiki", "news", "dataset", "tranco", "deny", "opennic")}
+TTL = {k: 90 * 86400 for k in ("trends", "wiki", "news", "dataset", "tranco", "deny", "opennic", "crux")}
 _SKIP_WIKI = re.compile(r"^(Main_Page|Special:|Wikipedia:|Portal:|File:|Help:|Category:|Template:|Talk:|User:|-$)")
 
 
@@ -85,7 +86,7 @@ class FeedStore:
         self.fetchers: dict[str, Callable[[], list]] = fetchers or {
             "deny": self._fetch_deny, "trends": self._fetch_trends, "wiki": self._fetch_wiki,
             "news": self._fetch_news, "dataset": self._fetch_dataset, "tranco": self._fetch_tranco,
-            "opennic": self._fetch_opennic}
+            "opennic": self._fetch_opennic, "crux": self._fetch_crux}
         self.refreshing = False
         self._load()
 
@@ -243,20 +244,15 @@ class FeedStore:
                         break
         return out
 
+    def _fetch_crux(self) -> list[str]:
+        """Chrome's own top sites (CrUX): sites real Chrome users load most, top-1,000 bucket first.
+        Each item is 'host|bucket'. Safety-filtered like every other list."""
+        import gzip as _gz
+        raw = _gz.decompress(_get(CRUX_URL, timeout=120).content).decode("utf-8", "replace")
+        return parse_crux(raw, self.denylist())
+
     def _fetch_opennic(self) -> list[str]:
         return parse_opennic_servers(_get(OPENNIC_URL, timeout=40).text)
-
-    def _fetch_opennic_api_unused(self) -> list[str]:
-        """OpenNIC Tier-2 resolvers with anonymized logs, >=95% reliable, one per admin: 'ip|name|loc'."""
-        import ipaddress
-        out = []
-        for s in _get(OPENNIC_URL).json():
-            try:
-                ipaddress.IPv4Address(s["ip"])
-            except (KeyError, ValueError):
-                continue
-            out.append(f"{s['ip']}|{s.get('short', '')}|{s.get('loc', '')}")
-        return out
 
     def _fetch_deny(self) -> list[str]:
         txt = _get(DENY_URL, timeout=60).text
@@ -304,3 +300,18 @@ def parse_opennic_servers(html: str) -> list[str]:
             loc = place.group(1).strip() if place and place.group(1).strip() else group
             out.append((0 if logs == "none" else 1, f"{ip}|{short}|{loc}|{logs}|{'+'.join(protos)}"))
     return [x for _, x in sorted(out, key=lambda t: t[0])]
+
+
+def parse_crux(csv_text: str, deny: set[str] | None = None, max_rank: int = 10_000) -> list[str]:
+    """'origin,rank' rows -> 'host|rank' for safe sites up to max_rank (1000 = top bucket)."""
+    out, seen = [], set()
+    for line in csv_text.splitlines()[1:]:
+        origin, _, rank = line.rpartition(",")
+        if not rank.isdigit() or int(rank) > max_rank or not origin.startswith("https://"):
+            continue
+        host = origin[len("https://"):].split("/")[0].split(":")[0].lower()
+        if host in seen or not safe_domain(host, deny):
+            continue
+        seen.add(host)
+        out.append(f"{host}|{rank}")
+    return out

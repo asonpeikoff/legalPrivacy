@@ -19,11 +19,11 @@ from noisycricket.useragents import sample_entry  # noqa: E402
 
 
 # ── phones ──────────────────────────────────────────────────────────────────
-def test_default_phone_is_iphone_13_with_safari_and_about_a_third_of_identities():
+def test_default_phone_is_iphone_13_with_safari_and_just_over_half_of_identities():
     rng = random.Random(4)
     es = [sample_entry(rng) for _ in range(3000)]
     phones = [e for e in es if e["mobile"]]
-    assert 0.30 < len(phones) / len(es) < 0.40
+    assert 0.50 < len(phones) / len(es) < 0.60
     assert all(e["device"] == "iPhone 13" and "iPhone" in e["ua"] and not e["chromium"] for e in phones)
     android = [sample_entry(rng, 1.0, "Pixel 7") for _ in range(50)]
     assert all(e["device"] == "Pixel 7" and "Android" in e["ua"] for e in android)
@@ -160,3 +160,28 @@ def test_how_often_weights_steer_my_list():
                       my_weights={"often-example.com": 10, "rare-example.org": 1})
     picks = [pool._mine() for _ in range(2000)]
     assert picks.count("often-example.com") > 7 * picks.count("rare-example.org")
+
+
+def test_engine_matches_your_browser_and_falls_back_to_chromium():
+    import tempfile
+    from unittest import mock
+    os.environ["CRICKET_HOME"] = tempfile.mkdtemp()
+    from noisycricket.controller import Controller
+    c = Controller()
+    c.apply_config({"identity": {"own_ua": "Mozilla/5.0 (X11; Linux x86_64; rv:160.0) Gecko/20100101 Firefox/160.0"}})
+    with mock.patch("noisycricket.browser.find_playwright_firefox", return_value="/x/firefox"):
+        assert c._browser_engine() == "firefox"
+    with mock.patch("noisycricket.browser.find_playwright_firefox", return_value=None):
+        assert c._browser_engine() == "chromium"                 # not installed: fall back
+    c.apply_config({"transports": {"clearnet": {"browser_engine": "chromium"}}})
+    with mock.patch("noisycricket.browser.find_playwright_firefox", return_value="/x/firefox"):
+        assert c._browser_engine() == "chromium"
+
+
+def test_firefox_engine_runs_phone_identities_as_desktop_without_devtools():
+    ident = make_identity(random.Random(1), 7, ["w"], entry=sample_entry(random.Random(9), 1.0, "iPhone 13"))
+    t = _transport()
+    t.engine = "firefox"
+    t._session(ident)
+    ctx = t._browser.contexts[0]
+    assert "is_mobile" not in ctx and t._browser.cdp == []

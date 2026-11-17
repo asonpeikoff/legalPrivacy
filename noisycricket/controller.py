@@ -54,6 +54,7 @@ class Controller:
     def __init__(self, profile_path: str | None = None):
         wipe_old_log_files()                      # older versions wrote cricket.log to disk
         self.log = EventLog()                     # live log is memory-only (never written to disk)
+        self._save_lock = threading.RLock()       # autosave: concurrent saves are serialised
         self.profile_path = profile_path or str(config_path())
         self.first_run = not Path(self.profile_path).exists()
         self.app: dict[str, Any] = dict(APP_DEFAULTS)
@@ -83,14 +84,17 @@ class Controller:
             self.log.error("app", f"Could not read config ({exc}); using defaults.")
 
     def _save(self) -> None:
-        data = profile_to_dict(self.profile)
-        data["app"] = self.app
-        path = Path(self.profile_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
-        tmp.replace(path)
-        self.first_run = False
+        # Settings save themselves, so two saves can arrive together: serialise them, and give
+        # each its own temporary file so one can never move the other's away.
+        with self._save_lock:
+            data = profile_to_dict(self.profile)
+            data["app"] = self.app
+            path = Path(self.profile_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_name(f"{path.name}.{threading.get_ident()}.tmp")
+            tmp.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+            tmp.replace(path)
+            self.first_run = False
 
     def wizard(self, answers: dict[str, Any]) -> dict:
         """Apply the 2–3 first-run answers and save.
@@ -112,6 +116,10 @@ class Controller:
 
     def apply_config(self, raw: dict[str, Any], save: bool = True) -> dict:
         """Validate+apply a partial profile dict. Takes effect on next (re)start."""
+        with self._save_lock:
+            return self._apply_config(raw, save)
+
+    def _apply_config(self, raw: dict[str, Any], save: bool = True) -> dict:
         new = copy.deepcopy(self.profile)
         tor_raw = (raw.get("transports") or {}).get("tor") or {}
         if "onion_seeds" in tor_raw:
@@ -188,12 +196,20 @@ class Controller:
         pool = DomainPool(_r.Random(), self.feeds, my_sites=ml.sites if ml.enabled else None,
                           random_share=ml.random_share, my_weights=ml.weights)
         pool.interests, pool.interest_share = self._interests(), self.profile.extras.interest_share
+        pool.site_list = self.profile.extras.site_list
         return pool
 
     def interests_state(self) -> dict:
         from .interests import CATEGORIES
         it = self._interests()
-        return {"themes": list(CATEGORIES), "active": it.active() if it else []}
+        ex = self.profile.extras
+        hh = []
+        if ex.household and ex.interest_salt:
+            from .household import Household
+            from .useragents import sample_entry
+            hh = Household(ex.household_size, ex.interest_salt, sample_entry=sample_entry,
+                           mobile_share=self.profile.traffic.mobile_share, device=self.profile.traffic.device).describe()
+        return {"themes": list(CATEGORIES), "active": it.active() if it else [], "household": hh}
 
     def estimate(self) -> dict:
         """Rough data use before running (idea from NoisyCompany): per day and per month."""
@@ -219,6 +235,32 @@ class Controller:
         return {"mb_per_day": round(day, 1), "gb_per_month": round(day * 30 / 1000, 2),
                 "actions_per_hour": round(actions_h), "hours_per_day": hours,
                 "real_browser": b_share > 0, "low_data": ex.low_data, "cap_mb": ex.daily_data_mb}
+
+    def selftest(self, days: float = 14) -> dict:
+        """How easily the noise could be told apart from your real browsing (local only)."""
+        import random as _r
+        from .history import visit_events
+        from .selftest import evaluate, simulate_noise
+        days = max(2.0, min(60.0, float(days)))
+        now = time.time()
+        since = now - days * 86400
+        real = visit_events(since, now)
+        hits = [h for h in (self.runner.hit_log if self.runner else []) if h["lane"] != "tor"]
+        session_span = (hits[-1]["ts"] - hits[0]["ts"]) if len(hits) > 1 else 0
+        if len(hits) >= 200 and session_span >= 86400:
+            import urllib.parse as up
+            noise = [(h["ts"], (up.urlparse(h["url"]).hostname if "://" in h["url"] else h["url"]) or "")
+                     for h in hits]
+            source = "this session's noise"
+        else:
+            noise = simulate_noise(self.profile, self._domain_pool(_r), since, now)
+            source = "noise simulated from your current settings"
+        ranks = {d: i for i, d in enumerate(self.feeds.items("tranco"))}
+        res = evaluate(real["events"], [(t, s.removeprefix("www.")) for t, s in noise if s], ranks)
+        res.update({"real_visits": len(real["events"]), "noise_events": len(noise), "noise_source": source,
+                    "days": days, "errors": real["errors"]})
+        self.log.info("tools", f"Self-test: {res.get('score', '—')}% ({res.get('verdict', res.get('error', ''))}).")
+        return res
 
     def privacy_check(self) -> list[dict]:
         from .nettools import privacy_check
@@ -271,7 +313,7 @@ class Controller:
             res = sites_from_urls([str(u) for u in urls[:50_000]], self.feeds.denylist())
         else:
             res = bookmark_sites(self.feeds.denylist())
-        self.log.info("mylist", f"Read bookmarks: {len(res['sites'])} sites found.")
+        self.log.info("mylist", f"Imported addresses: {len(res['sites'])} sites found.")
         return res
 
     def mylist_save(self, body: dict) -> dict:
@@ -302,6 +344,20 @@ class Controller:
             raise ConfigError("Paste or detect your browser's user agent first.")
         self.apply_config({"identity": allowed})
         return self.ua_state()
+
+    def _learn_own_ua(self) -> None:
+        """Default is your own browser's user agent. If it isn't known yet, read it once from the
+        installed browser; if that isn't possible, say so (noise rotates until it's pasted)."""
+        ident = self.profile.identity
+        if ident.ua_mode != "pin" or ident.ua_pin != "own" or ident.own_ua.strip():
+            return
+        res = self.ua_detect() if self.browser_info()["available"] else {"error": "no browser to read it from"}
+        if res.get("ua"):
+            self.apply_config({"identity": {"own_ua": res["ua"]}})
+            self.log.info("app", "Learned your browser's user agent; noise now looks like your browser.")
+        else:
+            self.log.warn("app", "Couldn't read your browser's user agent (" + res.get("error", "?") + "). "
+                                 "Noise rotates browsers until you paste it in Settings → User agent.")
 
     def ua_detect(self) -> dict:
         from .useragents import detect_own_ua
@@ -351,7 +407,10 @@ class Controller:
                                          "Using plain HTTP instead.")
             return None
         from .browser import BrowserTransport
-        return BrowserTransport(proxy=cfg.proxy, headless=not cfg.browser_visible, executable=info["detail"],
+        engine = self._browser_engine()
+        return BrowserTransport(proxy=cfg.proxy, headless=not (cfg.browser_visible or cfg.browser_offscreen),
+                                engine=engine,
+                                offscreen=cfg.browser_offscreen and not cfg.browser_visible, executable=info["detail"],
                                 low_data=self.profile.extras.low_data,
                                 stop_event=stop, scale=lambda: self.profile.realtime_scale,
                                 on_event=lambda lvl, msg: self.log.add(lvl, "browser", msg))
@@ -363,6 +422,19 @@ class Controller:
         import random as _r
         from .interests import Interests
         return Interests(_r.Random(), ex.interest_list, ex.interest_active, ex.interest_rotate_days, ex.interest_salt)
+
+    def _browser_engine(self) -> str:
+        """auto = match your own browser: Firefox if your user agent is Firefox and Playwright's
+        Firefox is installed; otherwise Chromium."""
+        from .browser import find_playwright_firefox
+        want = self.profile.transports["clearnet"].browser_engine
+        if want == "auto":
+            want = "firefox" if "Firefox/" in self.profile.identity.own_ua else "chromium"
+        if want == "firefox" and not find_playwright_firefox():
+            self.log.warn("browser", "Firefox engine wanted, but Playwright's Firefox isn't installed "
+                                     "(run: python -m playwright install firefox). Using Chromium.")
+            return "chromium"
+        return want
 
     def _query_source(self, words):
         import random as _r
@@ -414,6 +486,7 @@ class Controller:
                         return True
                     return False
             self._start_feed_timer()
+            self._learn_own_ua()
             browser_tr = self._clearnet_transport(self._stop)
             plain_tr = None
             if browser_tr is not None and prof.traffic.plain > 0:      # both kinds of clearnet noise

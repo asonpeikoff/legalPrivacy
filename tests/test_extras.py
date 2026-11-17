@@ -192,3 +192,62 @@ def test_estimate_and_privacy_check_have_the_expected_shape():
     assert c.estimate()["mb_per_day"] <= 1
     names = {x["name"] for x in c.privacy_check()}
     assert {"Content blocker", "VPN", "Encrypted DNS", "Real browser for noise"} <= names
+
+
+def test_betting_and_adult_names_are_filtered_without_blocking_lookalikes():
+    from noisycricket.safety import safe_domain
+    for bad in ("www.betano.pe", "crocobet.com", "1xbet.com", "dpbossnet.me", "hi.faphouse2.com",
+                "javwow.com", "olxtoto818.com", "slots77.com", "livecamrips.to"):
+        assert not safe_domain(bad), bad
+    for ok in ("www.betterhelp.com", "alphabet.com", "www.tibet.net", "beta.nptel.ac.in", "hindi.news18.com",
+               "slotted.example.com", "www.youtube.com", "dictionary.cambridge.org"):
+        assert safe_domain(ok), ok
+
+
+def test_crux_only_reranks_sites_already_on_the_safe_list():
+    from noisycricket.domains import DomainPool
+    from noisycricket.feeds import parse_crux
+
+    class Store:
+        def items(self, name):
+            return {"tranco": ["alpha-example.com", "beta-example.org", "gamma-example.net"],
+                    "crux": ["gamma-example.net|1000", "only-in-crux.example|1000"]}.get(name, [])
+        def denylist(self):
+            return set()
+    pool = DomainPool(random.Random(1), Store())
+    picks = [pool.pick() for _ in range(3000)]
+    assert "only-in-crux.example" not in picks                   # never a source on its own
+    assert picks.count("gamma-example.net") > picks.count("beta-example.org")   # boosted by real browsing
+    pool.site_list = "tranco"
+    pool._boost_cache = None
+    assert pool._crux_boost() == {}
+    assert parse_crux("origin,rank\nhttps://www.example.com,1000\nhttps://www.betano.pe,1000\nhttps://x.example,100000\n") \
+        == ["www.example.com|1000"]
+
+
+def test_household_members_keep_their_devices_and_follow_their_hours():
+    from noisycricket.household import Household
+    from noisycricket.useragents import sample_entry
+    t = [1_800_000_000.0]
+    hh = Household(4, "salt", clock=lambda: t[0], sample_entry=sample_entry)
+    ms = hh.members()
+    assert len(ms) == 4 and ms[0]["entry"] is None and all(m["entry"] for m in ms[1:])
+    assert hh.members() is ms                                         # same period: same people
+    rng = random.Random(1)
+    for h in (3, 10, 20):
+        picks = [hh.pick(rng, h)["id"] for _ in range(2000)]
+        awake = {m["id"] for m in ms if hh._awake(m["hours"], h)}
+        if awake and len(awake) < len(ms):
+            assert sum(p in awake for p in picks) / len(picks) > 0.7      # mostly whoever's awake
+    redrawn = False
+    for k in range(1, 8):                                             # a later period: new people
+        t[0] = 1_800_000_000.0 + k * 100 * 86400
+        redrawn |= [(m["rhythm"], (m["entry"] or {}).get("ua")) for m in hh.members()] != \
+                   [(m["rhythm"], (m["entry"] or {}).get("ua")) for m in ms]
+    assert redrawn
+
+
+def test_household_identities_come_from_several_browsers():
+    r = _runner({"household": True, "household_size": 4, "interest_salt": "abc"})
+    uas = {r._entry_for_next_identity()["ua"] for _ in range(200)}
+    assert len(uas) >= 2

@@ -40,16 +40,16 @@ or filtered OpenNIC resolvers; a local dashboard with live activity.
 | Polite mode: per-site minimum gap, robots.txt | madereddy/noisy, NoisyCompany, isp-data-pollution | Optional, off by default | **added** |
 | Browser-like DNS (AAAA and HTTPS records too) | NoisyCompany | Optional, on by default | **added** |
 | Interest personas (coherent themes, rotated) | NoisyCompany, phantom-noise categories | Optional, alongside My List | **added** |
-| Household masking (2–5 virtual people with their own hours) | NoisyCompany | Optional | planned |
+| Household masking (2–5 virtual people with their own hours) | NoisyCompany | Optional | **added** |
 | Follow your real activity (blend with your traffic volume, or back off when you're busy) | DNoiSe, NoisyCompany netwatch | Optional | **added** |
-| Pi-hole / AdGuard Home integration | DNoiSe, NoisyCompany | Optional | planned |
-| Separability self-test (how easily noise is told apart) | NoisyCompany study | Tools tab | planned |
+| Pi-hole / AdGuard Home integration | DNoiSe, NoisyCompany | Optional | not needed: “Mostly when I'm active” already follows your real activity |
+| Separability self-test (how easily noise is told apart) | NoisyCompany study | Tools tab, using your local history | **added** |
 | Data / energy estimate before running | NoisyCompany | Tools tab | **added** |
 | Local privacy check with advice | NoisyCompany | Tools tab | **added** |
 | Prometheus metrics | noisier, NoisyCompany | Optional endpoint | **added** |
-| Docker image, Raspberry Pi, Home Assistant | many | Packaging | planned |
-| Drive your real Firefox, not just Chromium | NoisyCompany companion | Optional | planned |
-| CrUX top-sites list (per country) as a site source | madereddy/noisy | Optional source next to Tranco | planned |
+| Docker image, Raspberry Pi, Home Assistant | many | Packaging | **added** (Docker + Raspberry Pi; Home Assistant not included) |
+| Drive your real Firefox, not just Chromium | NoisyCompany companion | Optional | **added** (Playwright's Firefox build; it can't drive an ordinary Firefox install) |
+| CrUX top-sites list (per country) as a site source | madereddy/noisy | Optional source next to Tranco | **added** (re-ranks the safe Tranco list; never a source on its own) |
 | Clicking ads | AdNauseam | **Not adopted**: it bills advertisers for fake clicks | declined |
 | Random DNS server per request | PartyLoud | Already: DNS Mix mode | have |
 | Poisson / exponential timing | phantom-noise, NoisyCompany | Already: sittings model | have |
