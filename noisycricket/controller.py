@@ -54,6 +54,7 @@ class Controller:
     def __init__(self, profile_path: str | None = None):
         wipe_old_log_files()                      # older versions wrote cricket.log to disk
         self.log = EventLog()                     # live log is memory-only (never written to disk)
+        self._save_lock = threading.RLock()       # autosave: concurrent saves are serialised
         self.profile_path = profile_path or str(config_path())
         self.first_run = not Path(self.profile_path).exists()
         self.app: dict[str, Any] = dict(APP_DEFAULTS)
@@ -83,14 +84,17 @@ class Controller:
             self.log.error("app", f"Could not read config ({exc}); using defaults.")
 
     def _save(self) -> None:
-        data = profile_to_dict(self.profile)
-        data["app"] = self.app
-        path = Path(self.profile_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
-        tmp.replace(path)
-        self.first_run = False
+        # Settings save themselves, so two saves can arrive together: serialise them, and give
+        # each its own temporary file so one can never move the other's away.
+        with self._save_lock:
+            data = profile_to_dict(self.profile)
+            data["app"] = self.app
+            path = Path(self.profile_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_name(f"{path.name}.{threading.get_ident()}.tmp")
+            tmp.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+            tmp.replace(path)
+            self.first_run = False
 
     def wizard(self, answers: dict[str, Any]) -> dict:
         """Apply the 2–3 first-run answers and save.
@@ -112,6 +116,10 @@ class Controller:
 
     def apply_config(self, raw: dict[str, Any], save: bool = True) -> dict:
         """Validate+apply a partial profile dict. Takes effect on next (re)start."""
+        with self._save_lock:
+            return self._apply_config(raw, save)
+
+    def _apply_config(self, raw: dict[str, Any], save: bool = True) -> dict:
         new = copy.deepcopy(self.profile)
         tor_raw = (raw.get("transports") or {}).get("tor") or {}
         if "onion_seeds" in tor_raw:

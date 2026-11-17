@@ -317,7 +317,7 @@ def profile_to_dict(profile: Profile) -> dict[str, Any]:
 
 def save_profile(profile: Profile, path: str) -> None:
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    tmp = path + ".tmp"
+    tmp = f"{path}.{os.getpid()}.{__import__('threading').get_ident()}.tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
         yaml.safe_dump(profile_to_dict(profile), fh, sort_keys=False)
     os.replace(tmp, path)

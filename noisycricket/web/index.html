@@ -146,7 +146,7 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
     <label class="chk"><input type="checkbox" id="tClear"><span><b>Also route clearnet noise through Tor</b> — <span class="warnc">not recommended</span>: exit relays carry the load and Tor-to-clearnet search patterns are distinctive. Leave off unless you know why you want it.</span></label>
     <label class="chk"><input type="checkbox" id="tManage"><span><b>Let noisyCricket manage Tor</b> (recommended, default). Untick to use an existing Tor at the address below instead.</span></label>
     <div class="row" id="tExt" style="display:none">SOCKS <input type="text" id="tSocks" size="16"> Control <input type="text" id="tCtl" size="16"></div>
-    <div class="row"><button id="tSave" class="pri">Save Tor settings</button><span class="small mute" id="tSaved"></span></div>
+    <div class="row"><button id="tSave" style="display:none" class="pri">Save Tor settings</button><span class="small mute" id="tSaved"></span></div>
   </div>
   <div class="card"><h3>Circuits (<span id="cCount">0</span> built)</h3>
     <div class="scroll" style="max-height:240px"><table><thead><tr><th>ID</th><th>Status</th><th>Purpose</th><th>Path</th></tr></thead><tbody id="cBody"></tbody></table></div>
@@ -210,7 +210,7 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
       <option value="mix">Mix of phones (mostly iPhone 13)</option></select></div>
     <div class="small mute">In the real browser, a phone gets that phone's screen size, touch input and its own browser's user agent (Safari for iPhones, with no Chrome-only headers). It still runs on this computer's Chromium underneath, so a site that checks deeply can tell.</div>
   </div>
-  <div class="card"><h3>User agent</h3>
+  <div class="card" id="uaCard"><h3>User agent</h3>
     <div class="small mute">The user agent is the line every browser sends that says what browser and system it is. Noise that claims a different browser than yours can stand out. Pick how the plain-HTTP noise sets it.</div>
     <div class="small" style="margin-top:8px"><b>Advice</b>
       <ul style="margin:4px 0 0 18px">
@@ -224,7 +224,7 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
     <label class="opt"><input type="radio" name="uamode" value="lib"> <b>Pin to one library entry</b> <span class="mute">(not recommended; pick one below)</span></label>
     <div class="row" style="margin-top:6px">Your browser's user agent <input type="text" id="uOwn" placeholder="paste it, or press Detect" style="flex:1;min-width:260px"></div>
     <div class="row"><button id="uDetect">Detect from my browser</button> <span class="small mute">Starts your installed Chrome/Chromium briefly, headless, to read it. Find it by hand in chrome://version (Chrome, Edge) or about:support (Firefox).</span></div>
-    <div class="row"><button id="uSave">Save user agent choice</button> <span class="small mute" id="uNote"></span></div>
+    <div class="row"><button id="uSave" style="display:none">Save user agent choice</button> <span class="small mute" id="uNote"></span></div>
     <div class="small mute" id="uApplies"></div>
     <details style="margin-top:10px"><summary><b>User-agent library</b> <span class="small mute" id="uCount"></span></summary>
       <div class="row" style="margin-top:6px"><input type="text" id="uSearch" placeholder="filter, e.g. Firefox or 158" style="flex:1"></div>
@@ -279,7 +279,7 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
     <label class="chk"><input type="checkbox" id="fAuto"><span>Refresh automatically when the lists are ~3 months old <span class="mute">(contacts those sites from your connection)</span></span></label>
     <div class="row" style="margin-top:8px"><button id="fRefresh">↻ Refresh sources now</button><span class="small mute" id="fNote"></span></div>
   </div>
-  <div class="row"><button id="sSave" class="pri">Save settings</button><button id="sWiz">Run setup questions again</button><span class="small mute" id="sSaved"></span></div>
+  <div class="row"><button id="sSave" style="display:none" class="pri">Save settings</button><button id="sWiz">Run setup questions again</button><span class="small mute" id="sSaved"></span></div>
   <div class="note small">Config file: <code id="sPath"></code><br>Changes apply the next time you press Start (Stop → Start).</div>
 </section>
 
@@ -331,7 +331,7 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
     <div class="row">Mix in other sites <input type="number" id="mShare" min="0" max="100" style="width:70px">% <span class="small mute">(30% recommended: enough variety that the noise isn't just your list)</span></div>
     <div class="row"><input type="text" id="mAdd" placeholder="add a site, e.g. example.com" style="flex:1"><button id="mAddBtn">Add</button></div>
     <div class="scroll" style="max-height:260px"><table><thead><tr><th>#</th><th>Site</th><th>How often</th><th></th></tr></thead><tbody id="mBody"></tbody></table></div>
-    <div class="row" style="margin-top:8px"><button id="mSave">Save My List</button><span class="small mute" id="mNote"></span></div>
+    <div class="row" style="margin-top:8px"><button id="mSave" style="display:none">Save My List</button><span class="small mute" id="mNote"></span></div>
   </div>
   <div class="card"><h3>Find my sites</h3>
     <p class="small mute">Reads your browsers' history on this computer only. Nothing is sent anywhere. Only site names and visit counts are read, and nothing is kept until you add sites. Sites the safety filter blocks are left out.</p>
@@ -538,10 +538,11 @@ function fillTor(force){
 }
 $$('#t-tor input,#t-tor textarea').forEach(i=>i.oninput=()=>{dirty.tor=true;$('#tExt').style.display=$('#tManage').checked?'none':'flex';$('#tSaved').textContent='unsaved changes'});
 $('#tClear').onchange=()=>{if($('#tClear').checked&&!confirm('Route ordinary clearnet noise through Tor?\n\nThis is NOT recommended: it adds load to Tor exit relays and Tor-exit search traffic is a distinctive pattern.\n\nUse only if you specifically want it.'))$('#tClear').checked=false};
-$('#tSave').onclick=async()=>{
+async function saveTor(auto){
   try{await api('/api/config',{transports:{tor:{enabled:$('#tEnable').checked,onion:$('#tOnion').checked,clearnet_via_tor:$('#tClear').checked,manage:$('#tManage').checked,socks:$('#tSocks').value,control:$('#tCtl').value||null,onion_seeds:$('#tSeeds').value,bridges:$('#tBridges').value}}});
-    dirty.tor=false;$('#tSaved').textContent='saved ✓ '+(S&&S.running?'(Stop → Start to apply)':'');toast('Tor settings saved');await poll();fillTor(true)}catch(e){toast(e.message,1)}
-};
+    dirty.tor=false;$('#tSaved').textContent='Saved ✓ '+(S&&S.running?'(applies the next time noise starts)':'');await poll()}catch(e){$('#tSaved').textContent='Not saved: '+e.message;if(!auto)toast(e.message,1)}
+}
+$('#tSave').onclick=()=>saveTor(false);
 // my list
 let ML=null, mFound=[];
 function fmtTime(t){return new Date(t*1000).toLocaleString()}
@@ -551,8 +552,8 @@ function renderML(){
   const OFT=[[1,'Rarely'],[3,'Sometimes'],[6,'Often'],[10,'Very often']];
   const near=v=>OFT.reduce((a,b)=>Math.abs(b[0]-v)<Math.abs(a[0]-v)?b:a)[0];
   $('#mBody').innerHTML=ML.sites.map((d,i)=>`<tr><td>${i+1}</td><td>${esc(d)}</td><td><select data-mw="${esc(d)}">${OFT.map(([v,l])=>`<option value="${v}" ${near(ML.weights[d]??3)===v?'selected':''}>${l}</option>`).join('')}</select></td><td><button data-mrm="${i}">Remove</button></td></tr>`).join('')||'<tr><td colspan=4 class="mute">Empty. Add sites, or find them below.</td></tr>';
-  $$('#mBody [data-mw]').forEach(sel=>sel.onchange=()=>{ML.weights[sel.dataset.mw]=parseFloat(sel.value);$('#mNote').textContent='unsaved changes'});
-  $$('#mBody [data-mrm]').forEach(b=>b.onclick=()=>{ML.sites.splice(+b.dataset.mrm,1);renderML();$('#mNote').textContent='unsaved changes'});
+  $$('#mBody [data-mw]').forEach(sel=>sel.onchange=()=>{ML.weights[sel.dataset.mw]=parseFloat(sel.value);mlChanged()});
+  $$('#mBody [data-mrm]').forEach(b=>b.onclick=()=>{ML.sites.splice(+b.dataset.mrm,1);renderML();mlChanged()});
 }
 function fillML(){
   if(!ML)return; $('#mEnabled').checked=ML.enabled; $('#mShare').value=Math.round(ML.random_share*100); renderML();
@@ -582,7 +583,7 @@ function showFound(res,kind){
       // visits -> "how often": top tenth very often, next fifth often, next third sometimes, rest rarely
       const r=i/Math.max(1,mFound.length);
       if(ML.weights[d]===undefined)ML.weights[d]=mFoundKind==='bookmarks'?3:(r<0.1?10:r<0.3?6:r<0.6?3:1);});
-    renderML();$('#mNote').textContent='unsaved changes — press Save My List';};
+    renderML();mlChanged();};
 }
 async function mWatch(action){
   try{const r=await api('/api/mylist/watch',{action,hours:parseFloat($('#mHours').value)});
@@ -590,12 +591,14 @@ async function mWatch(action){
 }
 $('#mWatch').onclick=()=>{if(!ML||!ML.watch_started)mWatch('start')};
 $('#mScan').onclick=async()=>{$('#mFound').textContent='Reading history…';try{showFound(await api('/api/mylist/scan',{days:parseFloat($('#mDays').value||30)}))}catch(e){$('#mFound').textContent=e.message}};
-$('#mAddBtn').onclick=()=>{const d=$('#mAdd').value.trim().toLowerCase().replace(/^https?:\/\//,'').replace(/^www\./,'').split('/')[0];if(d&&ML&&!ML.sites.includes(d)){ML.sites.push(d);renderML();$('#mAdd').value='';$('#mNote').textContent='unsaved changes'}};
+$('#mAddBtn').onclick=()=>{const d=$('#mAdd').value.trim().toLowerCase().replace(/^https?:\/\//,'').replace(/^www\./,'').split('/')[0];if(d&&ML&&!ML.sites.includes(d)){ML.sites.push(d);renderML();$('#mAdd').value='';mlChanged()}};
 $('#mBm').onclick=async()=>{$('#mFound').textContent='Reading bookmarks…';try{showFound(await api('/api/mylist/bookmarks',{}),'bookmarks')}catch(e){$('#mFound').textContent=e.message}};
 $('#mBmFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;$('#mFound').textContent='Reading file…';
   const text=await f.text(); const urls=[...text.matchAll(/href\s*=\s*"([^"]+)"/gi)].map(m=>m[1]).filter(u=>/^https?:/i.test(u));
   try{showFound(await api('/api/mylist/bookmarks',{urls}),'bookmarks')}catch(err){$('#mFound').textContent=err.message}; e.target.value='';};
-$('#mSave').onclick=async()=>{try{ML=await api('/api/mylist',{enabled:$('#mEnabled').checked,sites:ML.sites,weights:Object.fromEntries(ML.sites.map(d=>[d,(ML.weights||{})[d]??3])),random_share:parseInt($('#mShare').value||30)/100});fillML();$('#mNote').textContent='saved ✓ '+(ML.running?'(Stop → Start to apply)':'');toast('My List saved')}catch(e){$('#mNote').textContent=e.message;toast(e.message,1)}};
+async function saveML(auto){try{ML=await api('/api/mylist',{enabled:$('#mEnabled').checked,sites:ML.sites,weights:Object.fromEntries(ML.sites.map(d=>[d,(ML.weights||{})[d]??3])),random_share:parseInt($('#mShare').value||30)/100});fillML();$('#mNote').textContent='Saved ✓ '+(ML.running?'(applies the next time noise starts)':'')}catch(e){$('#mNote').textContent='Not saved: '+e.message;if(!auto)toast(e.message,1)}}
+$('#mSave').onclick=()=>saveML(false);
+let mlT=null;function mlChanged(){clearTimeout(mlT);$('#mNote').textContent='Saving…';mlT=setTimeout(()=>saveML(true),500)}
 
 // user agents
 let UA=null;
@@ -616,7 +619,7 @@ function renderUABody(){
   $$('#uBody [data-pin]').forEach(b=>b.onclick=()=>saveUA({pin:b.dataset.pin}));
 }
 async function loadUA(){try{UA=await api('/api/useragents');fillUA()}catch(e){$('#uNote').textContent=e.message}}
-async function saveUA(override){
+async function saveUA(override,auto){
   const v=uaRadioValue(); let body;
   if(override){body={ua_mode:'pin',ua_pin:override.pin}}
   else if(v==='own')body={ua_mode:'pin',ua_pin:'own'};
@@ -625,11 +628,11 @@ async function saveUA(override){
   body.own_ua=$('#uOwn').value.trim();
   if(body.ua_mode==='pin'&&body.ua_pin==='own'&&!body.own_ua){$('#uNote').textContent='Paste or detect your browser’s user agent first.';return}
   if(body.ua_mode==='pin'&&!body.ua_pin){$('#uNote').textContent='Click “Pin this” on a library entry below.';$('#uSearch').focus();return}
-  try{UA=await api('/api/useragents',body);fillUA();$('#uNote').textContent='saved ✓ '+(UA.running?'(Stop → Start to apply)':'');toast('User agent choice saved')}catch(e){$('#uNote').textContent=e.message;toast(e.message,1)}
+  try{UA=await api('/api/useragents',body);fillUA();$('#uNote').textContent='Saved ✓ '+(UA.running?'(applies the next time noise starts)':'')}catch(e){$('#uNote').textContent='Not saved: '+e.message;if(!auto)toast(e.message,1)}
 }
 $('#uSave').onclick=()=>saveUA();
 $('#uSearch').oninput=renderUABody;
-$('#uDetect').onclick=async()=>{$('#uNote').textContent='Starting your browser briefly…';try{const d=await api('/api/useragents/detect',{});if(d.error){$('#uNote').textContent=d.error}else{$('#uOwn').value=d.ua;$('#uNote').textContent='Detected. Press “Save user agent choice” to use it.'}}catch(e){$('#uNote').textContent=e.message}};
+$('#uDetect').onclick=async()=>{$('#uNote').textContent='Starting your browser briefly…';try{const d=await api('/api/useragents/detect',{});if(d.error){$('#uNote').textContent=d.error}else{$('#uOwn').value=d.ua;saveUA(null,true)}}catch(e){$('#uNote').textContent=e.message}};
 
 // settings
 function fillSettings(force){
@@ -678,7 +681,7 @@ function fillSettings(force){
   const q=p.queries||{};$('#qLive').checked=q.live!==false;$('#qData').checked=q.dataset!==false;$('#qBuiltin').checked=q.builtin!==false;$('#qWords').checked=q.words!==false;$('#sAuto').checked=!!S.app.autostart;$('#sPath').textContent=S.config_path;dirty.set=false;
   $$('#t-set input').forEach(i=>i.oninput=()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'});
 }
-$('#sSave').onclick=async()=>{
+async function saveSettings(auto){
   const engines={};$$('[data-en]').forEach(i=>engines[i.dataset.en]={enabled:i.checked});$$('[data-bud]').forEach(i=>engines[i.dataset.bud].budget_per_day=parseInt(i.value||0)*20);
   const rnd=parseInt($('#sRand').value||0)/100;
   try{await api('/api/config',{realtime_scale:parseFloat($('#sScale').value),daily_max_failures:parseInt($('#sMaxF').value),engines,rate:{mode:rnd>0?'random':'steady',level:parseFloat($('#sLevel').value),randomness:rnd},
@@ -696,9 +699,20 @@ $('#sSave').onclick=async()=>{
               interest_list:(()=>{const all=$$('[data-th]'),on=all.filter(c=>c.checked).map(c=>c.dataset.th);return on.length===all.length?[]:on})(),
               activity:(document.querySelector('input[name=iact]:checked')||{}).value||'off',busy_kbps:parseInt($('#iBusy').value||400),
               metrics:$('#eMetrics').checked}});
-    await api('/api/app',{autostart:$('#sAuto').checked});dirty.set=false;$('#sSaved').textContent='saved ✓ '+(S&&S.running?'(Stop → Start to apply)':'');toast('Settings saved');poll()}catch(e){toast(e.message,1)}
-};
+    await api('/api/app',{autostart:$('#sAuto').checked});dirty.set=false;$('#sSaved').textContent='Saved ✓ '+(S&&S.running?'(applies the next time noise starts)':'');poll()}catch(e){$('#sSaved').textContent='Not saved: '+e.message;if(!auto)toast(e.message,1)}
+}
+$('#sSave').onclick=()=>saveSettings(false);
 $('#sWiz').onclick=()=>showWiz();
+// Settings save themselves: a moment after a change (longer while typing in a text box).
+function autoSave(root,fn,skip){let t=null;const h=e=>{const el=e.target;
+  if(!el||el.type==='file'||el.type==='button'||(skip&&el.closest(skip)))return;
+  const typing=e.type==='input'&&(el.type==='text'||el.type==='number'||el.tagName==='TEXTAREA');
+  clearTimeout(t);t=setTimeout(fn,typing?1200:450)};
+  root.addEventListener('input',h);root.addEventListener('change',h)}
+autoSave($('#t-set'),()=>saveSettings(true),'#uaCard');
+autoSave($('#uaCard'),()=>saveUA(null,true),'#uSearch');
+autoSave($('#t-tor'),()=>saveTor(true),null);
+autoSave($('#t-mylist').querySelector('.card'),()=>mlChanged(),'#mAdd');
 // search engines: relative sliders; untouched = defaults (saved as {})
 let engTouched=false;
 function renderEngines(custom){
