@@ -154,6 +154,37 @@ class Controller:
                                   bridges=cfg.bridges, auto_install=cfg.auto_install)
         return self.tor
 
+    # ── Tools tab: network checks (user-initiated, clearnet only) ───────────
+    def resolvers_check(self) -> dict:
+        from . import nettools
+        dns = self.profile.dns
+        secure: list[str] = []
+        if dns.opennic:
+            secure += [x.split("|")[0] for x in self.feeds.items("opennic")]
+        if dns.quad9:
+            secure += ["9.9.9.9", "149.112.112.112"]
+        secure += list(dns.custom)
+        return nettools.dns_leak_check(secure)
+
+    def speed_start(self) -> dict:
+        from . import nettools
+        st = getattr(self, "_speed", None)
+        if st and st.get("state") == "running":
+            return st
+        self._speed = {"state": "running", "progress": "Starting…", "result": None}
+        proxy = self.profile.transports.clearnet.proxy
+
+        def work():
+            res = nettools.speed_test(proxy, progress=lambda s: self._speed.update(progress=s))
+            self._speed.update(state="done", progress="", result=res)
+            self.log.info("tools", f"Speed test: down {res['down_mbps']} Mbit/s, up {res['up_mbps']} Mbit/s"
+                          + (f" ({'; '.join(res['errors'])})" if res["errors"] else ""))
+        threading.Thread(target=work, daemon=True).start()
+        return self._speed
+
+    def speed_status(self) -> dict:
+        return getattr(self, "_speed", None) or {"state": "idle"}
+
     def tor_action(self, action: str) -> dict:
         tm = self.tor_manager()
         if action == "start":

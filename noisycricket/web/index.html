@@ -251,6 +251,18 @@ label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointe
 </div></div>
 <!-- TOOLS -->
 <section id="t-tools" class="tab">
+  <div class="card"><h3>DNS leak check</h3>
+    <p class="small mute">Shows which DNS servers your computer is set to use, and whether any of them is one you did not choose for noise. Each click makes one lookup of a random, never-used name.</p>
+    <div class="row"><button id="toolDns">Run DNS check</button></div>
+    <div id="toolDnsOut" class="small" style="margin-top:8px"></div>
+    <div class="small mute" style="margin-top:8px">This check reads your computer's own configuration. To see which resolver actually answers, the external test is the authoritative one:
+      <a href="https://www.dnsleaktest.com/" target="_blank" rel="noopener">dnsleaktest.com</a> (opens in a new tab).</div>
+  </div>
+  <div class="card"><h3>Speed test</h3>
+    <p class="small mute">Downloads about 10 MB and uploads 2 MB once, over the normal internet (not Tor), through your clearnet proxy if you set one. Runs only when you click.</p>
+    <div class="row"><button id="toolSpeed">Run speed test</button><span class="small mute" id="toolSpeedNote"></span></div>
+    <div id="toolSpeedOut" class="small" style="margin-top:8px"></div>
+  </div>
   <div class="card"><h3>Live log</h3>
     <p class="small mute">The live log is kept in memory only. Nothing is written to disk, and it is cleared when noisyCricket quits.</p>
     <div class="row"><button id="toolClearLog">Clear live log now</button><span class="small mute" id="toolLogNote"></span></div>
@@ -450,6 +462,30 @@ function rateInfo(sl,out){
 }
 $('#wLevel').oninput=()=>rateInfo('wLevel','wLevelInfo');
 $('#sLevel').oninput=()=>{rateInfo('sLevel','sLevelInfo');dirty.set=true;$('#sSaved').textContent='unsaved changes'};
+$('#toolDns').onclick=async()=>{
+  const o=$('#toolDnsOut'); o.textContent='Checking…';
+  try{const d=await api('/api/tools/resolvers');
+    const rows=d.resolvers.length?d.resolvers.map(r=>`<tr><td><code>${esc(r.ip)}</code></td><td>${esc(r.verdict)}</td></tr>`).join(''):'<tr><td colspan=2 class="mute">No resolver found in your system settings.</td></tr>';
+    o.innerHTML=`<table><thead><tr><th>Resolver your computer uses</th><th>What it is</th></tr></thead><tbody>${rows}</tbody></table>`+
+      (d.note?`<div class="note small" style="margin-top:6px">${esc(d.note)}</div>`:'')+
+      `<div style="margin-top:6px">Sample lookup: ${d.sample_lookup.ms} ms, ${esc(d.sample_lookup.result)}</div>`;
+  }catch(e){o.textContent=e.message}
+};
+let speedTimer=null;
+function showSpeed(s){
+  const n=$('#toolSpeedNote'), o=$('#toolSpeedOut');
+  if(s.state==='running'){n.textContent=s.progress||'Running…';return}
+  if(s.state==='done'&&s.result){const r=s.result;
+    o.innerHTML=`Download <b>${r.down_mbps??'—'} Mbit/s</b> · Upload <b>${r.up_mbps??'—'} Mbit/s</b> <span class="mute">(via ${esc(r.via)})</span>`+
+      (r.errors.length?`<div class="warnc">${esc(r.errors.join('; '))}</div>`:'');
+    n.textContent='done'; $('#toolSpeed').disabled=false; clearInterval(speedTimer);}
+}
+$('#toolSpeed').onclick=async()=>{
+  $('#toolSpeed').disabled=true; $('#toolSpeedOut').textContent=''; 
+  try{showSpeed(await api('/api/tools/speed',{}));
+    clearInterval(speedTimer); speedTimer=setInterval(async()=>{try{showSpeed(await api('/api/tools/speed'))}catch(e){}},700);
+  }catch(e){toast(e.message,1);$('#toolSpeed').disabled=false}
+};
 $('#toolClearLog').onclick=()=>act('/api/logs/clear').then(()=>{$('#toolLogNote').textContent='cleared';renderLog(true)});
 $('#fRefresh').onclick=()=>{if(confirm('Download fresh lists now from Google Trends, Wikipedia, BBC, Hugging Face and Tranco? This contacts those sites from your connection.')){act('/api/feeds/refresh');toast('Refreshing sources in the background…')}};
 $('#fAuto').onchange=()=>act('/api/app',{auto_refresh_sources:$('#fAuto').checked});

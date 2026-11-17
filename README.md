@@ -52,7 +52,7 @@ typo can never be dispatched; add your own seeds on the Tor tab.
 | **🧅 Tor** | status + bootstrap progress, version/ports/PID/traffic, **Start / Stop / Restart / New identity / Install**, live circuits table (onion-service circuits marked `HS_CLIENT_*`), Tor-only log, mode switches, onion seeds, bridges |
 | **Settings** | per-engine budgets & presets, speed, failure cap, proxy, autostart, **Realism** (real browser, show window, query sources + their live status) |
 | **Health** | plain-language self-checks (libs, internet, Tor program/status, seeds, ports) |
-| **Tools** | clear the live log now, links to outside checks (Tor, OpenNIC), config file location |
+| **Tools** | DNS leak check (which resolvers your computer uses, plus a sample lookup), speed test (10 MB down / 2 MB up over the clearnet, on click only), clear the live log, links to outside checks, config file location |
 
 The dashboard listens only on `127.0.0.1`, requires a token in its link (kept between launches so bookmarks work), and rejects
 foreign `Host`/`Origin` headers. Config lives in `~/.noisycricket/config.yaml`
