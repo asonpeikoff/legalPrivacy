@@ -18,10 +18,10 @@
   var MAX_NODES = 300;          // hard cap on rendered nodes (heaviest kept)
   var MAX_LABELS = 25;          // permanent labels for the heaviest nodes
   var LABEL_CHARS = 28;
-  var R_MIN = 4, R_MAX = 28;    // node radius range (px)
-  var W_MIN = 0.5, W_MAX = 6;   // link width range (px)
+  var R_MIN = 3, R_MAX = 16;    // node radius: 3 + 2.2*sqrt(weight), clamped
+  var W_MIN = 0.6, W_MAX = 5;   // link width: 0.6 + 0.5*sqrt(weight), clamped
   var FADE_IN_MS = 400, FADE_OUT_MS = 600;
-  var CENTER_R = 13;
+  var CENTER_R = 14;            // center node is always the largest
   var CHAR_W = 6.2;             // estimated width of one 11px character
   var LEGEND = [
     ['you', 'Your apps'], ['noise', 'noisyCricket'], ['tor', 'Tor'], ['dns', 'DNS']
@@ -136,13 +136,21 @@
     this.container.appendChild(wrap);
   };
 
+  // Dark theme if <html data-theme=dark>, or the OS prefers dark and the page isn't forced light.
+  NetMap.prototype._isDark = function () {
+    var t = document.documentElement.getAttribute('data-theme');
+    if (t === 'dark') return true;
+    if (t === 'light') return false;
+    return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  };
+
   // Read theme colors from the document's CSS custom properties.
   NetMap.prototype._readColors = function () {
     var cs = getComputedStyle(document.documentElement);
     function v(name, fb) { var x = cs.getPropertyValue('--' + name).trim(); return x || fb; }
     var c = {
       noise: v('acc', FALLBACK.acc), tor: v('tor', FALLBACK.tor), dns: v('warn', FALLBACK.warn),
-      other: v('mute', FALLBACK.mute), you: '#4a8fe7',
+      other: v('mute', FALLBACK.mute), you: v('you-map', this._isDark() ? '#3fb8a9' : '#2a9d8f'),
       ink: v('ink', FALLBACK.ink), mute: v('mute', FALLBACK.mute),
       panel: v('panel', FALLBACK.panel), line: v('line', FALLBACK.line)
     };
@@ -203,25 +211,14 @@
       (h / 2 - pad) / (this.sy * (1 + half))));
   };
 
-  // Target radius / line width per node from its relative weight (n.t),
-  // shrunk by an area budget so many nodes don't overcrowd the canvas.
+  // Absolute sizing from traffic: radius and line width scale with sqrt(weight).
   NetMap.prototype._sizeNodes = function () {
-    var area = 0, w = this.width, h = this.height;
     this.nodes.forEach(function (n) {
-      if (n.removing) return;
-      var r0 = R_MIN + (R_MAX - R_MIN) * (n.t || 0) + 3;
-      area += Math.PI * r0 * r0;
+      var sw = n.sw || 0;
+      n.rt = clamp(3 + 2.2 * sw, R_MIN, R_MAX);
+      n.lwt = clamp(0.6 + 0.5 * sw, W_MIN, W_MAX);
     });
-    var budget = 0.18 * w * h;
-    var shrink = area > budget ? Math.sqrt(budget / area) : 1;
-    var rMin = Math.max(2.5, R_MIN * Math.min(1, shrink * 1.4));
-    var rMax = Math.max(rMin + 3, Math.min(R_MAX * shrink, Math.min(w, h) / 15));
-    this.nodes.forEach(function (n) {
-      var t = n.t || 0;
-      n.rt = rMin + (rMax - rMin) * t;
-      n.lwt = W_MIN + (W_MAX - W_MIN) * t;
-    });
-    this.rMax = rMax;
+    this.rMax = R_MAX;
     this._fitRing();
   };
 
@@ -298,7 +295,7 @@
       this.tip.style.display = 'none';
     } else {
       this.hoverId = id;
-      this.tipTitle.textContent = n.text;
+      this.tipTitle.textContent = n.text || 'Your app';
       this.tipBody.textContent = n.detail || '';
       this.tipBody.style.display = n.detail ? '' : 'none';
       this.tip.style.display = 'block';
@@ -388,9 +385,6 @@
       clean.length = MAX_NODES;
     }
 
-    var maxW = 0;
-    for (i = 0; i < clean.length; i++) if (clean[i].weight > maxW) maxW = clean[i].weight;
-    var sMax = Math.sqrt(maxW) || 1;
     var keep = Object.create(null), added = 0, self = this;
     for (i = 0; i < clean.length; i++) {
       d = clean[i];
@@ -402,9 +396,8 @@
       n.kind = d.kind;
       n.weight = d.weight;
       n.detail = d.detail;
-      n.text = d.label || d.id;
-      var t = Math.sqrt(d.weight) / sMax;
-      n.t = t;
+      n.text = d.kind === 'you' ? '' : (d.label || d.id);
+      n.sw = Math.sqrt(d.weight);
       if (n.active !== d.active) {
         n.active = d.active;
         n.ring.style.display = d.active && !this.reduced ? '' : 'none';
@@ -418,7 +411,7 @@
     });
 
     // Pick the label set: heaviest MAX_LABELS live nodes.
-    var live = clean.slice().sort(function (a, b) { return b.weight - a.weight || (a.id < b.id ? -1 : 1); });
+    var live = clean.filter(function (x) { return x.kind !== 'you'; }).sort(function (a, b) { return b.weight - a.weight || (a.id < b.id ? -1 : 1); });
     // Fewer permanent labels on small canvases.
     var maxLabels = Math.min(MAX_LABELS, Math.max(6, Math.floor(this.width * this.height / 9000)));
     this.labelIds = live.slice(0, maxLabels).map(function (x) { return x.id; });
@@ -441,7 +434,7 @@
 
     if (this.hoverId !== null && this.nodes.has(this.hoverId)) {
       var hn = this.nodes.get(this.hoverId);
-      this.tipTitle.textContent = hn.text;
+      this.tipTitle.textContent = hn.text || 'Your app';
       this.tipBody.textContent = hn.detail;
     }
     this._kick(added ? 0.8 : 0.12);
@@ -599,7 +592,10 @@
   // never overlaps another label and covers the fewest other nodes.
   NetMap.prototype._drawLabels = function () {
     var ids = (this.labelIds || []).slice();
-    if (this.hoverId !== null && ids.indexOf(this.hoverId) < 0) ids.unshift(this.hoverId);
+    if (this.hoverId !== null && ids.indexOf(this.hoverId) < 0) {
+      var hv = this.nodes.get(this.hoverId);
+      if (hv && hv.text) ids.unshift(this.hoverId);
+    }
     var want = Object.create(null), placed = [], w = this.width, h = this.height;
     var others = [];
     this.nodes.forEach(function (n) { if (!n.removing) others.push(n); });
