@@ -368,3 +368,29 @@ def test_popular_data_science_sites_come_up_more_and_real_searches_are_used():
     assert len(real) > 5000
     qs = [p.query() for _ in range(500)]
     assert 0.65 < sum(q in real for q in qs) / len(qs) < 0.95                      # mostly real people's wording
+
+
+def test_foreign_language_sites_and_pages_are_skipped():
+    from legalprivacy.engines import CrawlTargetFactory
+    from legalprivacy.safety import english_host, english_url, page_language
+    assert not english_host("www.spiegel.de") and not english_host("de.wikipedia.org") and not english_host("x.co.jp")
+    assert english_host("en.wikipedia.org") and english_host("pola.rs") and english_host("huggingface.co")
+    assert english_host("bbc.co.uk") and english_host("fast.ai")
+    assert not english_url("https://example.com/de/") and not english_url("https://example.com/pt-br/x")
+    assert english_url("https://example.com/en-gb/") and english_url("https://example.com/docs/")
+    assert page_language('<html lang="de-DE"><body>') == "de" and page_language("<html><body>") is None
+    html = '<a href="/de/seite">a</a><a href="/fr/page">b</a><a href="/guide">c</a>'
+    f = CrawlTargetFactory(rng=random.Random(1), seeds=["https://example.com/"])
+    assert {f.next_from(html, "https://example.com/").url for _ in range(30)} == {"https://example.com/guide"}
+
+
+def test_a_page_in_another_language_is_left_quickly_and_the_site_rested():
+    r = _runner({}, probe=lambda *a: HitResult(200, '<html lang="fr"><a href="/x">x</a></html>'))
+    for l in r.lanes:
+        for e in l.engines:
+            l.budgets[e].per_day, l.budgets[e].spent = 10, 0
+    for _ in range(40):
+        r.run_once(wait=False)
+    pages = [h for h in r.hit_log if h["engine"] == "crawl"]
+    assert pages and all(h["detail"] == "not in English: moved on" for h in pages)
+    assert r._host_rested(pages[0]["url"])

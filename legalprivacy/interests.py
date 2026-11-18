@@ -31,7 +31,7 @@ CATEGORIES: dict[str, dict] = {
                                "seaborn.pydata.org": 5, "spark.apache.org": 5, "sqlbolt.com": 2, "statquest.org": 2,
                                "stats.stackexchange.com": 5, "streamlit.io": 5, "tensorflow.org": 12, "towardsdatascience.com": 5,
                                "wandb.ai": 5, "www.analyticsvidhya.com": 5, "www.comet.com": 2, "www.coursera.org": 12,
-                               "www.datacamp.com": 5, "www.dataquest.io": 2, "www.datasciencecentral.com": 2, "www.datawrapper.de": 2,
+                               "www.datacamp.com": 5, "www.dataquest.io": 2, "www.datasciencecentral.com": 2,
                                "www.deeplearning.ai": 5, "www.edx.org": 12, "www.evidentlyai.com": 2, "www.freecodecamp.org": 12,
                                "www.geeksforgeeks.org": 12, "www.getdbt.com": 2, "www.github.com": 12, "www.google.com": 12,
                                "www.gradio.app": 5, "www.hackerrank.com": 12, "www.itl.nist.gov/div898/handbook/": 2,

@@ -36,18 +36,42 @@ class _CDP:
     def send(self, method, params): self.log.append((method, params))
 
 
+class _Page:
+    def __init__(self): self.closed, self.handlers, self.viewport = False, {}, None
+    def on(self, ev, fn): self.handlers.setdefault(ev, []).append(fn)
+    def close(self):
+        self.closed = True
+        for fn in self.handlers.get("close", []):
+            fn(self)
+    def set_viewport_size(self, vp): self.viewport = vp
+
+
 class _Ctx:
-    def __init__(self, kw, log): self.kw, self.log = kw, log
-    def new_page(self): return object()
+    def __init__(self, kw, log): self.kw, self.log, self.pages, self.handlers, self.scripts = kw, log, [], {}, []
+    def add_init_script(self, js): self.scripts.append(js)
+    def on(self, ev, fn): self.handlers.setdefault(ev, []).append(fn)
+    def route(self, *a): pass
+    def new_page(self):
+        pg = _Page()
+        self.pages.append(pg)
+        for fn in self.handlers.get("page", []):       # Playwright fires "page" before new_page returns
+            fn(pg)
+        return pg
+    def site_opens_popup(self):
+        pg = _Page()
+        for fn in self.handlers.get("page", []):
+            fn(pg)
+        return pg
     def new_cdp_session(self, page): return _CDP(self.log)
     def close(self): pass
 
 
 class _Browser:
-    def __init__(self): self.contexts, self.cdp = [], []
+    def __init__(self): self.contexts, self.cdp, self.ctxs = [], [], []
     def new_context(self, **kw):
         self.contexts.append(kw)
-        return _Ctx(kw, self.cdp)
+        self.ctxs.append(_Ctx(kw, self.cdp))
+        return self.ctxs[-1]
 
 
 def _transport(headless=True, exe="/usr/bin/google-chrome"):
@@ -68,16 +92,46 @@ def test_iphone_identity_gets_iphone_screen_touch_and_a_clean_safari_override():
     assert params["userAgent"] == ident.user_agent
 
 
-def test_headless_desktop_does_not_say_headless():
-    ident = make_identity(random.Random(1), 3, ["w"], entry=sample_entry(random.Random(2), 0.0))
-    t = _transport(headless=True)
-    t._session(ident)
+def _desktop_identity(seed=2, n=3):
+    for i in range(200):
+        e = sample_entry(random.Random(seed + i), 0.0)
+        if e["chromium"] and "Chrome/" in e["ua"]:
+            return make_identity(random.Random(1), n, ["w"], entry=e)
+    raise AssertionError("no chromium desktop entry")
+
+
+def test_every_tab_uses_the_identitys_own_user_agent_hidden_or_visible():
+    ident = _desktop_identity()
+    for headless in (True, False):
+        t = _transport(headless=headless)
+        t._session(ident)
+        _, params = t._browser.cdp[0]
+        assert params["userAgent"] == ident.user_agent and "Headless" not in params["userAgent"]
+        major = ident.user_agent.split("Chrome/")[1].split(".")[0]
+        assert {"brand": "Chromium", "version": major} in params["userAgentMetadata"]["brands"]
+
+
+def test_firefox_or_safari_user_agents_send_no_client_hints():
+    e = dict(sample_entry(random.Random(2), 0.0), ua="Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) "
+             "Gecko/20100101 Firefox/133.0", chromium=False, platform="Windows")
+    t = _transport()
+    t._session(make_identity(random.Random(1), 4, ["w"], entry=e))
     _, params = t._browser.cdp[0]
-    assert "Headless" not in params["userAgent"] and "Chrome/158.0.0.0" in params["userAgent"]
-    assert [b["brand"] for b in params["userAgentMetadata"]["brands"]][-1] == "Google Chrome"
-    visible = _transport(headless=False)
-    visible._session(ident)
-    assert visible._browser.cdp == []          # a visible window already reports itself honestly
+    assert "Firefox/133.0" in params["userAgent"] and "userAgentMetadata" not in params
+
+
+def test_identities_are_tabs_in_one_window_and_popups_are_closed():
+    t = _transport(headless=False)
+    a, b = _desktop_identity(2, 3), _desktop_identity(40, 5)
+    t._session(a)
+    t._session(b)
+    assert len(t._browser.ctxs) == 1 and len(t._browser.ctxs[0].pages) == 2     # two tabs, one window
+    assert not any(pg.closed for pg in t._browser.ctxs[0].pages)
+    assert "window.open" in t._browser.ctxs[0].scripts[0]
+    popup = t._browser.ctxs[0].site_opens_popup()
+    assert popup.closed                                                          # never runs with another UA
+    t._session(_desktop_identity(80, 9))                                         # a third: oldest tab closes
+    assert len(t._browser.ctxs) == 1 and t._browser.ctxs[0].pages[0].closed
 
 
 # ── traffic mix ─────────────────────────────────────────────────────────────
@@ -184,4 +238,4 @@ def test_firefox_engine_runs_phone_identities_as_desktop_without_devtools():
     t.engine = "firefox"
     t._session(ident)
     ctx = t._browser.contexts[0]
-    assert "is_mobile" not in ctx and t._browser.cdp == []
+    assert "is_mobile" not in ctx and t._browser.cdp == [] and ctx["user_agent"] == ident.user_agent
