@@ -402,7 +402,7 @@ tbody tr:hover td{background:var(--code)}
     <label class="chk"><input type="checkbox" id="fAuto"><span>Refresh automatically when the lists are ~3 months old <span class="mute">(contacts those sites from your connection)</span></span></label>
     <div class="row" style="margin-top:8px"><button id="fRefresh">↻ Refresh sources now</button><span class="small mute" id="fNote"></span></div>
   </div>
-  <div class="card"><h3>Panic <details class="why"><summary>ⓘ</summary><div>Stops the noise right away. <b>Medium</b> also clears the log and the noise browser's cookies. <b>Hard</b> also stops Tor and deletes what noisyCricket recorded about connections (the Proof tab data) and its log files. Your settings are never deleted, and nothing outside noisyCricket's own folder is touched.</div></details></h3>
+  <div class="card"><h3>Panic <details class="why"><summary>ⓘ</summary><div>Stops the noise right away. <b>Medium</b> also clears the log and the noise browser's cookies. <b>Hard</b> also stops Tor and deletes what legalPrivacy recorded about connections (the Proof tab data) and its log files. Your settings are never deleted, and nothing outside legalPrivacy's own folder is touched.</div></details></h3>
     <div class="row"><button id="pSoft">Stop noise now</button><button id="pMed">Stop + clear log and cookies</button><button id="pHard" class="bad">Stop + wipe everything recorded</button></div><div class="small mute" id="pNote"></div>
   </div>
   <div class="row"><button id="sSave" style="display:none" class="pri">Save settings</button><button id="sWiz">Run setup questions again</button><span class="small mute" id="sSaved"></span></div>
@@ -629,7 +629,7 @@ let dirty={set:false,tor:false};
 const panic=async(level,msg)=>{if(!confirm(msg))return;try{const r=await api('/api/panic',{level});$('#pNote').textContent='Done: '+r.done.join(', ')+'.';toast('Panic ('+level+') done');poll()}catch(e){toast(e.message,1)}};
 $('#pSoft').onclick=()=>panic('soft','Stop the noise now?');
 $('#pMed').onclick=()=>panic('medium','Stop the noise and clear the log and the noise browser’s cookies?');
-$('#pHard').onclick=()=>panic('hard','Stop noise and Tor, and delete the log, cookies and connection records noisyCricket kept? Your settings stay.');
+$('#pHard').onclick=()=>panic('hard','Stop noise and Tor, and delete the log, cookies and connection records legalPrivacy kept? Your settings stay.');
 $('#bStart').onclick=()=>act('/api/start').then(clearApply);
 $('#bStop').onclick=()=>act('/api/stop').then(clearApply);
 $('#bPause').onclick=()=>act('/api/pause',{paused:!(S&&S.paused)});

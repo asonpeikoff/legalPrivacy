@@ -190,7 +190,7 @@ switched off on the tab.
   that your DNS choice isn't being redirected by your network, that Tor is connected and really leaves from a
   different address than yours, and that the noise runs in a real browser that looks like yours. Nothing changes your settings.
 - **Settings → Panic**: stop now; or also clear the log and the noise browser's cookies; or also stop Tor and delete what
-  noisyCricket recorded about connections. Your settings are never deleted.
+  legalPrivacy recorded about connections. Your settings are never deleted.
 
 ## DNS
 

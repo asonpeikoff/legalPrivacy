@@ -689,7 +689,7 @@ class Controller:
     # ── Panic: stop now, and (optionally) leave nothing behind ───────────────
     def panic(self, level: str = "soft") -> dict:
         """soft: stop the noise. medium: + clear the log and noise-browser cookies.
-        hard: + stop Tor and delete everything noisyCricket recorded (Proof data, cookies, logs).
+        hard: + stop Tor and delete everything legalPrivacy recorded (Proof data, cookies, logs).
         Your settings (profile) are never deleted."""
         import shutil
         from .paths import app_dir
