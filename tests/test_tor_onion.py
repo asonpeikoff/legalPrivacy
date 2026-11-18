@@ -260,7 +260,8 @@ def test_bridges_from_bundle_pt_config(tmp=None):
     tm = TorManager(EventLog(), bridge_mode="snowflake", bridges=["obfs4 9.9.9.9:1 CCCC cert=y iat-mode=0"])
     tm.binary = os.path.join(d, "tor", "tor")
     assert tm.effective_bridges() == ["snowflake 192.0.2.3:80 BBBB fingerprint=BBBB"]
-    assert tm._pt_line("snowflake") == f"ClientTransportPlugin snowflake exec {pt}{os.sep}lyrebird"
+    real_pt = os.path.realpath(pt)          # Windows temp dirs resolve from 8.3 short names to long ones
+    assert tm._pt_line("snowflake") == f"ClientTransportPlugin snowflake exec {real_pt}{os.sep}lyrebird"
     tm.bridge_mode = "custom"
     assert tm.effective_bridges() == ["obfs4 9.9.9.9:1 CCCC cert=y iat-mode=0"]
     tm.bridge_mode = "off"
