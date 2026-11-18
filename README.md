@@ -189,8 +189,39 @@ switched off on the tab.
   ✓ working, ✗ not working (with what to do), ℹ for your information, ? not tested yet. It checks that noise is on,
   that your DNS choice isn't being redirected by your network, that Tor is connected and really leaves from a
   different address than yours, and that the noise runs in a real browser that looks like yours. Nothing changes your settings.
-- **Settings → Panic**: stop now; or also clear the log and the noise browser's cookies; or also stop Tor and delete what
-  noisyCricket recorded about connections. Your settings are never deleted.
+- **Settings → Panic**: stop now; or also clear the log, the noise browser's cookies and any signed-in account sessions
+  (see "Signed-in accounts"; you would have to sign in again); or also stop Tor and delete what noisyCricket recorded
+  about connections. Your settings are never deleted.
+
+## Signed-in accounts (optional, off by default)
+
+**Settings → Accounts** lets the noise browser also browse while signed in to **your own** Google and Microsoft
+(Outlook) accounts, so the noise looks like a logged-in person.
+
+- **You sign in by hand.** "Sign in" opens a normal, visible browser window on your computer at the provider's sign-in
+  page. You type your password and any code there. noisyCricket never sees, stores or types a password or code. When
+  you close the window (or your inbox appears) the browser's session (cookies) is saved in noisyCricket's own folder
+  (`accounts/`, owner-only permissions) and nothing else. It needs a computer with a screen. "Forget" deletes it.
+  This is not an import: noisyCricket never reads cookies from your everyday browser.
+- **Off by default, per account.** Nothing signed-in runs unless the account is signed in, its switch is on and the
+  noise is running. Each account has an hourly cap (default 3, 1-10) and a daily cap, and the visits are spaced at random.
+- **Read-only.** A signed-in visit only loads and scrolls one allowed page: Google: a search on google.com, the Gmail
+  inbox, YouTube; Microsoft: the Outlook inbox or calendar (outlook.live.com / outlook.office.com), Bing, microsoft.com.
+  It never clicks (every click is cancelled in the page), never opens a message, and never sends, deletes, archives,
+  labels, marks read/unread, replies, forwards, composes, accepts or declines, signs out or changes a setting.
+- **Never over Tor.** These visits use the ordinary clearnet browser only. A Tor-looking proxy is refused.
+- **Separate cookies.** The account's session is never given to the ordinary noise browser, and the noise browser's
+  cookie clean-up never touches it. Panic (medium and hard) deletes the accounts folder.
+- **Pauses.** "429" means the site answered "too many requests, slow down"; a robot-check page is the site asking
+  whether you are a person. Either one (or finding itself on a sign-in page) pauses that account's signed-in visits for a
+  random while: 3-12 hours the first time, 12-36 hours if it happens again within 3 days, 1-4 days if it keeps happening
+  within a week. The dashboard shows "Paused until about ..." with a "Resume now" button, and the Live Log says why. The
+  ordinary signed-out noise carries on exactly as before. Per account you can choose "Keep going" after a robot check or
+  429 instead (not recommended); a dead session still pauses.
+- **Please be aware:** these are your real accounts. The searches and visits become part of that account's history and
+  affect its ads and recommendations, and Google or Microsoft may ask you to verify, or restrict, an account that looks
+  automated. A spare account is safer. Nothing is ever sent, deleted or changed in the mailbox. Google sometimes refuses
+  sign-in in an automated browser; if so, the account simply can't be used.
 
 ## DNS
 
