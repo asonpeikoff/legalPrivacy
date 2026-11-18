@@ -125,7 +125,7 @@ def cmd_tor(args: argparse.Namespace) -> int:
                                   bridge_mode=cfg.bridge_mode, bridge_auto=cfg.bridge_auto)
     if args.tor_command == "status":
         print(f"tor program : {find_tor_binary() or 'not installed'}")
-        print(f"enabled     : {cfg.enabled}  (managed={cfg.manage}, onion={cfg.onion}, clearnet_via_tor={cfg.clearnet_via_tor})")
+        print(f"enabled     : {cfg.enabled}  (managed={cfg.manage}, onion={cfg.onion})")
         return 0
     if args.tor_command == "install":
         tm._install()
@@ -196,8 +196,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                 print(f"  [-] Tor SOCKS daemon ({tor_status['socks_host']}:{tor_status['socks_port']}): OFFLINE")
                 print("      Action: start your Tor, or set transports.tor.manage: true to let legalPrivacy run its own")
 
-        print(f"  [+] Tor modes: onion={'on' if tor_cfg.onion else 'off'}, "
-              f"clearnet-via-tor={'ON (not recommended)' if tor_cfg.clearnet_via_tor else 'off'}")
+        print(f"  [+] Tor modes: onion={'on' if tor_cfg.onion else 'off'}")
         if tor_cfg.control:
             if tor_status["control_ok"]:
                 ver = f" (Tor {tor_status['version']})" if tor_status.get("version") else ""

@@ -191,7 +191,6 @@ switched off on the tab.
   different address than yours, and that the noise runs in a real browser that looks like yours. Nothing changes your settings.
 - **Settings → Panic**: stop now; or also clear the log and the noise browser's cookies; or also stop Tor and delete what
   noisyCricket recorded about connections. Your settings are never deleted.
-- **Tor tab → Advanced → Prefer Tor exits in these countries** (e.g. `de, nl`). A preference only; .onion sites don't use exits.
 
 ## DNS
 
@@ -239,7 +238,6 @@ On Tor, failures are handled like a person would: sometimes reload the page a mi
 |---|---|---|
 | **Tor** | off | When on, legalPrivacy runs its own private Tor (it finds `tor` on your computer or downloads and verifies the official Tor Expert Bundle). Your own Tor and Tor Browser are never touched. |
 | **🧅 Onion sites** | on when Tor is on | Visits real v3 `.onion` addresses: official mirrors of lawful public sites, plus links found on them. Uses Tor Browser's uniform headers so it blends in. |
-| **Ordinary web through Tor** | off | Not recommended: it burdens exit relays and is an unusual pattern. |
 
 Many `.onion` sites are offline at any moment. Those show in Activity as "site offline" and are
 skipped for a while; this is normal and doesn't mean Tor is broken.

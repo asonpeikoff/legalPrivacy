@@ -43,26 +43,6 @@ def test_untested_is_unknown_not_working():
     assert not L.summarize(list(cs.values()))["all_good"]
 
 
-def test_exit_countries_validated_and_written_to_torrc():
-    p = apply_overrides(Profile(name="t"), {"transports": {"tor": {"exit_countries": ["DE", " nl "]}}})
-    assert p.transports["tor"].exit_countries == ["de", "nl"]
-    try:
-        apply_overrides(Profile(name="t"), {"transports": {"tor": {"exit_countries": ["germany"]}}})
-        raise AssertionError("accepted a bad country")
-    except ConfigError:
-        pass
-    from legalprivacy.events import EventLog
-    from legalprivacy.tormanager import TorManager
-    d = tempfile.mkdtemp()
-    os.makedirs(os.path.join(d, "tor"))
-    open(os.path.join(d, "tor", "tor"), "w").close()
-    tm = TorManager(EventLog(), exit_countries=["de", "nl"])
-    tm.cookie_path = os.path.join(d, "cookie")
-    tm.binary = os.path.join(d, "tor", "tor")
-    txt = tm._write_torrc(__import__("pathlib").Path(d)).read_text()
-    assert "ExitNodes {de},{nl}" in txt and "StrictNodes 0" in txt
-
-
 def test_panic_levels_keep_settings():
     d = tempfile.mkdtemp()
     c = Controller(profile_path=os.path.join(d, "p.json"))

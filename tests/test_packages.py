@@ -38,7 +38,7 @@ def test_automatic_means_on_for_techy_personas_only():
 
 def test_never_over_tor_and_not_on_the_plain_lane():
     p = Profile(name="t")
-    apply_overrides(p, {"extras": {"packages": "on"}, "transports": {"tor": {"enabled": True, "clearnet_via_tor": True}}})
+    apply_overrides(p, {"extras": {"packages": "on"}, "transports": {"tor": {"enabled": True}}})
     assert "packages" not in p.active_engines("tor")
     lanes = build_lanes(p, ["w"], plain_transport=object())
     by = {l.name: l.engines for l in lanes}

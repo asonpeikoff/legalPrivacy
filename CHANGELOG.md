@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- Removed the "also route ordinary web noise through Tor" option and the Tor exit-country preference. Ordinary web noise never goes through Tor; the Tor lane visits only .onion sites. Old settings files that still contain those keys keep working (the keys are ignored).
+
 ## v2.10.2
 
 - **Fix: tabs flickering through other sites.** Some sites, mostly through their ads, send the whole tab through a

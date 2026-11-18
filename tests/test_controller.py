@@ -26,7 +26,6 @@ def test_wizard_three_answers_persist_and_tor_defaults_off():
     st = c.wizard({"rate_mode": "random", "level": 3, "tor": "off", "autostart": True})
     assert not st["first_run"] and st["profile"]["rate"] == {"mode": "random", "level": 3.0, "randomness": 1.0}
     assert st["profile"]["transports"]["tor"]["enabled"] is False
-    assert st["profile"]["transports"]["tor"]["clearnet_via_tor"] is False
     c2 = Controller(c.profile_path)                       # reload from disk
     assert c2.app["autostart"] is True and not c2.first_run
 
@@ -35,7 +34,7 @@ def test_wizard_onion_choice_never_enables_clearnet_over_tor():
     c = _ctl()
     st = c.wizard({"level": 5, "tor": "onion"})
     tor = st["profile"]["transports"]["tor"]
-    assert tor["enabled"] and tor["onion"] and not tor["clearnet_via_tor"]
+    assert tor["enabled"] and tor["onion"]
 
 
 def test_apply_config_validates_onion_seeds_and_bridges():

@@ -157,7 +157,7 @@ table.dns td{vertical-align:middle}
 
 <!-- TOR -->
 <section id="t-tor" class="tab">
-  <div class="note tor"><b>Tor is optional.</b> Two separate things you can switch on: <b>🧅 Onion sites</b> (visit real .onion addresses — darknet noise, recommended if you use Tor at all) and <b>clearnet through Tor</b> (off by default and generally not recommended). legalPrivacy runs its <i>own private Tor</i> in the background — it never touches your system Tor or Tor Browser.</div>
+  <div class="note tor"><b>Tor is optional.</b> When on, it visits real <b>🧅 .onion sites</b> (darknet noise); ordinary web noise never goes through Tor. legalPrivacy runs its <i>own private Tor</i> in the background — it never touches your system Tor or Tor Browser.</div>
   <div class="grid">
     <div class="card"><h3>Status</h3><div class="big" id="tState">—</div><div class="bar tor" style="margin:8px 0"><i id="tBar" style="width:0"></i></div><div class="small mute" id="tSum"></div></div>
     <div class="card"><h3>Details</h3><div class="kv" id="tKv"></div></div>
@@ -176,10 +176,6 @@ table.dns td{vertical-align:middle}
     <label class="chk"><input type="checkbox" id="tEnable"><span><b>Use Tor</b> — turn the Tor lane on. Starting noise will automatically start (and if needed, install) Tor.</span></label>
     <label class="chk"><input type="checkbox" id="tOnion"><span><b>🧅 Visit onion sites</b> (darknet noise) — only .onion addresses, never leaves the Tor network.</span></label>
     <label class="chk"><input type="checkbox" id="tManage"><span><b>Let legalPrivacy manage Tor</b> (recommended, default). Untick to use an existing Tor at the address below instead.</span></label>
-    <details class="small" style="margin-top:4px"><summary class="mute">Advanced</summary>
-      <div class="row" style="margin-top:6px">Prefer Tor exits in these countries <input type="text" id="tExit" size="14" placeholder="e.g. de, nl"> <details class="why"><summary>ⓘ</summary><div>Two-letter country codes, separated by commas. Tor will <b>prefer</b> exit machines in those countries (it may still use others). It only matters for traffic that leaves Tor to the normal internet; .onion sites never use exits. Fewer allowed countries means a smaller crowd to blend into, so leave it empty unless you have a reason.</div></details></div>
-    <label class="chk"><input type="checkbox" id="tClear"><span><b>Also route ordinary web noise through Tor</b> — <b class="bad">not recommended</b>. Ordinary sites would see visits from Tor exits, a distinctive pattern that also burdens volunteer exit relays. Leave this off.</span></label>
-    </details>
     <div class="row" id="tExt" style="display:none">SOCKS <input type="text" id="tSocks" size="16"> Control <input type="text" id="tCtl" size="16"></div>
     <div class="row"><button id="tSave" style="display:none" class="pri">Save Tor settings</button><span class="small mute" id="tSaved"></span></div>
   </div>
@@ -841,17 +837,16 @@ function renderTorStatus(){
 }
 function fillTor(force){
   if(!S||(dirty.tor&&!force))return;const c=S.profile.transports.tor;
-  $('#tEnable').checked=c.enabled;$('#tOnion').checked=c.onion;$('#tClear').checked=c.clearnet_via_tor;if(c.clearnet_via_tor)$('#tClear').closest('details').open=true;$('#tManage').checked=c.manage;
+  $('#tEnable').checked=c.enabled;$('#tOnion').checked=c.onion;$('#tManage').checked=c.manage;
   $('#tSocks').value=c.socks;$('#tCtl').value=c.control||'';$('#tExt').style.display=c.manage?'none':'flex';
-  $('#tSeeds').value=((c.onion_seeds&&c.onion_seeds.length)?c.onion_seeds:S.builtin_onion_seeds.map(b=>b.url)).join('\n');$('#tBridges').value=(c.bridges||[]).join('\n');$('#tExit').value=(c.exit_countries||[]).join(', ');
+  $('#tSeeds').value=((c.onion_seeds&&c.onion_seeds.length)?c.onion_seeds:S.builtin_onion_seeds.map(b=>b.url)).join('\n');$('#tBridges').value=(c.bridges||[]).join('\n');
   (document.querySelector(`input[name=bmode][value=${c.bridge_mode||'off'}]`)||{}).checked=true;$('#bAuto').checked=c.bridge_auto!==false;
   $('#tBuiltin').innerHTML=S.builtin_onion_seeds.map(b=>`<div>${esc(b.name)}: <code>${esc(b.url)}</code></div>`).join('');
   dirty.tor=false;
 }
 $$('#t-tor input,#t-tor textarea').forEach(i=>i.oninput=()=>{dirty.tor=true;$('#tExt').style.display=$('#tManage').checked?'none':'flex';$('#tSaved').textContent='unsaved changes'});
-$('#tClear').onchange=()=>{if($('#tClear').checked&&!confirm('Route ordinary clearnet noise through Tor?\n\nThis is NOT recommended: it adds load to Tor exit relays and Tor-exit search traffic is a distinctive pattern.\n\nUse only if you specifically want it.'))$('#tClear').checked=false};
 async function saveTor(auto){
-  try{await api('/api/config',{transports:{tor:{enabled:$('#tEnable').checked,onion:$('#tOnion').checked,clearnet_via_tor:$('#tClear').checked,manage:$('#tManage').checked,socks:$('#tSocks').value,control:$('#tCtl').value||null,onion_seeds:$('#tSeeds').value,bridges:$('#tBridges').value,exit_countries:$('#tExit').value,bridge_mode:(document.querySelector('input[name=bmode]:checked')||{}).value||'off',bridge_auto:$('#bAuto').checked}}});
+  try{await api('/api/config',{transports:{tor:{enabled:$('#tEnable').checked,onion:$('#tOnion').checked,manage:$('#tManage').checked,socks:$('#tSocks').value,control:$('#tCtl').value||null,onion_seeds:$('#tSeeds').value,bridges:$('#tBridges').value,bridge_mode:(document.querySelector('input[name=bmode]:checked')||{}).value||'off',bridge_auto:$('#bAuto').checked}}});
     dirty.tor=false;$('#tSaved').textContent='Saved ✓ '+(S&&S.running?(needApply(),'(going live…)'):'');await poll()}catch(e){$('#tSaved').textContent='Not saved: '+e.message;if(!auto)toast(e.message,1)}
 }
 $('#tSave').onclick=()=>saveTor(false);

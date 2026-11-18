@@ -30,10 +30,11 @@ def make_profile(tor=True, clearnet=True, seeds=None, search=True) -> Profile:
         "search": EngineConfig(budget_per_day=10, enabled=search),
         "crawl": EngineConfig(budget_per_day=6, seeds=seeds or ["https://x.example/a"]),
         "dns": EngineConfig(budget_per_day=8),
+        "onion": EngineConfig(budget_per_day=8),
     }
     p.transports = {
         "clearnet": TransportConfig(enabled=clearnet),
-        "tor": TransportConfig(enabled=tor, control=None, clearnet_via_tor=True, onion=False),
+        "tor": TransportConfig(enabled=tor, control=None, onion=True),
     }
     return p
 
@@ -52,7 +53,7 @@ def captured_probe(captured):
         HitResult(200, HTML) if target.kind == "html" else HitResult(200, ""))[1]
 
 
-def test_dns_uses_raw_udp_on_clearnet_and_doh_on_tor():
+def test_dns_uses_raw_udp_on_clearnet_and_tor_lane_is_onion_only():
     captured = []
     runner = make_runner(make_profile(), captured_probe(captured))
     for _ in range(20):
@@ -61,7 +62,8 @@ def test_dns_uses_raw_udp_on_clearnet_and_doh_on_tor():
         runner.run_once()
     kinds = {(lane, kind) for lane, kind, _ in captured}
     assert ("clearnet", "dns") in kinds
-    assert ("tor", "doh") in kinds
+    assert not any(lane == "tor" and kind in ("doh", "dns") for lane, kind, _ in captured)
+    assert all(".onion" in url for lane, _, url in captured if lane == "tor")     # Tor carries only onion visits
     for lane, kind, url in captured:
         if kind == "dns":
             assert url.startswith("dns://") and "@" not in url
