@@ -233,6 +233,8 @@ class UIServer:
                         ctl.start()
                     elif path == "/api/stop":
                         ctl.stop()
+                    elif path == "/api/apply":
+                        ctl.reapply()
                     elif path == "/api/pause":
                         ctl.pause(bool(body.get("paused", True)))
                     elif path == "/api/test":

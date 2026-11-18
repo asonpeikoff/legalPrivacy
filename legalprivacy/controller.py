@@ -668,6 +668,25 @@ class Controller:
             self.log.info("app", "Started: lanes = " + ", ".join(
                 f"{l.name}[{'/'.join(l.engines)}]" for l in lanes))
 
+    def reapply(self) -> None:
+        """Make the running noise pick up settings that were just saved: rebuild it in place.
+        Tor stays connected, the log is kept, and a paused noise stays paused."""
+        lock = self.__dict__.setdefault("_apply_lock", threading.Lock())
+        with lock:
+            if not self.running:
+                return
+            paused = bool(self.runner and self.runner.paused)
+            keep = self.app.get("clear_logs_on_restart", True)
+            self.app["clear_logs_on_restart"] = False
+            try:
+                self.stop()
+                self.start()
+                if paused:
+                    self.pause(True)
+            finally:
+                self.app["clear_logs_on_restart"] = keep
+            self.log.info("app", "Settings applied live.")
+
     def _run_loop(self) -> None:
         try:
             self.runner.run_forever()

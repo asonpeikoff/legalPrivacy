@@ -47,6 +47,7 @@ textarea{width:100%;font-family:ui-monospace,Consolas,monospace;font-size:12px}
 label.chk{display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointer}
 .note{padding:10px 12px;border-radius:8px;background:var(--code);font-size:13px;margin:8px 0}
 .note.warn{background:var(--warn2)}.note.tor{background:var(--tor2)}.note.bad{background:var(--bad2)}
+.spin{display:inline-block;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 .ok{color:var(--acc)}.bad{color:var(--bad)}.warnc{color:var(--warn)}
 .chip{cursor:pointer;user-select:none}.chip.off{opacity:.4}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13px}.kv b{color:var(--mute);font-weight:600}
@@ -109,7 +110,7 @@ table.dns td{vertical-align:middle}
   <button data-t="tools">Tools</button>
 </nav>
 <main>
-<div id="applyBar" class="card" style="display:none;border-color:var(--warn);margin-bottom:10px"><div class="row"><span><b class="warnc">Saved, but not active yet.</b> Noise is running with your previous settings (the traffic mix, rate, sources and so on are read when it starts).</span><button id="bApply" class="pri">Apply now (restarts noise)</button></div></div>
+<div id="applyBar" class="card" style="display:none;margin-bottom:10px"><span id="applyMsg"></span></div>
 
 <!-- DASHBOARD -->
 <section id="t-dash" class="tab on">
@@ -555,8 +556,20 @@ async function api(path,body){
   if(!r.ok||j.error){throw new Error(j.error||r.statusText)} return j;
 }
 function toast(m,bad){const t=$('#toast');t.textContent=m;t.style.background=bad?'var(--bad)':'';t.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display='none',3500)}
-let needsApply=false;function needApply(){needsApply=true;const b=$('#applyBar');if(b)b.style.display='block'}
-function clearApply(){needsApply=false;const b=$('#applyBar');if(b)b.style.display='none'}
+let applyTimer=null,hideTimer=null,applying=false,applyAgain=false;
+function applyMsg(html,color){const b=$('#applyBar');b.style.display='block';b.style.borderColor=color||'var(--warn)';$('#applyMsg').innerHTML=html}
+function clearApply(){clearTimeout(hideTimer);const b=$('#applyBar');if(b)b.style.display='none'}
+// Every change goes live by itself: saved, then (about a second after the last change) the running noise is
+// rebuilt with the new settings. Tor stays connected, the log is kept, and a visible status shows what's happening.
+function needApply(){clearTimeout(hideTimer);applyMsg('<span class="spin">⟳</span> Change saved — going live…');clearTimeout(applyTimer);applyTimer=setTimeout(runApply,700)}
+async function runApply(){
+  if(applying){applyAgain=true;return}
+  applying=true;applyMsg('<span class="spin">⟳</span> Applying your change to the running noise…');
+  try{await api('/api/apply',{});applyMsg('✓ <b>Live</b> — noise is running with your latest settings','var(--acc)')}
+  catch(e){applyMsg('Could not apply: '+esc(e.message),'var(--bad)')}
+  applying=false;try{await poll()}catch(e){}
+  if(applyAgain){applyAgain=false;needApply();return}
+  hideTimer=setTimeout(clearApply,3500)}
 const act=(p,b)=>api(p,b||{}).then(r=>{poll();return r}).catch(e=>toast(e.message,1));
 const fmtT=ts=>new Date(ts*1000).toLocaleTimeString([], {hour12:false});
 const fmtDur=s=>{s=Math.floor(s);const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return d?`${d}d ${h}h`:h?`${h}h ${m}m`:m?`${m}m ${s%60}s`:`${s}s`};
@@ -572,7 +585,6 @@ let dirty={set:false,tor:false};
 // ---------- header buttons
 $('#bStart').onclick=()=>act('/api/start').then(clearApply);
 $('#bStop').onclick=()=>act('/api/stop').then(clearApply);
-$('#bApply').onclick=async()=>{$('#bApply').disabled=true;try{await api('/api/stop',{});await new Promise(r=>setTimeout(r,1500));await api('/api/start',{});clearApply();toast('Applied: noise restarted with your new settings')}catch(e){toast(e.message,1)}finally{$('#bApply').disabled=false;poll()}};
 $('#bPause').onclick=()=>act('/api/pause',{paused:!(S&&S.paused)});
 $('#bTest').onclick=()=>{act('/api/test');toast('Test hit sent — see Activity')};
 $('#bQuit').onclick=async()=>{if(confirm('Stop everything and quit legalPrivacy?')){try{await api('/api/shutdown',{})}catch(e){}document.body.innerHTML='<main><div class="card"><h2>legalPrivacy has quit.</h2><p>You can close this tab.</p></div></main>'}};
@@ -668,7 +680,7 @@ setInterval(pollProof,2000);
 // ---------- render
 function render(){
   const s=S; if(!s)return;
-  if(!s.running&&needsApply)clearApply();
+  if(!s.running&&!applying){clearTimeout(applyTimer);clearApply()}
   const tor=s.tor, torCfg=s.profile.transports.tor;
   const rp=$('#pRun');
   rp.className='pill '+(s.running?(s.paused?'warn':'ok'):''); rp.textContent=s.running?(s.paused?'Paused':'Running'):'Stopped';
@@ -814,7 +826,7 @@ $$('#t-tor input,#t-tor textarea').forEach(i=>i.oninput=()=>{dirty.tor=true;$('#
 $('#tClear').onchange=()=>{if($('#tClear').checked&&!confirm('Route ordinary clearnet noise through Tor?\n\nThis is NOT recommended: it adds load to Tor exit relays and Tor-exit search traffic is a distinctive pattern.\n\nUse only if you specifically want it.'))$('#tClear').checked=false};
 async function saveTor(auto){
   try{await api('/api/config',{transports:{tor:{enabled:$('#tEnable').checked,onion:$('#tOnion').checked,clearnet_via_tor:$('#tClear').checked,manage:$('#tManage').checked,socks:$('#tSocks').value,control:$('#tCtl').value||null,onion_seeds:$('#tSeeds').value,bridges:$('#tBridges').value,bridge_mode:(document.querySelector('input[name=bmode]:checked')||{}).value||'off',bridge_auto:$('#bAuto').checked}}});
-    dirty.tor=false;$('#tSaved').textContent='Saved ✓ '+(S&&S.running?(needApply(),'(not active yet — press “Apply now” at the top)'):'');await poll()}catch(e){$('#tSaved').textContent='Not saved: '+e.message;if(!auto)toast(e.message,1)}
+    dirty.tor=false;$('#tSaved').textContent='Saved ✓ '+(S&&S.running?(needApply(),'(going live…)'):'');await poll()}catch(e){$('#tSaved').textContent='Not saved: '+e.message;if(!auto)toast(e.message,1)}
 }
 $('#tSave').onclick=()=>saveTor(false);
 // my list
@@ -895,7 +907,7 @@ $('#mBmFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;$('#mFou
   const web=urls.filter(u=>/^https?:/i.test(u));
   if(!web.length){$('#mFound').textContent='No web addresses found in that file.';e.target.value='';return}
   try{showFound(await api('/api/mylist/bookmarks',{urls:web}),kind)}catch(err){$('#mFound').textContent=err.message}; e.target.value='';};
-async function saveML(auto){try{ML=await api('/api/mylist',{enabled:$('#mEnabled').checked,sites:ML.sites,weights:Object.fromEntries(ML.sites.map(d=>[d,(ML.weights||{})[d]??3])),random_share:parseInt($('#mShare').value||30)/100});fillML();$('#mNote').textContent='Saved ✓ '+(ML.running?(needApply(),'(not active yet — press “Apply now” at the top)'):'')}catch(e){$('#mNote').textContent='Not saved: '+e.message;if(!auto)toast(e.message,1)}}
+async function saveML(auto){try{ML=await api('/api/mylist',{enabled:$('#mEnabled').checked,sites:ML.sites,weights:Object.fromEntries(ML.sites.map(d=>[d,(ML.weights||{})[d]??3])),random_share:parseInt($('#mShare').value||30)/100});fillML();$('#mNote').textContent='Saved ✓ '+(ML.running?(needApply(),'(going live…)'):'')}catch(e){$('#mNote').textContent='Not saved: '+e.message;if(!auto)toast(e.message,1)}}
 $('#mSave').onclick=()=>saveML(false);
 let mlT=null;function mlChanged(){clearTimeout(mlT);$('#mNote').textContent='Saving…';mlT=setTimeout(()=>saveML(true),500)}
 
@@ -927,7 +939,7 @@ async function saveUA(override,auto){
   body.own_ua=$('#uOwn').value.trim();
   if(body.ua_mode==='pin'&&body.ua_pin==='own'&&!body.own_ua){$('#uNote').textContent='Paste or detect your browser’s user agent first.';return}
   if(body.ua_mode==='pin'&&!body.ua_pin){$('#uNote').textContent='Click “Pin this” on a library entry below.';$('#uSearch').focus();return}
-  try{UA=await api('/api/useragents',body);fillUA();$('#uNote').textContent='Saved ✓ '+(UA.running?(needApply(),'(not active yet — press “Apply now” at the top)'):'')}catch(e){$('#uNote').textContent='Not saved: '+e.message;if(!auto)toast(e.message,1)}
+  try{UA=await api('/api/useragents',body);fillUA();$('#uNote').textContent='Saved ✓ '+(UA.running?(needApply(),'(going live…)'):'')}catch(e){$('#uNote').textContent='Not saved: '+e.message;if(!auto)toast(e.message,1)}
 }
 $('#uSave').onclick=()=>saveUA();
 $('#uSearch').oninput=renderUABody;
@@ -1010,7 +1022,7 @@ async function saveSettings(auto){
               metrics:$('#eMetrics').checked,site_list:$('#eSites').value,
               household:$('#hOn').checked,household_size:parseInt($('#hSize').value||3),
               persona:$('#pers').value,persona_share:parseInt($('#persShare').value||90)/100,packages:$('#ePkg').value}});
-    await api('/api/app',{autostart:$('#sAuto').checked,clear_logs_on_restart:$('#sClearLogs').checked});dirty.set=false;$('#sSaved').textContent='Saved ✓ '+(S&&S.running?(needApply(),'(not active yet — press “Apply now” at the top)'):'');poll()}catch(e){$('#sSaved').textContent='Not saved: '+e.message;if(!auto)toast(e.message,1)}
+    await api('/api/app',{autostart:$('#sAuto').checked,clear_logs_on_restart:$('#sClearLogs').checked});dirty.set=false;$('#sSaved').textContent='Saved ✓ '+(S&&S.running?(needApply(),'(going live…)'):'');poll()}catch(e){$('#sSaved').textContent='Not saved: '+e.message;if(!auto)toast(e.message,1)}
 }
 $('#sSave').onclick=()=>saveSettings(false);
 $('#sWiz').onclick=()=>showWiz();
