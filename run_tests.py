@@ -5,6 +5,13 @@ import inspect
 import sys
 import unittest
 
+# Windows consoles default to cp1252, which can't print the check marks below
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # Ensure repo root is on python path
 sys.path.insert(0, ".")
 
