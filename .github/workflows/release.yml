@@ -16,18 +16,20 @@ permissions:
 jobs:
   build:
     strategy:
-      fail-fast: false      # one platform's problem (or no free macOS runner) must not cancel the others
+      fail-fast: false      # one platform's problem must not cancel the others
       matrix:
         include:
           - os: ubuntu-latest
             artifact: legalprivacy-launch-linux
             rename: legalprivacy-launch-linux
-          - os: windows-latest
-            artifact: legalprivacy-launch.exe
-            rename: legalprivacy-launch-windows.exe
-          - os: macos-latest
-            artifact: legalprivacy-launch
-            rename: legalprivacy-launch-macos
+          # Windows and macOS builds are STILL UNDER DEVELOPMENT and are not being built for releases right now
+          # (decision: leave them for later). The configuration is kept here so they are easy to switch back on:
+          # - os: windows-latest
+          #   artifact: legalprivacy-launch.exe
+          #   rename: legalprivacy-launch-windows.exe
+          # - os: macos-latest
+          #   artifact: legalprivacy-launch
+          #   rename: legalprivacy-launch-macos
 
     runs-on: ${{ matrix.os }}
 
@@ -76,16 +78,12 @@ jobs:
         with:
           path: dist/
 
-      - name: Require the Windows and Linux builds
-        run: |
-          test -f dist/legalprivacy-launch-linux/legalprivacy-launch-linux
-          test -f dist/legalprivacy-launch-windows.exe/legalprivacy-launch-windows.exe
-          test -f dist/legalprivacy-launch-macos/legalprivacy-launch-macos || echo "::warning::macOS build missing; releasing without it"
+      - name: Require the Linux build
+        run: test -f dist/legalprivacy-launch-linux/legalprivacy-launch-linux
 
       - name: Make Linux/macOS binaries executable
         run: |
           chmod +x dist/legalprivacy-launch-linux/legalprivacy-launch-linux || true
-          chmod +x dist/legalprivacy-launch-macos/legalprivacy-launch-macos || true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -102,11 +100,11 @@ jobs:
 
             | Platform | File | How to run |
             |---|---|---|
-            | Windows | `legalprivacy-launch-windows.exe` | Double-click. If SmartScreen warns, choose **More info → Run anyway**. |
-            | macOS | `legalprivacy-launch-macos` | Right-click → **Open** the first time (the app isn't signed). |
             | Linux | `legalprivacy-launch-linux` | `chmod +x legalprivacy-launch-linux && ./legalprivacy-launch-linux` |
 
-            If a platform's file is missing below, its build wasn't available yet; it is added to this release when ready.
+            **Windows and macOS:** ready-made downloads are still under development and are not part of this release.
+            On those systems, run from source (see the README: `Start-legalPrivacy.bat` on Windows, `start-legalprivacy.command` on macOS)
+            or `pip install` as below.
 
             Your browser opens the dashboard, you answer three quick questions, and it starts. A real Chrome, Edge,
             Brave or Chromium on the computer makes the browsing look human; Tor is optional and set up for you.
@@ -117,7 +115,5 @@ jobs:
             See the [changelog](https://github.com/asonpeikoff/legalPrivacy/blob/master/CHANGELOG.md).
           files: |
             dist/legalprivacy-launch-linux/legalprivacy-launch-linux
-            dist/legalprivacy-launch-windows.exe/legalprivacy-launch-windows.exe
-            dist/legalprivacy-launch-macos/legalprivacy-launch-macos
           draft: false
           prerelease: false
