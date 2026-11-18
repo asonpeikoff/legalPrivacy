@@ -1242,7 +1242,10 @@ function renderDnsHealth(){
     if(!h||h.verdict==='unknown'){c.innerHTML='<span class="mute">not checked</span>';return}
     c.innerHTML={ok:`<span class="ok">✓ ${h.rtt_ms} ms</span>${h.egress?' <span class="mute">verified</span>':''}`,
       slow:`<span class="warnc">slow ${h.rtt_ms} ms</span>`,down:`<span class="bad">✗ ${esc(h.error||'no answer')}</span>`,
-      intercepted:`<span class="warnc" title="answered by ${esc(h.egress)}">⚠ intercepted</span>`}[h.verdict]||esc(h.verdict)});
+      intercepted:`<span class="warnc" title="answered by ${esc(h.egress)}">⚠ intercepted</span>`,
+      hijack:`<span class="bad" title="It answered for a name that cannot exist, so it sends you to pages of its own">✗ hijacks missing names — not used</span>`,
+      disagrees:`<span class="bad" title="Its answers for ordinary sites differ from what the other servers agree on">✗ disagrees with the others — not used</span>`,
+      disputed:`<span class="warnc" title="The servers split evenly about the same names, so it can't tell who is right; used less">? servers disagree</span>`}[h.verdict]||esc(h.verdict)});
   const sy=S.dns.system||[];
   $('#dSys').innerHTML=sy.length?`Your normal DNS right now: ${sy.map(x=>`<code>${esc(x.ip)}</code>${x.what?' <span class="mute">('+esc(x.what)+')</span>':''}`).join(', ')}`:'<span class="mute">Your normal DNS: press “Check now” to see which servers this computer uses.</span>';
   $('#dWarn').innerHTML=S.dns.intercepted?`<div class="note warn small"><b>⚠ Your network appears to intercept DNS.</b> Every resolver was really answered by the same machine (<code>${esc((S.dns.resolvers[0]||{}).egress||'?')}</code>), so lookups don't reach the servers listed. A VPN usually fixes this; until then “Your normal DNS” is the honest choice.</div>`:'';

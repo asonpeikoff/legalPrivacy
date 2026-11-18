@@ -194,6 +194,12 @@ switched off on the tab.
 
 ## DNS
 
+**When some of your DNS servers can't be trusted.** Each time the servers are checked, legalPrivacy also tests whether they are honest:
+a made-up name under `.invalid` must not exist (a server that answers it is hijacking missing names), and the servers must agree with
+each other about the same well-known names (a server that repeatedly disagrees is taken out of use). If the servers split evenly about
+a name, nobody can be told apart, so they are marked "servers disagree" and used less. No single server answers more than about half
+of the noise lookups. This covers the DNS noise on your normal connection. The Tor lane visits only `.onion` sites, which need no DNS at all.
+
 | Setting | What it does |
 |---|---|
 | **Mix** (default) | Switches between your normal DNS and the secure resolvers in random 10–60 minute blocks, half the time each (adjustable) |
