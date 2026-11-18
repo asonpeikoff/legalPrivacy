@@ -1,5 +1,19 @@
 # Changelog
 
+## v2.10.1
+
+- **Fix: the noise browser popped up windows.** It was meant to run hidden by default, but it opened an "off-screen"
+  window instead, which Linux desktops using Wayland (such as Fedora) put on screen. It now runs hidden by default,
+  and older settings go back to hidden too. "Off-screen" is still an option on Windows, macOS and X11; elsewhere it
+  runs hidden.
+- **One window, tabs:** when you choose to watch it, the noise browser keeps one window and opens pages in tabs.
+  Pop-ups and "open in new window" links stay in the same tab.
+- **Always the user agent it's given:** every tab, phone or desktop, hidden or visible, uses the identity's own
+  user agent and matching client hints, never the browser's. If that can't be set, nothing is visited.
+- **English-language sites only:** sites on country domains such as .de, .fr or .jp, language sections such as
+  de.example.com or example.com/fr/, and pages that say they're in another language are skipped. A page that turns
+  out not to be in English gets a quick look, and then the site is left alone for about a week.
+
 ## v2.10.0
 
 - **Data scientist is the default persona**, followed 90% of the time (the rest is everyday browsing); "Nobody in

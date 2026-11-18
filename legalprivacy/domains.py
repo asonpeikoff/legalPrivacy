@@ -61,7 +61,8 @@ class DomainPool:
         if self.interests is not None and self.rng.random() < self.interest_share:
             s = self.interests.site()
             host = s.split("/", 1)[0]
-            if not safe_domain(host):
+            from .safety import english_host
+            if not safe_domain(host) or not english_host(host):
                 return None
             return s if with_path else host
         return None
@@ -84,7 +85,8 @@ class DomainPool:
     def _ranked(self) -> list[str]:
         ranked = self.store.items("tranco") if self.store else []
         deny = self.store.denylist() if self.store else set()
-        ranked = [d for d in ranked if safe_domain(d, deny)]
+        from .safety import english_host
+        ranked = [d for d in ranked if safe_domain(d, deny) and english_host(d)]
         return ranked or FALLBACK_DOMAINS
 
     def _crux_boost(self) -> dict[str, float]:

@@ -342,9 +342,10 @@ table.dns td{vertical-align:middle}
       <option value="firefox">Firefox</option></select></div>
     <div class="small mute">Each engine has its own network fingerprint. Matching yours makes the noise look like you. Firefox needs a one-time download (<code>python -m playwright install firefox</code>); without it, Chromium is used. Firefox can't emulate phones, so phone visits run as desktop with it.</div>
     <div class="row">Browser window <select id="sWin">
-      <option value="headless">Hidden (recommended, default)</option>
-      <option value="offscreen">Real window, off-screen</option>
+      <option value="hidden">Hidden (recommended, default)</option>
+      <option value="offscreen">Real window, off-screen (Windows, macOS and X11 only)</option>
       <option value="visible">Visible (watch it work)</option></select></div>
+    <div class="small mute">Hidden never shows a window. When visible, the noise browser uses one window and opens its pages in tabs.</div>
     <div class="row">Keep the noise browser's cookies <select id="sCookies">
       <option value="0">Don't keep (fresh every session)</option>
       <option value="1">1 hour (recommended, default)</option>
@@ -972,7 +973,7 @@ function fillSettings(force){
     ...(torOn2?[{key:'onion',label:'Tor .onion sites',value:tr.onion??15,hint:'(about 10–15% recommended)'}]:[])]);
   $('#xMobile').value=Math.round((tr.mobile_share??0.55)*100);$('#xDevice').value=tr.device||'iPhone 13';
   $('#xDevice').onchange=()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'};
-  $('#sBrowser').value=p.transports.clearnet.browser||'auto';$('#sEngine').value=p.transports.clearnet.browser_engine||'auto';$('#sWin').value=p.transports.clearnet.browser_visible?'visible':(p.transports.clearnet.browser_offscreen?'offscreen':'headless');$('#sCookies').value=String(p.transports.clearnet.cookie_hours??1);$('#sCookieVary').checked=p.transports.clearnet.cookie_vary!==false;
+  $('#sBrowser').value=p.transports.clearnet.browser||'auto';$('#sEngine').value=p.transports.clearnet.browser_engine||'auto';$('#sWin').value=p.transports.clearnet.browser_window||'hidden';$('#sCookies').value=String(p.transports.clearnet.cookie_hours??1);$('#sCookieVary').checked=p.transports.clearnet.cookie_vary!==false;
   const q=p.queries||{};$('#qLive').checked=q.live!==false;$('#qData').checked=q.dataset!==false;$('#qBuiltin').checked=q.builtin!==false;$('#qWords').checked=q.words!==false;$('#sAuto').checked=!!S.app.autostart;$('#sClearLogs').checked=S.app.clear_logs_on_restart!==false;$('#sPath').textContent=S.config_path;dirty.set=false;
   $$('#t-set input').forEach(i=>i.oninput=()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'});
 }
@@ -981,7 +982,7 @@ async function saveSettings(auto){
   const rnd=parseInt($('#sRand').value||0)/100;
   try{await api('/api/config',{realtime_scale:parseFloat($('#sScale').value),daily_max_failures:parseInt($('#sMaxF').value),engines,rate:{mode:rnd>0?'random':'steady',level:parseFloat($('#sLevel').value),randomness:rnd},
       dns:{mode:document.querySelector('input[name=dnsm]:checked').value,system_share:parseInt($('#dShare').value||50)/100,opennic:$('#dOpen').checked,quad9:$('#dQuad9').checked,custom:$('#dCustom').value,slow_ms:parseInt($('#dSlow').value||250),resolvers:readDnsTable()},
-      transports:{clearnet:{enabled:$('#sClear').checked,proxy:$('#sProxy').value||null,browser:$('#sBrowser').value,browser_visible:$('#sWin').value==='visible',browser_offscreen:$('#sWin').value==='offscreen',browser_engine:$('#sEngine').value,cookie_hours:parseFloat($('#sCookies').value),cookie_vary:$('#sCookieVary').checked}},
+      transports:{clearnet:{enabled:$('#sClear').checked,proxy:$('#sProxy').value||null,browser:$('#sBrowser').value,browser_window:$('#sWin').value,browser_engine:$('#sEngine').value,cookie_hours:parseFloat($('#sCookies').value),cookie_vary:$('#sCookieVary').checked}},
       queries:{live:$('#qLive').checked,dataset:$('#qData').checked,builtin:$('#qBuiltin').checked,words:$('#qWords').checked},
       traffic:{pattern:(document.querySelector('input[name=xpat]:checked')||{}).value||'drift',...(()=>{const m=window._trMix.values();return {browser:m.browser,plain:m.plain,onion:m.onion??window._trOnion}})(),
                mobile_share:parseInt($('#xMobile').value||0)/100,device:$('#xDevice').value},

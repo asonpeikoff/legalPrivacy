@@ -546,9 +546,12 @@ class Controller:
         from .browser import BrowserTransport
         engine = self._browser_engine()
         import os as _os
-        has_display = sys.platform in ("win32", "darwin") or bool(_os.environ.get("DISPLAY") or
-                                                                    _os.environ.get("WAYLAND_DISPLAY"))
-        offscreen = cfg.browser_offscreen and has_display
+        wayland = bool(_os.environ.get("WAYLAND_DISPLAY")) or _os.environ.get("XDG_SESSION_TYPE") == "wayland"
+        has_display = sys.platform in ("win32", "darwin") or bool(_os.environ.get("DISPLAY"))
+        offscreen = cfg.browser_window == "offscreen" and has_display and not wayland
+        if cfg.browser_window == "offscreen" and not offscreen:     # Wayland won't let a window sit off-screen
+            self.log.info("browser", "An off-screen window isn't possible on this system, so the noise browser "
+                                     "runs hidden instead.")
         return BrowserTransport(proxy=cfg.proxy, headless=not (cfg.browser_visible or offscreen),
                                 engine=engine, cookie_hours=cfg.cookie_hours, cookie_vary=cfg.cookie_vary,
                                 offscreen=offscreen and not cfg.browser_visible, executable=info["detail"],

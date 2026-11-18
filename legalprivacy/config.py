@@ -54,9 +54,10 @@ class TransportConfig:
     enabled: bool = True
     proxy: str | None = None          # clearnet: http:// or socks5:// URL
     browser: str = "auto"             # clearnet: auto | on | off — drive a real browser like a person
-    browser_visible: bool = False     # clearnet: show the browser window instead of running headless
-    browser_offscreen: bool = True    # clearnet: a real window parked off-screen (harder to flag than headless);
-                                      # falls back to headless where there is no display
+    browser_window: str = "hidden"    # clearnet: hidden (default) | offscreen (a real window placed off-screen,
+                                      # only where the system allows it) | visible (watch it work)
+    browser_visible: bool = False     # derived from browser_window (kept for older settings files)
+    browser_offscreen: bool = False   # derived from browser_window
     browser_engine: str = "auto"      # clearnet: auto (match your browser) | chromium | firefox
     cookie_hours: float = 1.0         # clearnet: keep browser cookies this long, then start fresh (0 = never keep)
     cookie_vary: bool = True          # clearnet: each jar lives 60-140% of cookie_hours, so wipes aren't on a fixed beat
@@ -78,6 +79,8 @@ class TransportConfig:
     def validate(self, name: str) -> None:
         if self.browser not in ("auto", "on", "off"):
             raise ConfigError(f"transport '{name}': browser must be auto, on or off")
+        if self.browser_window not in ("hidden", "offscreen", "visible"):
+            raise ConfigError(f"transport '{name}': browser_window must be hidden, offscreen or visible")
         if self.browser_engine not in ("auto", "chromium", "firefox"):
             raise ConfigError(f"transport '{name}': browser_engine must be auto, chromium or firefox")
         if self.bridge_mode not in ("off", "obfs4", "snowflake", "meek", "custom"):
@@ -403,9 +406,14 @@ def apply_overrides(profile: Profile, raw: dict[str, Any]) -> Profile:
             raw_tr = dict(raw_tr or {})
             if "cookie_days" in raw_tr and "cookie_hours" not in raw_tr:      # settings from v2.8.0
                 raw_tr["cookie_hours"] = float(raw_tr["cookie_days"] or 0) * 24
+            if "browser_window" not in raw_tr and ("browser_visible" in raw_tr or "browser_offscreen" in raw_tr):
+                # Older settings: the off-screen window was switched on without being asked for, so it
+                # goes back to hidden; a visible window someone chose stays visible.
+                raw_tr["browser_window"] = "visible" if raw_tr.get("browser_visible") else "hidden"
             merged = profile.transports[name].__dict__ | raw_tr
-            profile.transports[name] = TransportConfig(
+            t = profile.transports[name] = TransportConfig(
                 **{k: v for k, v in merged.items() if k in TransportConfig.__dataclass_fields__})
+            t.browser_visible, t.browser_offscreen = t.browser_window == "visible", t.browser_window == "offscreen"
     contribute = p.get("contribute") or {}
     if "relay" in contribute:
         merged = profile.relay.__dict__ | contribute["relay"]

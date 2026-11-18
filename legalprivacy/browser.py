@@ -21,6 +21,7 @@ import glob
 import os
 import platform
 import random
+import re
 import shutil
 import sys
 import threading
@@ -247,6 +248,9 @@ class BrowserTransport(Transport):
         self.dimmed = False
         self._pw = self._browser = None
         self._sessions: dict[int, dict] = {}               # identity id -> {ctx, page, mobile, cdp}
+        self._contexts: dict[tuple, object] = {}           # desktop / phone model -> browser context (tabs live in it)
+        self._our_pages: set = set()
+        self._expect_tab = False
         self._major = "0"
 
     # ── lifecycle ──────────────────────────────────────────────────────────
@@ -282,6 +286,12 @@ class BrowserTransport(Transport):
         for s in list(self._sessions.values()):
             self._close_session(s)
         self._sessions.clear()
+        for ctx in list(self._contexts.values()):
+            try:
+                ctx.close()
+            except Exception:
+                pass
+        self._contexts.clear()
         for obj, meth in ((self._browser, "close"), (self._pw, "stop")):
             try:
                 if obj:
@@ -289,29 +299,6 @@ class BrowserTransport(Transport):
             except Exception:
                 pass
         self._browser = self._pw = None
-
-    def _desktop_override(self) -> dict | None:
-        """Headless Chromium says "HeadlessChrome" in its user agent and client hints, which no
-        real person's browser does. Present the same browser and version as a normal window."""
-        if not self.headless:
-            return None
-        exe = Path(self.executable or "").name.lower()
-        brand = ("Microsoft Edge" if "msedge" in exe else "Brave" if "brave" in exe
-                 else None if "chromium" in exe else "Google Chrome")
-        if sys.platform == "win32":
-            os_tok, plat = "Windows NT 10.0; Win64; x64", "Windows"
-        elif sys.platform == "darwin":
-            os_tok, plat = "Macintosh; Intel Mac OS X 10_15_7", "macOS"
-        else:
-            os_tok, plat = "X11; Linux x86_64", "Linux"
-        ua = (f"Mozilla/5.0 ({os_tok}) AppleWebKit/537.36 (KHTML, like Gecko) "
-              f"Chrome/{self._major}.0.0.0 Safari/537.36" + (" Edg/%s.0.0.0" % self._major if brand == "Microsoft Edge" else ""))
-        brands = [{"brand": "Not_A Brand", "version": "8"}, {"brand": "Chromium", "version": self._major}]
-        if brand:
-            brands.append({"brand": brand, "version": self._major})
-        return {"userAgent": ua, "userAgentMetadata": {
-            "brands": brands, "platform": plat, "platformVersion": "", "architecture": "x86",
-            "model": "", "mobile": False}}
 
     # ── cookies kept for a while (like a real browser), then wiped ──────────────
     def _jar(self, mobile: bool) -> Path:
@@ -352,18 +339,87 @@ class BrowserTransport(Transport):
             pass
 
     def _close_session(self, s: dict) -> None:
+        """An identity retires: close its tab (the browser and its other tabs stay)."""
         self._save_jar(s)
         try:
-            s["ctx"].close()
+            s["page"].close()
         except Exception:
             pass
+
+    # Sites sometimes try to open new windows (pop-ups, links with target=_blank). The noise
+    # stays in its own tab instead, and anything that opens anyway is closed straight away, so
+    # no page ever runs without the identity's user agent.
+    _NO_POPUPS_JS = """(() => {
+        window.open = function () { return null; };
+        document.addEventListener('click', e => {
+            const a = e.target && e.target.closest && e.target.closest('a[target]');
+            if (a) { a.setAttribute('target', '_self'); }
+        }, true);
+    })();"""
+
+    def _context(self, key: tuple, make):
+        """One browser context per kind of device: desktop, or one phone model. Identities are tabs in it."""
+        ctx = self._contexts.get(key)
+        if ctx is not None:
+            return ctx
+        ctx = make()
+        ctx.add_init_script(self._NO_POPUPS_JS)
+        ours = self._our_pages
+
+        def _stray(pg):
+            if not self._expect_tab and pg not in ours:
+                try:
+                    pg.close()
+                except Exception:
+                    pass
+        ctx.on("page", _stray)
+        if self.low_data:              # optional: skip images, video and fonts to save data
+            ctx.route("**/*", lambda route: route.abort()
+                      if route.request.resource_type in ("image", "media", "font") else route.continue_())
+        self._contexts[key] = ctx
+        return ctx
+
+    def _new_tab(self, ctx):
+        """Open a tab in ctx, registered as ours before it can be mistaken for a pop-up."""
+        self._expect_tab = True
+        try:
+            page = ctx.new_page()
+        finally:
+            self._expect_tab = False
+        self._our_pages.add(page)
+        page.on("close", lambda pg: self._our_pages.discard(pg))
+        return page
+
+    def _ua_override(self, identity, mobile: bool, ios: bool, lang: str) -> dict:
+        """The identity's own user agent, with client hints that agree with it.
+
+        Chromium-family user agents get a matching brand list; Firefox and Safari send no client
+        hints at all, so for those none are sent either."""
+        ua = getattr(identity, "user_agent", "") or ""
+        plat = getattr(identity, "platform", "") or ("Android" if mobile else "Windows")
+        nav = {"Windows": "Win32", "macOS": "MacIntel", "Linux": "Linux x86_64", "Android": "Linux armv8l",
+               "iOS": "iPhone", "Chrome OS": "Linux x86_64"}.get(plat, "Win32")
+        if ios or "iPhone" in ua:
+            return {"userAgent": ua, "acceptLanguage": lang, "platform": "iPhone"}
+        m = re.search(r"Chrome/(\d+)", ua)
+        if not m or "Firefox/" in ua or not getattr(identity, "chromium", True):
+            return {"userAgent": ua, "acceptLanguage": lang, "platform": nav}
+        major = m.group(1)
+        brand = ("Microsoft Edge" if "Edg/" in ua else "Opera" if "OPR/" in ua
+                 else None if "Chromium/" in ua else "Google Chrome")
+        brands = [{"brand": "Not_A Brand", "version": "8"}, {"brand": "Chromium", "version": major}]
+        if brand:
+            brands.append({"brand": brand, "version": major})
+        return {"userAgent": ua, "acceptLanguage": lang, "platform": nav, "userAgentMetadata": {
+            "brands": brands, "platform": plat, "platformVersion": "", "architecture": "" if mobile else "x86",
+            "model": "", "mobile": bool(mobile)}}
 
     def _session(self, identity) -> dict:
         key = getattr(identity, "id", 0)
         s = self._sessions.get(key)
         if s:
             return s
-        while len(self._sessions) >= 2:                    # an identity retires: close its context
+        while len(self._sessions) >= 2:                    # an identity retires: close its tab
             old_key = next(iter(self._sessions))
             self._close_session(self._sessions.pop(old_key))
         rng = random.Random(f"{key}-{id(self)}")
@@ -372,27 +428,36 @@ class BrowserTransport(Transport):
         mobile = bool(identity.mobile) if hasattr(identity, "mobile") else rng.random() < MOBILE_SHARE
         if self.engine == "firefox":
             mobile = False          # Playwright's Firefox can't emulate a phone; those visits run as desktop
-        device = MOBILE_DEVICES.get(getattr(identity, "device", "") or "")
+        device_name = getattr(identity, "device", "") or ""
+        device = MOBILE_DEVICES.get(device_name)
         ios = bool(mobile and "iPhone" in (getattr(identity, "user_agent", "") or ""))
         if mobile and device is None:
-            device = MOBILE_DEVICES[DEFAULT_DEVICE if ios else "Pixel 7"]
+            device_name = DEFAULT_DEVICE if ios else "Pixel 7"
+            device = MOBILE_DEVICES[device_name]
         lang = (getattr(identity, "accept_language", "") or "en-US").split(",")[0]
-        if mobile:
+        ua = getattr(identity, "user_agent", "") or None
+        if self.engine == "firefox":
+            # Firefox has no DevTools user-agent override: the user agent is set on the context instead.
+            ctx = self._context(("firefox", ua), lambda: self._browser.new_context(
+                user_agent=ua, locale=lang, storage_state=self._load_jar(False)))
+        elif mobile:
             (w, h), dpr = device["viewport"], device["dpr"]
             # No user_agent here: Playwright's own override keeps "HeadlessChrome" client hints
-            # and a Linux navigator.platform. The DevTools override below sets everything at once.
-            ctx = self._browser.new_context(viewport={"width": w, "height": h}, device_scale_factor=dpr,
-                                            is_mobile=True, has_touch=True, locale=lang,
-                                            storage_state=self._load_jar(True))
+            # and a Linux navigator.platform. The DevTools override below sets everything per tab.
+            ctx = self._context(("phone", device_name), lambda: self._browser.new_context(
+                viewport={"width": w, "height": h}, device_scale_factor=dpr, is_mobile=True, has_touch=True,
+                locale=lang, storage_state=self._load_jar(True)))
         else:
+            ctx = self._context(("desktop",), lambda: self._browser.new_context(
+                locale=lang, storage_state=self._load_jar(False)))
+        page = self._new_tab(ctx)
+        if not mobile:
             (w, h), _ = rng.choices(DESKTOP_VIEWPORTS, weights=[v[1] for v in DESKTOP_VIEWPORTS])[0]
             vh = h - rng.choice([0, 70, 85, 110])          # browser chrome eats some height
-            ctx = self._browser.new_context(viewport={"width": w, "height": vh}, locale=lang,
-                                            storage_state=self._load_jar(False))
-        if self.low_data:              # optional: skip images, video and fonts to save data
-            ctx.route("**/*", lambda route: route.abort()
-                      if route.request.resource_type in ("image", "media", "font") else route.continue_())
-        page = ctx.new_page()
+            try:
+                page.set_viewport_size({"width": w, "height": vh})
+            except Exception:
+                pass
         counter = {"bytes": 0}
         try:
             page.on("response", lambda r: counter.__setitem__(
@@ -412,32 +477,18 @@ class BrowserTransport(Transport):
         except Exception:
             pass
         cdp = None
-        try:
-            if ios:
-                # iPhone Safari: its user agent, platform "iPhone", and no client hints at all
-                # (Safari sends none; leaving the metadata out makes Chromium send none either).
+        if self.engine == "chromium":
+            # Always the identity's own user agent, never the browser's: if it can't be set, the tab
+            # is closed and nothing is visited with it.
+            try:
                 cdp = ctx.new_cdp_session(page)
-                cdp.send("Emulation.setUserAgentOverride", {
-                    "userAgent": identity.user_agent, "acceptLanguage": lang, "platform": "iPhone"})
-            elif mobile:
-                ua = (f"Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) "
-                      f"Chrome/{self._major}.0.0.0 Mobile Safari/537.36")
-                cdp = ctx.new_cdp_session(page)
-                cdp.send("Emulation.setUserAgentOverride", {
-                    "userAgent": ua, "acceptLanguage": lang, "platform": "Linux armv8l",
-                    "userAgentMetadata": {
-                        "brands": [{"brand": "Chromium", "version": self._major},
-                                   {"brand": "Google Chrome", "version": self._major},
-                                   {"brand": "Not-A.Brand", "version": "24"}],
-                        "platform": "Android", "platformVersion": "10.0.0", "architecture": "",
-                        "model": "K", "mobile": True}})
-            elif self.engine == "chromium":
-                ov = self._desktop_override()
-                if ov:
-                    cdp = ctx.new_cdp_session(page)
-                    cdp.send("Emulation.setUserAgentOverride", {**ov, "acceptLanguage": lang})
-        except Exception:
-            cdp = None
+                cdp.send("Emulation.setUserAgentOverride", self._ua_override(identity, mobile, ios, lang))
+            except Exception as exc:
+                try:
+                    page.close()
+                except Exception:
+                    pass
+                raise RuntimeError(f"couldn't set the user agent: {exc}") from exc
         s = {"ctx": ctx, "page": page, "mobile": mobile, "cdp": cdp, "last_url": None, "counter": counter}
         self._sessions[key] = s
         return s
@@ -482,8 +533,13 @@ class BrowserTransport(Transport):
                                                 "access denied", "attention required"))
                     or (status == 202 and "duckduckgo" in page.url)):
                 status = 429          # a bot check: back off instead of counting it as a visit
-            walled = False
+            walled = foreign = False
             if status < 400 and target.role != "search":
+                try:
+                    lang = (page.evaluate("() => document.documentElement.lang || ''") or "").lower()[:2]
+                except Exception:
+                    lang = ""
+                foreign = bool(lang) and lang != "en"
                 from .loginwall import looks_like_login_wall
                 try:
                     probe = page.evaluate(
@@ -492,22 +548,24 @@ class BrowserTransport(Transport):
                 except Exception:
                     probe = [0, ""]
                 walled = looks_like_login_wall(page.url, title, probe[1], password_fields=probe[0])
-            if walled:                # needs an account: a logged-out person glances and goes elsewhere
+            if walled or foreign:     # needs an account, or not in English: a quick glance, then elsewhere
                 stats = driver.browse(dwell=self.rng.uniform(2, 6))
             else:
                 stats = driver.serp() if target.role == "search" else driver.browse()
-            downloaded = None if walled else (self._maybe_download(page) or self._maybe_save_image(page))
+            downloaded = None if walled or foreign else (self._maybe_download(page) or self._maybe_save_image(page))
             s["last_url"] = page.url
             s["on_serp"] = target.role == "search"
             if target.role == "search":
                 s["serp_ref"] = target.url
-            html = "" if walled else page.content()[:2_000_000]      # never follow links off a login page
+            html = "" if walled or foreign else page.content()[:2_000_000]   # never follow links off these
             parts = [f"{how} {'📱' if mobile else '🖥'}", f"{stats['scrolls']} scrolls",
                      f"{int(stats['depth'] * 100)}% depth", f"{stats['seconds']:.0f}s on page"]
             if stats.get("serp"):
                 parts.insert(1, f"results: {stats['serp']}")
             if walled:
                 parts.insert(1, "login required: moved on")
+            elif foreign:
+                parts.insert(1, "not in English: moved on")
             if stats["back_scrolls"]:
                 parts.append(f"{stats['back_scrolls']} scroll-back")
             if stats.get("selections"):
@@ -519,6 +577,7 @@ class BrowserTransport(Transport):
             res.detail = ", ".join(parts)
             res.load_ms = load_ms
             res.login_wall = walled
+            res.foreign = foreign
             res.final_url = page.url
             res.on_page_s = stats["seconds"]
             # content-length is missing for some compressed responses, so this is a floor
@@ -528,6 +587,7 @@ class BrowserTransport(Transport):
             msg = str(exc).splitlines()[0][:200]
             if "Target page, context or browser has been closed" in msg:
                 self._sessions.pop(getattr(identity, "id", 0), None)
+                self._contexts = {k: c for k, c in self._contexts.items() if c is not s.get("ctx")}
             return HitResult(None, error=msg)
 
     def _click_through(self, page, driver: HumanDriver, target: Target, mobile: bool):
