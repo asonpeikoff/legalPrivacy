@@ -166,6 +166,8 @@ class PlaywrightActuator:
         w, h = self.viewport()
         x = w * random.uniform(0.35, 0.7)
         travel = max(-h * 0.7, min(h * 0.7, dy * random.uniform(0.55, 0.8)))
+        if abs(travel) < 60:          # a very short finger movement would count as a tap on whatever is there
+            travel = 60 if travel >= 0 else -60
         y0 = h * (0.72 if travel > 0 else 0.3) + random.uniform(-30, 30)
         n = random.randint(7, 13)
         self.cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": x, "y": y0}]})
@@ -210,6 +212,17 @@ class PlaywrightActuator:
         return bool(self._stop and self._stop.is_set())
 
 
+def _site(host: str) -> str:
+    """The site a host belongs to: news.example.co.uk -> example.co.uk, www.google.com -> google.com."""
+    labels = (host or "").lower().strip(".").split(".")
+    if len(labels) <= 2:
+        return ".".join(labels)
+    two = ".".join(labels[-2:])
+    if labels[-2] in ("co", "com", "org", "net", "ac", "gov", "edu") and len(labels[-1]) == 2:
+        return ".".join(labels[-3:])
+    return two
+
+
 def _born_file(jar: Path) -> Path:
     return jar.with_suffix(".born")
 
@@ -251,6 +264,14 @@ class BrowserTransport(Transport):
         self._contexts: dict[tuple, object] = {}           # desktop / phone model -> browser context (tabs live in it)
         self._our_pages: set = set()
         self._expect_tab = False
+        self._tab_seq = 0
+        self._tabs: dict[int, object] = {}             # tab number -> page
+        self._why: dict[int, str] = {}                  # tab number -> what the noise is doing in it right now
+        self._burst_warned: dict[int, float] = {}
+        from collections import deque
+        self.nav_log = deque(maxlen=400)               # troubleshooting: every address change in every tab
+        self._sent_to: dict[int, str] = {}             # tab number -> the site the noise last sent it to
+        self.blocked_navs = 0
         self._major = "0"
 
     # ── lifecycle ──────────────────────────────────────────────────────────
@@ -388,7 +409,89 @@ class BrowserTransport(Transport):
             self._expect_tab = False
         self._our_pages.add(page)
         page.on("close", lambda pg: self._our_pages.discard(pg))
+        self._tab_seq += 1
+        tab = self._tab_seq
+        self._tabs[tab] = page
+
+        def _nav(frame):
+            if frame is not page.main_frame:
+                return
+            url = frame.url
+            if not url.startswith("http"):
+                return
+            self._note_nav(tab, url)
+        page.on("framenavigated", _nav)
         return page
+
+    # ── troubleshooting: every address each tab shows, and why it changed ─────────
+    def _note_nav(self, tab: int, url: str) -> None:
+        now = time.time()
+        why = self._why.get(tab) or "the page itself (redirect or script)"
+        last = next((n for n in reversed(self.nav_log) if n["tab"] == tab), None)
+        if last and last["url"] == url:
+            return                                     # the same address again (a page updating itself)
+        self.nav_log.append({"ts": now, "tab": tab, "url": url, "why": why})
+        recent = [n for n in self.nav_log if n["tab"] == tab and now - n["ts"] <= 3]
+        sites = {_site(urllib.parse.urlparse(n["url"]).hostname or "") for n in recent}
+        if len(sites) >= 4 and now - self._burst_warned.get(tab, 0) > 30:
+            self._burst_warned[tab] = now
+            self.on_event("warn", f"Tab {tab} went through {len(sites)} different sites in 3 seconds: "
+                          + " → ".join(f"{urllib.parse.urlparse(n['url']).hostname} ({n['why']})" for n in recent))
+
+    def _tab_of(self, page) -> int | None:
+        return next((k for k, pg in self._tabs.items() if pg is page), None)
+
+    def _doing(self, page, why: str | None, target_url: str | None = None) -> None:
+        """Mark what the noise itself is doing in a tab, so the trace can tell it from the page's own moves.
+        While it's set, the tab may go anywhere (redirects of the page it was sent to); once cleared, only
+        within the site it's on, or to the site it was sent to."""
+        tab = self._tab_of(page)
+        if tab is None:
+            return
+        if why:
+            self._why[tab] = why
+            if target_url:
+                self._sent_to[tab] = _site(urllib.parse.urlparse(target_url).hostname or "")
+        else:
+            self._why.pop(tab, None)
+
+    def _guard_tab(self, page, cdp) -> None:
+        """Stop a page from sending its tab somewhere else on its own.
+
+        Some sites (mostly through their ads) redirect the whole tab through a chain of other sites a
+        moment after loading, or open an ad when the page is touched. A person would never ask for that,
+        so once a page has loaded, the tab may only move within that site (or to the site the noise was
+        going to); anything else is blocked and noted in the log. Only page loads are checked, through
+        DevTools, so the browser's cache and everything else work as usual."""
+        tab = self._tab_of(page)
+        try:
+            main = cdp.send("Page.getFrameTree")["frameTree"]["frame"]["id"]
+        except Exception:
+            return
+
+        def paused(ev):
+            rid = ev.get("requestId")
+            url = (ev.get("request") or {}).get("url", "")
+            block = False
+            if ev.get("frameId") == main and tab not in self._why and url.startswith("http"):
+                to = _site(urllib.parse.urlparse(url).hostname or "")
+                here = _site(urllib.parse.urlparse(page.url).hostname or "")
+                block = bool(to) and to not in (here, self._sent_to.get(tab))
+            try:
+                if block:
+                    # "No content": the browser stays on the page it's on, as if nothing happened
+                    cdp.send("Fetch.fulfillRequest", {"requestId": rid, "responseCode": 204, "responseHeaders": []})
+                    self.blocked_navs += 1
+                    self.nav_log.append({"ts": time.time(), "tab": tab, "url": url,
+                                         "why": "blocked: the page tried to send the tab to another site"})
+                    self.on_event("info", f"Blocked {urllib.parse.urlparse(page.url).hostname} from sending the "
+                                          f"tab to {urllib.parse.urlparse(url).hostname} (an ad or redirect)")
+                else:
+                    cdp.send("Fetch.continueRequest", {"requestId": rid})
+            except Exception:
+                pass
+        cdp.on("Fetch.requestPaused", paused)
+        cdp.send("Fetch.enable", {"patterns": [{"resourceType": "Document", "requestStage": "Request"}]})
 
     def _ua_override(self, identity, mobile: bool, ios: bool, lang: str) -> dict:
         """The identity's own user agent, with client hints that agree with it.
@@ -483,6 +586,10 @@ class BrowserTransport(Transport):
             try:
                 cdp = ctx.new_cdp_session(page)
                 cdp.send("Emulation.setUserAgentOverride", self._ua_override(identity, mobile, ios, lang))
+                try:
+                    self._guard_tab(page, cdp)
+                except Exception:
+                    pass
             except Exception as exc:
                 try:
                     page.close()
@@ -514,6 +621,7 @@ class BrowserTransport(Transport):
             if from_serp and not s.get("on_serp"):
                 try:                                           # back to the results, like pressing Back
                     driver.pause(lognormal_clipped(driver.rng, 1.2, 0.5, 0.4, 4))
+                    self._doing(page, "noise: back to the results")
                     page.go_back(wait_until="domcontentloaded", timeout=15000)
                     s["on_serp"] = True
                     driver.pause(lognormal_clipped(driver.rng, 2.5, 0.5, 0.8, 8))   # re-scan the list
@@ -523,9 +631,11 @@ class BrowserTransport(Transport):
                     (target.role == "result" and target.referer and s["last_url"] == target.referer):
                 resp, how = self._click_through(page, driver, target, mobile)
             if resp is None and how == "open":
+                self._doing(page, f"noise: open ({target.role})", target.url)
                 resp = page.goto(target.url, referer=target.referer, wait_until="domcontentloaded",
                                  timeout=int(target.timeout * 1000))
             load_ms = (time.time() - t_load) * 1000.0
+            self._doing(page, None)              # from here on, address changes are the page's own
             status = resp.status if resp is not None else 200
             title = (page.title() or "").lower()
             if ("/sorry/" in page.url or "captcha" in page.url.lower()
@@ -606,6 +716,7 @@ class BrowserTransport(Transport):
             x = box["x"] + box["width"] * driver.rng.uniform(0.2, 0.7)
             y = box["y"] + box["height"] * driver.rng.uniform(0.3, 0.7)
             driver.hover_then_click_point(x, y)
+            self._doing(page, "noise: click a result", target.url)
             with page.expect_navigation(wait_until="domcontentloaded", timeout=int(target.timeout * 1000)) as nav:
                 if mobile:
                     page.touchscreen.tap(x, y)

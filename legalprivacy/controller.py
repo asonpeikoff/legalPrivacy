@@ -749,6 +749,15 @@ class Controller:
             return []
         return [h for h in self.runner.hit_log if h["seq"] > after]
 
+    def browser_trace(self) -> dict:
+        """Every address the noise browser's tabs showed recently, and what made each one change."""
+        bt = next((l.transport for l in (self.runner.lanes if self.runner else [])
+                   if getattr(l.transport, "is_browser", False)), None)
+        if bt is None:
+            return {"running": False, "blocked": 0, "items": []}
+        items = list(getattr(bt, "nav_log", []))[-200:]
+        return {"running": True, "blocked": getattr(bt, "blocked_navs", 0), "items": items[::-1]}
+
     def doctor(self) -> list[dict]:
         """Self-checks with plain-language results: status ∈ ok | warn | fail | info."""
         checks: list[dict] = []

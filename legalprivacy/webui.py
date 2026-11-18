@@ -194,6 +194,8 @@ class UIServer:
                         return self._json(ctl.ml_predict(g("site", ""), int(g("hour", "12")), int(g("weekday", "2"))))
                     if u.path == "/api/tools/privacy":
                         return self._json({"checks": ctl.privacy_check()})
+                    if u.path == "/api/browser/trace":
+                        return self._json(ctl.browser_trace())
                     if u.path == "/api/interests":
                         return self._json(ctl.interests_state())
                     if u.path == "/metrics":
