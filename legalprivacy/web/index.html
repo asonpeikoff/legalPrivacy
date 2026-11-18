@@ -407,7 +407,7 @@ tbody tr:hover td{background:var(--code)}
     <div id="accRows"></div>
     <div class="small mute" id="accNoDisplay" style="display:none">This computer has no display, so a sign-in window can't open here. Sign in from a computer with a screen.</div>
   </div>
-  <div class="card"><h3>Panic <details class="why"><summary>ⓘ</summary><div>Stops the noise right away. <b>Medium</b> also clears the log and the noise browser's cookies, and deletes any signed-in account sessions (Accounts above; you would have to sign in again). <b>Hard</b> also does all of that, stops Tor and deletes what noisyCricket recorded about connections (the Proof tab data) and its log files. Your settings are never deleted, and nothing outside noisyCricket's own folder is touched.</div></details></h3>
+  <div class="card"><h3>Panic <details class="why"><summary>ⓘ</summary><div>Stops the noise right away. <b>Medium</b> also clears the log and the noise browser's cookies, and deletes any signed-in account sessions (Accounts above; you would have to sign in again). <b>Hard</b> also does all of that, stops Tor and deletes what legalPrivacy recorded about connections (the Proof tab data) and its log files. Your settings are never deleted, and nothing outside legalPrivacy's own folder is touched.</div></details></h3>
     <div class="row"><button id="pSoft">Stop noise now</button><button id="pMed">Stop + clear log and cookies</button><button id="pHard" class="bad">Stop + wipe everything recorded</button></div><div class="small mute" id="pNote"></div>
   </div>
   <div class="row"><button id="sSave" style="display:none" class="pri">Save settings</button><button id="sWiz">Run setup questions again</button><span class="small mute" id="sSaved"></span></div>
@@ -634,7 +634,7 @@ let dirty={set:false,tor:false};
 const panic=async(level,msg)=>{if(!confirm(msg))return;try{const r=await api('/api/panic',{level});$('#pNote').textContent='Done: '+r.done.join(', ')+'.';toast('Panic ('+level+') done');poll()}catch(e){toast(e.message,1)}};
 $('#pSoft').onclick=()=>panic('soft','Stop the noise now?');
 $('#pMed').onclick=()=>panic('medium','Stop the noise, clear the log and the noise browser’s cookies, and delete any signed-in account sessions (you would have to sign in again)?');
-$('#pHard').onclick=()=>panic('hard','Stop noise and Tor, and delete the log, cookies, signed-in account sessions and connection records noisyCricket kept? Your settings stay.');
+$('#pHard').onclick=()=>panic('hard','Stop noise and Tor, and delete the log, cookies, signed-in account sessions and connection records legalPrivacy kept? Your settings stay.');
 $('#bStart').onclick=()=>act('/api/start').then(clearApply);
 $('#bStop').onclick=()=>act('/api/stop').then(clearApply);
 $('#bPause').onclick=()=>act('/api/pause',{paused:!(S&&S.paused)});
@@ -1283,7 +1283,10 @@ function renderDnsHealth(){
     if(!h||h.verdict==='unknown'){c.innerHTML='<span class="mute">not checked</span>';return}
     c.innerHTML={ok:`<span class="ok">✓ ${h.rtt_ms} ms</span>${h.egress?' <span class="mute">verified</span>':''}`,
       slow:`<span class="warnc">slow ${h.rtt_ms} ms</span>`,down:`<span class="bad">✗ ${esc(h.error||'no answer')}</span>`,
-      intercepted:`<span class="warnc" title="answered by ${esc(h.egress)}">⚠ intercepted</span>`}[h.verdict]||esc(h.verdict)});
+      intercepted:`<span class="warnc" title="answered by ${esc(h.egress)}">⚠ intercepted</span>`,
+      hijack:`<span class="bad" title="It answered for a name that cannot exist, so it sends you to pages of its own">✗ hijacks missing names — not used</span>`,
+      disagrees:`<span class="bad" title="Its answers for ordinary sites differ from what the other servers agree on">✗ disagrees with the others — not used</span>`,
+      disputed:`<span class="warnc" title="The servers split evenly about the same names, so it can't tell who is right; used less">? servers disagree</span>`}[h.verdict]||esc(h.verdict)});
   const sy=S.dns.system||[];
   $('#dSys').innerHTML=sy.length?`Your normal DNS right now: ${sy.map(x=>`<code>${esc(x.ip)}</code>${x.what?' <span class="mute">('+esc(x.what)+')</span>':''}`).join(', ')}`:'<span class="mute">Your normal DNS: press “Check now” to see which servers this computer uses.</span>';
   $('#dWarn').innerHTML=S.dns.intercepted?`<div class="note warn small"><b>⚠ Your network appears to intercept DNS.</b> Every resolver was really answered by the same machine (<code>${esc((S.dns.resolvers[0]||{}).egress||'?')}</code>), so lookups don't reach the servers listed. A VPN usually fixes this; until then “Your normal DNS” is the honest choice.</div>`:'';

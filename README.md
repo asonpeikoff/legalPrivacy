@@ -23,10 +23,12 @@ existing settings, start-up commands (`cricket`, `cricket-launch`) and `CRICKET_
 
 | You have | Do this |
 |---|---|
-| A release download | Double-click `legalprivacy-launch-windows.exe`, `legalprivacy-launch-macos` or `legalprivacy-launch-linux` |
+| A release download (Linux for now) | `chmod +x legalprivacy-launch-linux`, then run it. Windows and macOS downloads are still under development (see below). |
 | The source (Python 3.10+) | Double-click `Start-legalPrivacy.bat` (Windows) or `start-legalprivacy.command` (macOS/Linux). The first run sets up a private environment. |
 | pip | `pip install .` then `legalprivacy-launch` (or `python -m legalprivacy`) |
 | Docker | `docker compose up -d`, then `docker compose logs legalprivacy` for the dashboard link. See [docs/DOCKER.md](docs/DOCKER.md). |
+
+> **Windows and macOS:** ready-made downloads are still under development and are not being built right now; we are leaving them for later. The source launchers (`Start-legalPrivacy.bat`, `start-legalprivacy.command`) and `pip install` are kept and still work from source. The build setup for both is kept, commented out, in `.github/workflows/release.yml`.
 
 Your browser opens the dashboard. The first run asks three questions (how much noise, whether
 to add Tor `.onion` noise, whether to start automatically) and then starts. Every other setting
@@ -190,7 +192,7 @@ switched off on the tab.
   that your DNS choice isn't being redirected by your network, that Tor is connected and really leaves from a
   different address than yours, and that the noise runs in a real browser that looks like yours. Nothing changes your settings.
 - **Settings → Panic**: stop now; or also clear the log, the noise browser's cookies and any signed-in account sessions
-  (see "Signed-in accounts"; you would have to sign in again); or also stop Tor and delete what noisyCricket recorded
+  (see "Signed-in accounts"; you would have to sign in again); or also stop Tor and delete what legalPrivacy recorded
   about connections. Your settings are never deleted.
 
 ## Signed-in accounts (optional, off by default)
@@ -199,10 +201,10 @@ switched off on the tab.
 (Outlook) accounts, so the noise looks like a logged-in person.
 
 - **You sign in by hand.** "Sign in" opens a normal, visible browser window on your computer at the provider's sign-in
-  page. You type your password and any code there. noisyCricket never sees, stores or types a password or code. When
-  you close the window (or your inbox appears) the browser's session (cookies) is saved in noisyCricket's own folder
+  page. You type your password and any code there. legalPrivacy never sees, stores or types a password or code. When
+  you close the window (or your inbox appears) the browser's session (cookies) is saved in legalPrivacy's own folder
   (`accounts/`, owner-only permissions) and nothing else. It needs a computer with a screen. "Forget" deletes it.
-  This is not an import: noisyCricket never reads cookies from your everyday browser.
+  This is not an import: legalPrivacy never reads cookies from your everyday browser.
 - **Off by default, per account.** Nothing signed-in runs unless the account is signed in, its switch is on and the
   noise is running. Each account has an hourly cap (default 3, 1-10) and a daily cap, and the visits are spaced at random.
 - **Read-only.** A signed-in visit only loads and scrolls one allowed page: Google: a search on google.com, the Gmail
@@ -224,6 +226,12 @@ switched off on the tab.
   sign-in in an automated browser; if so, the account simply can't be used.
 
 ## DNS
+
+**When some of your DNS servers can't be trusted.** Each time the servers are checked, legalPrivacy also tests whether they are honest:
+a made-up name under `.invalid` must not exist (a server that answers it is hijacking missing names), and the servers must agree with
+each other about the same well-known names (a server that repeatedly disagrees is taken out of use). If the servers split evenly about
+a name, nobody can be told apart, so they are marked "servers disagree" and used less. No single server answers more than about half
+of the noise lookups. This covers the DNS noise on your normal connection. The Tor lane visits only `.onion` sites, which need no DNS at all.
 
 | Setting | What it does |
 |---|---|
