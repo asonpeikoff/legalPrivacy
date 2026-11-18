@@ -110,13 +110,12 @@ class Controller:
         """Apply the 2–3 first-run answers and save.
 
         intensity: light|normal|heavy       tor: off|onion
-        clearnet_via_tor: bool (advanced, default False)   autostart: bool
+        autostart: bool
         """
         raw: dict[str, Any] = {"rate": {"mode": answers.get("rate_mode", "random"),
                                         "level": float(answers.get("level", 5))},
                                "transports": {"tor": {"enabled": answers.get("tor", "off") != "off",
-                                                      "onion": True,
-                                                      "clearnet_via_tor": bool(answers.get("clearnet_via_tor", False))}}}
+                                                      "onion": True}}}
         self.apply_config(raw, save=False)
         self.app["autostart"] = bool(answers.get("autostart", False))
         self._save()
@@ -140,9 +139,6 @@ class Controller:
             if bad:
                 raise ConfigError("invalid onion address(es): " + ", ".join(bad[:3]))
             tor_raw["onion_seeds"] = good
-        if "exit_countries" in tor_raw and isinstance(tor_raw["exit_countries"], str):
-            import re as _re
-            tor_raw["exit_countries"] = [c for c in _re.split(r"[\s,;]+", tor_raw["exit_countries"]) if c]
         if "bridges" in tor_raw and isinstance(tor_raw["bridges"], str):
             tor_raw["bridges"] = [ln.strip() for ln in tor_raw["bridges"].splitlines() if ln.strip()]
         apply_overrides(new, raw)
@@ -170,15 +166,13 @@ class Controller:
         mode = "managed" if cfg.manage else "external"
         if self.tor is None or self.tor.mode != mode or self.tor.ext_socks != cfg.socks \
                 or self.tor.bridges != [b.strip() for b in cfg.bridges if b.strip()] \
-                or self.tor.configured_bridge_mode != cfg.bridge_mode or self.tor.bridge_auto != cfg.bridge_auto \
-                or self.tor.exit_countries != [c.strip().lower() for c in cfg.exit_countries]:
+                or self.tor.configured_bridge_mode != cfg.bridge_mode or self.tor.bridge_auto != cfg.bridge_auto:
             if self.tor and self.tor.state not in ("stopped",):
                 self.tor.stop()
             self.tor = TorManager(self.log, mode=mode, socks=cfg.socks, control=cfg.control,
                                   control_password=cfg.control_password,
                                   bridges=cfg.bridges, auto_install=cfg.auto_install,
-                                  bridge_mode=cfg.bridge_mode, bridge_auto=cfg.bridge_auto,
-                                  exit_countries=cfg.exit_countries)
+                                  bridge_mode=cfg.bridge_mode, bridge_auto=cfg.bridge_auto)
         return self.tor
 
     # ── DNS resolver table: health + verification ──────────────────────────
@@ -868,9 +862,6 @@ class Controller:
             seeds_ok, bad = clean_seed_list(cfg.onion_seeds or [u for _, u in BUILTIN_ONION_SEEDS])
             add("Onion seeds", "ok" if not bad else "fail",
                 f"{len(seeds_ok)} valid v3 addresses" + (f"; {len(bad)} invalid" if bad else ""))
-            if cfg.clearnet_via_tor:
-                add("Clearnet over Tor", "warn",
-                    "enabled — not recommended: adds load to exit relays and is a distinctive pattern")
             if port_open("127.0.0.1", 9150) or port_open("127.0.0.1", 9050):
                 add("Other Tor on this PC", "info",
                     "A system Tor/Tor Browser is running. legalPrivacy's own Tor uses different ports and won't touch it.")

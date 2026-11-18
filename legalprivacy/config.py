@@ -44,12 +44,8 @@ class EngineConfig:
 class TransportConfig:
     """One transport lane. Tor-only fields are ignored by the clearnet lane.
 
-    Tor is OPTIONAL and off by default. When enabled it does two independent,
-    individually switchable things:
-      * onion          — visit .onion sites (darknet noise)        [default on]
-      * clearnet_via_tor — also route clearnet noise through Tor   [default OFF,
-        discouraged: it burdens exit relays and clearnet-over-Tor is a
-        distinctive pattern]
+    Tor is OPTIONAL and off by default. When enabled it visits .onion sites
+    (darknet noise). Ordinary web noise never goes through Tor.
     """
     enabled: bool = True
     proxy: str | None = None          # clearnet: http:// or socks5:// URL
@@ -69,13 +65,11 @@ class TransportConfig:
     manage: bool = True               # True: app runs its own private Tor; False: use existing Tor
     auto_install: bool = True         # download official Tor bundle if none is installed
     onion: bool = True                # run the onion engine on the Tor lane
-    clearnet_via_tor: bool = False    # route clearnet engines through Tor (not recommended)
     onion_seeds: list[str] = field(default_factory=list)   # extra seeds; empty = built-ins
     onion_follow_offsite: bool = True
     bridges: list[str] = field(default_factory=list)       # bridge lines for censored networks
     bridge_mode: str = "off"          # off | obfs4 | snowflake | meek (built into the Tor bundle) | custom (yours)
     bridge_auto: bool = True          # if Tor can't connect directly, try the built-in bridges by itself
-    exit_countries: list[str] = field(default_factory=list)   # prefer Tor exits in these countries (2-letter codes)
 
     def validate(self, name: str) -> None:
         if self.browser not in ("auto", "on", "off"):
@@ -84,10 +78,6 @@ class TransportConfig:
             raise ConfigError(f"transport '{name}': browser_window must be hidden, offscreen or visible")
         if self.browser_engine not in ("auto", "chromium", "firefox"):
             raise ConfigError(f"transport '{name}': browser_engine must be auto, chromium or firefox")
-        self.exit_countries = [c.strip().lower() for c in self.exit_countries if str(c).strip()]
-        for c in self.exit_countries:
-            if not (len(c) == 2 and c.isalpha()):
-                raise ConfigError(f"tor exit country '{c}' must be a two-letter country code, e.g. de or nl")
         if self.bridge_mode not in ("off", "obfs4", "snowflake", "meek", "custom"):
             raise ConfigError("tor bridge_mode must be off, obfs4, snowflake, meek or custom")
         if self.identities_per_circuit < 1:
@@ -329,8 +319,7 @@ class Profile:
     extras: "ExtrasConfig" = field(default_factory=lambda: ExtrasConfig())
 
     def active_engines(self, transport: str) -> list[str]:
-        """Engines a lane runs. Onion is Tor-only; clearnet engines run on Tor
-        only when the user explicitly opted into clearnet_via_tor."""
+        """Engines a lane runs. Onion is Tor-only; clearnet engines never run over Tor."""
         on = [n for n, e in self.engines.items() if e.enabled and (n != "packages" or self.packages_on())]
         if transport == "tor":
             on = [n for n in on if n != "packages"]           # package installs never go over Tor
@@ -338,12 +327,7 @@ class Profile:
             return [n for n in on if n != "onion"]
         if transport == "tor":
             tor = self.transports.get("tor")
-            out = []
-            if tor and tor.clearnet_via_tor:
-                out += [n for n in on if n != "onion"]
-            if tor and tor.onion and "onion" in on:
-                out.append("onion")
-            return out
+            return ["onion"] if tor and tor.onion and "onion" in on else []
         return []
 
     def packages_on(self) -> bool:
@@ -354,8 +338,7 @@ class Profile:
 
     def clearnet_lane_count(self) -> int:
         """How many lanes share the clearnet engines' daily budgets."""
-        c, t = self.transports.get("clearnet"), self.transports.get("tor")
-        return (1 if c and c.enabled else 0) + (1 if t and t.enabled and t.clearnet_via_tor else 0) or 1
+        return 1
 
 
 def _engine(raw: dict[str, Any] | None) -> EngineConfig:

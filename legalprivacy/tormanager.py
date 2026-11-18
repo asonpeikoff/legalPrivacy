@@ -129,12 +129,11 @@ class TorManager:
                  socks: str = "127.0.0.1:9050", control: str | None = "127.0.0.1:9051",
                  control_password: str | None = None, bridges: list[str] | None = None,
                  bridge_mode: str = "off", bridge_auto: bool = True,
-                 auto_install: bool = True, exit_countries: list[str] | None = None):
+                 auto_install: bool = True):
         self.log = log
         self.mode = mode                      # managed | external
         self.ext_socks, self.ext_control = socks, control
         self.control_password = control_password
-        self.exit_countries = [c.strip().lower() for c in (exit_countries or []) if c.strip()]
         self.bridges = [b.strip() for b in (bridges or []) if b.strip()]
         self.bridge_mode = bridge_mode          # off | obfs4 | snowflake | meek | custom (may change by itself)
         self.configured_bridge_mode = bridge_mode   # what the user chose
@@ -363,9 +362,6 @@ class TorManager:
             "SafeSocks 1",
             "Log notice stdout",
         ]
-        if self.exit_countries:         # a preference, not a requirement (StrictNodes 0)
-            lines.append("ExitNodes " + ",".join("{%s}" % c for c in self.exit_countries))
-            lines.append("StrictNodes 0")
         bundle_data = Path(self.binary).resolve().parent.parent / "data"
         for name, key in (("geoip", "GeoIPFile"), ("geoip6", "GeoIPv6File")):
             if (bundle_data / name).exists():

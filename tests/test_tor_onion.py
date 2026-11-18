@@ -60,7 +60,7 @@ def test_onion_walk_never_leaves_onion_space():
 def test_tor_is_off_by_default_and_clearnet_over_tor_off():
     p = Profile(name="d")
     tor = p.transports["tor"]
-    assert tor.enabled is False and tor.onion is True and tor.clearnet_via_tor is False
+    assert tor.enabled is False and tor.onion is True
     assert p.active_engines("tor") == ["onion"]          # even when later enabled
     assert "onion" not in p.active_engines("clearnet")
     assert build_lanes(p, WORDS) and [l.name for l in build_lanes(p, WORDS)] == ["clearnet"]
@@ -74,13 +74,12 @@ def test_enabling_tor_adds_onion_lane_only():
     assert lanes["clearnet"].budgets["search"].per_day == 120      # not halved: nothing shared
 
 
-def test_clearnet_via_tor_opt_in_splits_budget():
+def test_tor_lane_runs_only_onion():
     p = Profile(name="d")
-    apply_overrides(p, {"transports": {"tor": {"enabled": True, "clearnet_via_tor": True}}})
+    apply_overrides(p, {"transports": {"tor": {"enabled": True}}})
     lanes = {l.name: l for l in build_lanes(p, WORDS)}
-    assert set(lanes["tor"].engines) == {"search", "crawl", "dns", "onion"}
-    assert lanes["clearnet"].budgets["search"].per_day == 60
-    assert lanes["tor"].budgets["onion"].per_day == 40             # onion never split
+    assert set(lanes["tor"].engines) == {"onion"}
+    assert lanes["clearnet"].budgets["search"].per_day == 120       # clearnet budgets are never shared with Tor
 
 
 def test_profile_roundtrip(tmp_path=None):
