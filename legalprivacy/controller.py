@@ -73,6 +73,13 @@ class Controller:
             tor_pid=lambda: (self.tor.pid if self.tor else None),
             path=app_dir() / "observe.json")
         self._feed_timer_started = False
+        from .accounts import AccountsManager
+        self.accounts = AccountsManager(          # optional signed-in accounts; clearnet only, never Tor
+            self.log, config=lambda: self.profile.accounts,
+            running=lambda: self.running and not (self.runner and self.runner.paused),
+            proxy=lambda: self.profile.transports["clearnet"].proxy,
+            tor_addrs=lambda: tuple(filter(None, (getattr(self.tor, "socks_addr", None),
+                                                  self.profile.transports["tor"].socks))))
         self.runner: Runner | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -664,6 +671,7 @@ class Controller:
                     self.runner.hit_log.extend(prev.hit_log)
             self._thread = threading.Thread(target=self._run_loop, daemon=True, name="legalprivacy-runner")
             self._thread.start()
+            self.accounts.start()                 # idle unless an account is signed in AND switched on
             self.log.info("app", "Started: lanes = " + ", ".join(
                 f"{l.name}[{'/'.join(l.engines)}]" for l in lanes))
 
@@ -706,6 +714,8 @@ class Controller:
             done.append("log cleared")
             shutil.rmtree(app_dir() / "browser", ignore_errors=True)
             done.append("noise-browser cookies deleted")
+            self.accounts.forget_all()
+            done.append("signed-in account sessions deleted (you will need to sign in again)")
         if level == "hard":
             if self.tor and self.tor.state not in ("stopped",):
                 self.tor.stop()
@@ -727,6 +737,22 @@ class Controller:
         self.log.info("app", f"Panic ({level}): " + ", ".join(done) + ".")
         return {"level": level, "done": done}
 
+    # ── optional signed-in accounts ─────────────────────────────────────────
+    def accounts_action(self, action: str, provider: str) -> dict:
+        from .accounts import AccountError
+        try:
+            if action == "signin":
+                return self.accounts.begin_signin(provider)
+            if action == "forget":
+                self.accounts.forget(provider)
+            elif action == "resume":
+                self.accounts.resume(provider)
+            else:
+                raise ConfigError("unknown accounts action")
+        except AccountError as exc:
+            raise ConfigError(str(exc)) from exc
+        return {"ok": True}
+
     def leak_runner(self):
         from .leakcheck import LeakRunner
         if not hasattr(self, "_leak"):
@@ -740,6 +766,7 @@ class Controller:
             self.log.error("scheduler", f"Runner crashed: {exc!r}")
 
     def stop(self, stop_tor: bool = False) -> None:
+        self.accounts.stop()
         with self._lock:
             self._stop.set()
             t = self._thread
@@ -802,6 +829,7 @@ class Controller:
             "hour_target": round(self.runner.hour_target) if self.runner and self.running else None,
             "opennic": [x.split("|") for x in self.feeds.items("opennic")],
             "dns": self.dns_report(),
+            "accounts": self.accounts.status(),
         }
 
     def _search_share(self) -> float:

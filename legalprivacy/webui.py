@@ -145,6 +145,8 @@ class UIServer:
                     return self._json({"error": "unauthorized"}, 401)
                 ctl = srv.ctl
                 try:
+                    if u.path == "/api/accounts":
+                        return self._json(ctl.accounts.status())
                     if u.path == "/api/observe":
                         return self._json(ctl.observe_state())
                     if u.path == "/api/state":
@@ -239,6 +241,8 @@ class UIServer:
                         ctl.reapply()
                     elif path == "/api/leakcheck/run":
                         ctl.leak_runner().run()
+                    elif path in ("/api/accounts/signin", "/api/accounts/forget", "/api/accounts/resume"):
+                        return self._json(ctl.accounts_action(path.rsplit("/", 1)[1], str(body.get("provider", ""))))
                     elif path == "/api/panic":
                         return self._json(ctl.panic(str(body.get("level", "soft"))))
                     elif path == "/api/pause":

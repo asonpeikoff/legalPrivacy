@@ -402,7 +402,12 @@ tbody tr:hover td{background:var(--code)}
     <label class="chk"><input type="checkbox" id="fAuto"><span>Refresh automatically when the lists are ~3 months old <span class="mute">(contacts those sites from your connection)</span></span></label>
     <div class="row" style="margin-top:8px"><button id="fRefresh">↻ Refresh sources now</button><span class="small mute" id="fNote"></span></div>
   </div>
-  <div class="card"><h3>Panic <details class="why"><summary>ⓘ</summary><div>Stops the noise right away. <b>Medium</b> also clears the log and the noise browser's cookies. <b>Hard</b> also stops Tor and deletes what legalPrivacy recorded about connections (the Proof tab data) and its log files. Your settings are never deleted, and nothing outside legalPrivacy's own folder is touched.</div></details></h3>
+  <div class="card" id="accCard"><h3><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg>Accounts (optional, off by default) <details class="why"><summary>ⓘ</summary><div>Lets the noise browser browse while signed in to <b>your own</b> Google and Microsoft accounts, so the noise looks like a logged-in person. You sign in yourself, in a normal browser window that opens on this computer; legalPrivacy never sees, stores or types your password or a code. Only the browser's session (cookies) is kept, in legalPrivacy's own folder with owner-only permissions, apart from the ordinary noise browser's cookies. Signed-in visits only <b>load and scroll</b> a few pages (a Google search, the Gmail inbox, YouTube; the Outlook inbox and calendar, Bing, microsoft.com). They never click, open a message, send, delete, archive, label, mark, reply, forward, accept or decline, sign out or change a setting. They go through the normal internet connection, never through Tor. Panic (medium and hard) deletes these sessions. <b>429</b> means a site answered “too many requests, slow down”; a <b>robot-check page</b> is the site asking whether you are a person. Either one, or a sign-in page, pauses that account's signed-in visits for a random while (hours; longer if it keeps happening) and the ordinary noise carries on.</div></details></h3>
+    <div class="small warnc" style="margin-bottom:8px"><b>Please read:</b> these are your <b>real</b> accounts. The searches and visits become part of that account's history and affect its ads and recommendations. Google or Microsoft may ask you to verify, or restrict, an account that looks automated. A spare account is safer. Nothing is ever sent, deleted or changed in the mailbox.</div>
+    <div id="accRows"></div>
+    <div class="small mute" id="accNoDisplay" style="display:none">This computer has no display, so a sign-in window can't open here. Sign in from a computer with a screen.</div>
+  </div>
+  <div class="card"><h3>Panic <details class="why"><summary>ⓘ</summary><div>Stops the noise right away. <b>Medium</b> also clears the log and the noise browser's cookies, and deletes any signed-in account sessions (Accounts above; you would have to sign in again). <b>Hard</b> also does all of that, stops Tor and deletes what legalPrivacy recorded about connections (the Proof tab data) and its log files. Your settings are never deleted, and nothing outside legalPrivacy's own folder is touched.</div></details></h3>
     <div class="row"><button id="pSoft">Stop noise now</button><button id="pMed">Stop + clear log and cookies</button><button id="pHard" class="bad">Stop + wipe everything recorded</button></div><div class="small mute" id="pNote"></div>
   </div>
   <div class="row"><button id="sSave" style="display:none" class="pri">Save settings</button><button id="sWiz">Run setup questions again</button><span class="small mute" id="sSaved"></span></div>
@@ -628,8 +633,8 @@ let dirty={set:false,tor:false};
 // ---------- header buttons
 const panic=async(level,msg)=>{if(!confirm(msg))return;try{const r=await api('/api/panic',{level});$('#pNote').textContent='Done: '+r.done.join(', ')+'.';toast('Panic ('+level+') done');poll()}catch(e){toast(e.message,1)}};
 $('#pSoft').onclick=()=>panic('soft','Stop the noise now?');
-$('#pMed').onclick=()=>panic('medium','Stop the noise and clear the log and the noise browser’s cookies?');
-$('#pHard').onclick=()=>panic('hard','Stop noise and Tor, and delete the log, cookies and connection records legalPrivacy kept? Your settings stay.');
+$('#pMed').onclick=()=>panic('medium','Stop the noise, clear the log and the noise browser’s cookies, and delete any signed-in account sessions (you would have to sign in again)?');
+$('#pHard').onclick=()=>panic('hard','Stop noise and Tor, and delete the log, cookies, signed-in account sessions and connection records legalPrivacy kept? Your settings stay.');
 $('#bStart').onclick=()=>act('/api/start').then(clearApply);
 $('#bStop').onclick=()=>act('/api/stop').then(clearApply);
 $('#bPause').onclick=()=>act('/api/pause',{paused:!(S&&S.paused)});
@@ -739,6 +744,7 @@ setInterval(pollProof,2000);
 // ---------- render
 function render(){
   const s=S; if(!s)return;
+  renderAcc(s.accounts);
   if(!s.running&&!applying){clearTimeout(applyTimer);clearApply()}
   const tor=s.tor, torCfg=s.profile.transports.tor;
   const rp=$('#pRun');
@@ -1059,13 +1065,14 @@ function fillSettings(force){
   $('#xDevice').onchange=()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'};
   $('#sBrowser').value=p.transports.clearnet.browser||'auto';$('#sEngine').value=p.transports.clearnet.browser_engine||'auto';$('#sWin').value=p.transports.clearnet.browser_window||'hidden';$('#sCookies').value=String(p.transports.clearnet.cookie_hours??1);$('#sCookieVary').checked=p.transports.clearnet.cookie_vary!==false;
   const q=p.queries||{};$('#qLive').checked=q.live!==false;$('#qData').checked=q.dataset!==false;$('#qBuiltin').checked=q.builtin!==false;$('#qWords').checked=q.words!==false;$('#sAuto').checked=!!S.app.autostart;$('#sClearLogs').checked=S.app.clear_logs_on_restart!==false;$('#sPath').textContent=S.config_path;dirty.set=false;
+  fillAcc(p);
   $$('#t-set input').forEach(i=>i.oninput=()=>{dirty.set=true;$('#sSaved').textContent='unsaved changes'});
 }
 async function saveSettings(auto){
   const engines={};Object.entries(window._engMix.values()).forEach(([n,v])=>engines[n]={enabled:v>0,budget_per_day:Math.round(v*10)});
   const rnd=parseInt($('#sRand').value||0)/100;
   try{await api('/api/config',{realtime_scale:parseFloat($('#sScale').value),daily_max_failures:parseInt($('#sMaxF').value),engines,rate:{mode:rnd>0?'random':'steady',level:parseFloat($('#sLevel').value),randomness:rnd},
-      dns:{mode:document.querySelector('input[name=dnsm]:checked').value,system_share:parseInt($('#dShare').value||50)/100,opennic:$('#dOpen').checked,quad9:$('#dQuad9').checked,custom:$('#dCustom').value,slow_ms:parseInt($('#dSlow').value||250),resolvers:readDnsTable()},
+      accounts:readAcc(),dns:{mode:document.querySelector('input[name=dnsm]:checked').value,system_share:parseInt($('#dShare').value||50)/100,opennic:$('#dOpen').checked,quad9:$('#dQuad9').checked,custom:$('#dCustom').value,slow_ms:parseInt($('#dSlow').value||250),resolvers:readDnsTable()},
       transports:{clearnet:{enabled:$('#sClear').checked,proxy:$('#sProxy').value||null,browser:$('#sBrowser').value,browser_window:$('#sWin').value,browser_engine:$('#sEngine').value,cookie_hours:parseFloat($('#sCookies').value),cookie_vary:$('#sCookieVary').checked}},
       queries:{live:$('#qLive').checked,dataset:$('#qData').checked,builtin:$('#qBuiltin').checked,words:$('#qWords').checked},
       traffic:{pattern:(document.querySelector('input[name=xpat]:checked')||{}).value||'drift',...(()=>{const m=window._trMix.values();return {browser:m.browser,plain:m.plain,onion:m.onion??window._trOnion}})(),
@@ -1082,6 +1089,40 @@ async function saveSettings(auto){
               persona:$('#pers').value,persona_share:parseInt($('#persShare').value||90)/100,packages:$('#ePkg').value}});
     await api('/api/app',{autostart:$('#sAuto').checked,clear_logs_on_restart:$('#sClearLogs').checked});dirty.set=false;$('#sSaved').textContent='Saved ✓ '+(S&&S.running?(needApply(),'(going live…)'):'');poll()}catch(e){$('#sSaved').textContent='Not saved: '+e.message;if(!auto)toast(e.message,1)}
 }
+// ---------- optional signed-in accounts (Settings → Accounts)
+const ACC=[['google','Google','Gmail inbox, a Google search, YouTube'],['microsoft','Microsoft (Outlook)','Outlook inbox and calendar, Bing, microsoft.com']];
+function buildAcc(){
+  $('#accRows').innerHTML=ACC.map(([id,name,what])=>`<div class="card" style="margin:8px 0"><div class="row"><b style="min-width:150px">${name}</b><span class="pill" id="aSt_${id}">…</span><span class="small mute">${what}</span></div>
+    <div class="small mute" id="aMsg_${id}"></div>
+    <div class="row"><button type="button" id="aSi_${id}">Sign in</button><button type="button" id="aRs_${id}" style="display:none">Resume now</button><button type="button" id="aFg_${id}" class="bad" style="display:none">Forget</button></div>
+    <label class="chk"><input type="checkbox" id="aEn_${id}"><span><b>Use this account</b> <span class="mute">— off by default; works only while it is signed in and the noise is running</span></span></label>
+    <div class="row">Signed-in visits at most <input type="number" id="aHr_${id}" min="1" max="10" step="1" style="width:70px"> an hour and <input type="number" id="aDay_${id}" min="1" max="100" step="1" style="width:70px"> a day <span class="small mute">(spaced at random, never on a fixed beat)</span></div>
+    <div class="row">After a robot check or “too many requests” page <select id="aCh_${id}"><option value="pause">Pause for a random while (recommended)</option><option value="continue">Keep going (not recommended)</option></select></div></div>`).join('');
+  ACC.forEach(([id])=>{
+    $('#aSi_'+id).onclick=async()=>{try{await api('/api/accounts/signin',{provider:id});toast('A sign-in window is opening on this computer…');poll()}catch(e){toast(e.message,1)}};
+    $('#aFg_'+id).onclick=async()=>{if(!confirm('Delete the saved session for this account? You would have to sign in again. Nothing in the account itself changes.'))return;try{await api('/api/accounts/forget',{provider:id});toast('Forgotten');poll()}catch(e){toast(e.message,1)}};
+    $('#aRs_'+id).onclick=async()=>{try{await api('/api/accounts/resume',{provider:id});toast('Resumed');poll()}catch(e){toast(e.message,1)}};
+  });
+}
+buildAcc();
+function fillAcc(p){const a=(p&&p.accounts)||{};ACC.forEach(([id])=>{const c=a[id]||{};
+  $('#aEn_'+id).checked=!!c.enabled;$('#aHr_'+id).value=c.per_hour??3;$('#aDay_'+id).value=c.per_day??12;$('#aCh_'+id).value=c.on_challenge||'pause'})}
+function readAcc(){return Object.fromEntries(ACC.map(([id])=>[id,{enabled:$('#aEn_'+id).checked,
+  per_hour:Math.min(10,Math.max(1,parseInt($('#aHr_'+id).value||3))),per_day:Math.min(100,Math.max(1,parseInt($('#aDay_'+id).value||12))),
+  on_challenge:$('#aCh_'+id).value}]))}
+function renderAcc(d){if(!d||!d.accounts)return;
+  $('#accNoDisplay').style.display=d.display?'none':'';
+  const when=ts=>new Date(ts*1000).toLocaleString([], {weekday:'short',hour:'2-digit',minute:'2-digit'});
+  ACC.forEach(([id])=>{const a=d.accounts[id];if(!a)return;const si=a.signin||{},busy=['starting','waiting','saving'].includes(si.state);
+    const st=$('#aSt_'+id),paused=a.state==='needs_attention';
+    st.className='pill '+(a.state==='signed_in'?'ok':a.state==='signed_out'?'':'warn');
+    st.textContent=a.state==='signed_in'?'Signed in'+(a.saved_at?' · saved '+new Date(a.saved_at*1000).toLocaleDateString():''):
+      a.state==='needs_attention'?'Paused until about '+when(a.attention_until):a.state==='needs_signin'?'Needs sign-in again':'Signed out';
+    $('#aMsg_'+id).textContent=busy||si.state==='failed'||si.state==='done'?si.message:(paused?'Paused because '+a.attention_reason+'. The ordinary noise carries on.':
+      a.state==='signed_in'?`${a.visits_hour} of ${a.per_hour} visits this hour, ${a.visits_day} of ${a.per_day} today.`:'');
+    $('#aSi_'+id).disabled=busy||!d.display;$('#aSi_'+id).textContent=a.state==='signed_out'?'Sign in':'Sign in again';
+    $('#aRs_'+id).style.display=paused?'':'none';$('#aFg_'+id).style.display=a.state==='signed_out'?'none':'';
+    $('#aEn_'+id).disabled=a.state==='signed_out'||a.state==='needs_signin'})}
 $('#sSave').onclick=()=>saveSettings(false);
 $('#sWiz').onclick=()=>showWiz();
 // Settings save themselves: a moment after a change (longer while typing in a text box).

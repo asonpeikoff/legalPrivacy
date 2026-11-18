@@ -285,6 +285,28 @@ class MyListConfig:
 
 
 @dataclass
+class AccountConfig:
+    """One optional signed-in account (Google or Microsoft). OFF by default; see accounts.py."""
+    enabled: bool = False
+    per_hour: int = 3               # at most this many signed-in visits an hour (1-10)
+    per_day: int = 12               # and this many a day
+    on_challenge: str = "pause"     # after a robot check / "too many requests": pause (random while) | continue
+
+    def validate(self, name: str) -> None:
+        if not isinstance(self.enabled, bool):
+            raise ConfigError(f"accounts.{name}.enabled must be true or false")
+        for k, lo, hi in (("per_hour", 1, 10), ("per_day", 1, 100)):
+            v = getattr(self, k)
+            if isinstance(v, bool) or not isinstance(v, int) or not lo <= v <= hi:
+                raise ConfigError(f"accounts.{name}.{k} must be a whole number from {lo} to {hi}")
+        if self.on_challenge not in ("pause", "continue"):
+            raise ConfigError(f"accounts.{name}.on_challenge must be pause or continue")
+
+
+ACCOUNT_PROVIDERS = ("google", "microsoft")
+
+
+@dataclass
 class QuerySources:
     """Where search queries come from (mixed; none dominates). See queries.py."""
     live: bool = True        # Google Trends, Wikipedia most-read, BBC headlines (refreshed daily)
@@ -317,6 +339,8 @@ class Profile:
     mylist: "MyListConfig" = field(default_factory=lambda: MyListConfig())
     traffic: "TrafficConfig" = field(default_factory=lambda: TrafficConfig())
     extras: "ExtrasConfig" = field(default_factory=lambda: ExtrasConfig())
+    accounts: dict[str, "AccountConfig"] = field(
+        default_factory=lambda: {n: AccountConfig() for n in ACCOUNT_PROVIDERS})
 
     def active_engines(self, transport: str) -> list[str]:
         """Engines a lane runs. Onion is Tor-only; clearnet engines never run over Tor."""
@@ -367,6 +391,7 @@ def profile_to_dict(profile: Profile) -> dict[str, Any]:
         "mylist": asdict(profile.mylist),
         "traffic": asdict(profile.traffic),
         "extras": asdict(profile.extras),
+        "accounts": {n: asdict(a) for n, a in profile.accounts.items()},
     }}
 
 
@@ -479,6 +504,19 @@ def apply_overrides(profile: Profile, raw: dict[str, Any]) -> Profile:
             watch_started=float(merged.get("watch_started") or 0),
             watch_hours=float(merged.get("watch_hours", 24)))
         profile.mylist.validate()
+    if p.get("accounts") is not None:
+        raw_acc = p["accounts"]
+        if not isinstance(raw_acc, dict):
+            raise ConfigError("accounts must be a section with google and microsoft")
+        for name, raw_a in raw_acc.items():
+            if name not in ACCOUNT_PROVIDERS:
+                raise ConfigError(f"accounts: unknown account type '{name}'")
+            if raw_a is not None and not isinstance(raw_a, dict):
+                raise ConfigError(f"accounts.{name} must be a section")
+            merged = profile.accounts.get(name, AccountConfig()).__dict__ | (raw_a or {})
+            acc = AccountConfig(**{k: v for k, v in merged.items() if k in AccountConfig.__dataclass_fields__})
+            acc.validate(name)
+            profile.accounts[name] = acc
     if "daily_max_failures" in p:
         profile.daily_max_failures = int(p["daily_max_failures"])
     for name, eng in profile.engines.items():
