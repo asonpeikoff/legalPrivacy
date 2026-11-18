@@ -16,6 +16,7 @@ permissions:
 jobs:
   build:
     strategy:
+      fail-fast: false      # one platform's problem (or no free macOS runner) must not cancel the others
       matrix:
         include:
           - os: ubuntu-latest
@@ -64,6 +65,7 @@ jobs:
 
   release:
     needs: build
+    if: ${{ !cancelled() }}      # still publish when macOS had no runner; the check below keeps Windows+Linux mandatory
     runs-on: ubuntu-latest
 
     steps:
@@ -73,6 +75,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: dist/
+
+      - name: Require the Windows and Linux builds
+        run: |
+          test -f dist/legalprivacy-launch-linux/legalprivacy-launch-linux
+          test -f dist/legalprivacy-launch-windows.exe/legalprivacy-launch-windows.exe
+          test -f dist/legalprivacy-launch-macos/legalprivacy-launch-macos || echo "::warning::macOS build missing; releasing without it"
 
       - name: Make Linux/macOS binaries executable
         run: |
@@ -97,6 +105,8 @@ jobs:
             | Windows | `legalprivacy-launch-windows.exe` | Double-click. If SmartScreen warns, choose **More info → Run anyway**. |
             | macOS | `legalprivacy-launch-macos` | Right-click → **Open** the first time (the app isn't signed). |
             | Linux | `legalprivacy-launch-linux` | `chmod +x legalprivacy-launch-linux && ./legalprivacy-launch-linux` |
+
+            If a platform's file is missing below, its build wasn't available yet; it is added to this release when ready.
 
             Your browser opens the dashboard, you answer three quick questions, and it starts. A real Chrome, Edge,
             Brave or Chromium on the computer makes the browsing look human; Tor is optional and set up for you.
