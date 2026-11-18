@@ -214,6 +214,7 @@ tbody tr:hover td{background:var(--code)}
     <label class="chk"><input type="checkbox" id="tOnion"><span><b>🧅 Visit onion sites</b> (darknet noise) — only .onion addresses, never leaves the Tor network.</span></label>
     <label class="chk"><input type="checkbox" id="tManage"><span><b>Let legalPrivacy manage Tor</b> (recommended, default). Untick to use an existing Tor at the address below instead.</span></label>
     <details class="small" style="margin-top:4px"><summary class="mute">Advanced</summary>
+      <div class="row" style="margin-top:6px">Prefer Tor exits in these countries <input type="text" id="tExit" size="14" placeholder="e.g. de, nl"> <details class="why"><summary>ⓘ</summary><div>Two-letter country codes, separated by commas. Tor will <b>prefer</b> exit machines in those countries (it may still use others). It only matters for traffic that leaves Tor to the normal internet; .onion sites never use exits. Fewer allowed countries means a smaller crowd to blend into, so leave it empty unless you have a reason.</div></details></div>
     <label class="chk"><input type="checkbox" id="tClear"><span><b>Also route ordinary web noise through Tor</b> — <b class="bad">not recommended</b>. Ordinary sites would see visits from Tor exits, a distinctive pattern that also burdens volunteer exit relays. Leave this off.</span></label>
     </details>
     <div class="row" id="tExt" style="display:none">SOCKS <input type="text" id="tSocks" size="16"> Control <input type="text" id="tCtl" size="16"></div>
@@ -405,6 +406,9 @@ tbody tr:hover td{background:var(--code)}
     <label class="chk"><input type="checkbox" id="fAuto"><span>Refresh automatically when the lists are ~3 months old <span class="mute">(contacts those sites from your connection)</span></span></label>
     <div class="row" style="margin-top:8px"><button id="fRefresh">↻ Refresh sources now</button><span class="small mute" id="fNote"></span></div>
   </div>
+  <div class="card"><h3>Panic <details class="why"><summary>ⓘ</summary><div>Stops the noise right away. <b>Medium</b> also clears the log and the noise browser's cookies. <b>Hard</b> also stops Tor and deletes what noisyCricket recorded about connections (the Proof tab data) and its log files. Your settings are never deleted, and nothing outside noisyCricket's own folder is touched.</div></details></h3>
+    <div class="row"><button id="pSoft">Stop noise now</button><button id="pMed">Stop + clear log and cookies</button><button id="pHard" class="bad">Stop + wipe everything recorded</button></div><div class="small mute" id="pNote"></div>
+  </div>
   <div class="row"><button id="sSave" style="display:none" class="pri">Save settings</button><button id="sWiz">Run setup questions again</button><span class="small mute" id="sSaved"></span></div>
   <div class="note small">Config file: <code id="sPath"></code><br>Changes apply the next time you press Start (Stop → Start).</div>
 </section>
@@ -516,6 +520,12 @@ tbody tr:hover td{background:var(--code)}
 </section>
 <!-- TOOLS -->
 <section id="t-proof" class="tab vz">
+  <div class="card"><h3><svg class="ic" aria-hidden="true"><use href="#i-proof"/></svg>Is it working? <details class="why"><summary>ⓘ</summary><div>Each line says what you <b>want</b> to see, what we actually <b>saw</b>, and whether that is working. Nothing here changes your settings. “Run checks” contacts check.torproject.org once directly and once through Tor (only if Tor is on) to compare the two addresses.</div></details></h3>
+    <div id="lkHead" class="big" style="margin:4px 0"></div>
+    <div class="small mute" style="margin-bottom:8px"><b class="ok">✓</b> working &nbsp; <b class="bad">✗</b> not working &nbsp; <b style="color:var(--tor)">ℹ</b> for your information &nbsp; <b class="mute">?</b> not tested yet</div>
+    <div id="lkRows"></div>
+    <div class="row" style="margin-top:8px"><button id="lkRun" class="pri"><svg class="ic sm" aria-hidden="true"><use href="#i-check"/></svg>Run checks</button><span class="small mute" id="lkWhen"></span></div>
+  </div>
   <div class="card"><h3><svg class="ic" aria-hidden="true"><use href="#i-proof"/></svg>Is it working? Proof from your own computer <details class="why"><summary>ⓘ</summary><div>
     Every few seconds legalPrivacy looks at which addresses this computer is connected to and which program owns each connection:
     <b>your apps</b> (your browser, updates, chat…), <b>legalPrivacy</b> (its own requests and the browser it drives) or <b>Tor</b>.
@@ -613,13 +623,17 @@ const fmtDur=s=>{s=Math.floor(s);const d=Math.floor(s/86400),h=Math.floor(s%8640
 const fmtB=n=>n>1e9?(n/1e9).toFixed(2)+' GB':n>1e6?(n/1e6).toFixed(1)+' MB':n>1e3?(n/1e3).toFixed(0)+' KB':(n||0)+' B';
 
 // tabs
-$$('#nav button').forEach(b=>b.onclick=()=>{$$('#nav button').forEach(x=>x.classList.toggle('on',x===b));$$('.tab').forEach(t=>t.classList.toggle('on',t.id==='t-'+b.dataset.t));if(b.dataset.t==='log')renderLog(true);if(b.dataset.t==='set')fillSettings(true);if(b.dataset.t==='tor')fillTor(true);if(b.dataset.t==='tools')$('#toolCfg').textContent=S?S.config_path:'';if(b.dataset.t==='mylist')loadML();if(b.dataset.t==='ml')loadMLTab();if(b.dataset.t==='proof')pollProof()});
+$$('#nav button').forEach(b=>b.onclick=()=>{$$('#nav button').forEach(x=>x.classList.toggle('on',x===b));$$('.tab').forEach(t=>t.classList.toggle('on',t.id==='t-'+b.dataset.t));if(b.dataset.t==='log')renderLog(true);if(b.dataset.t==='set')fillSettings(true);if(b.dataset.t==='tor')fillTor(true);if(b.dataset.t==='tools')$('#toolCfg').textContent=S?S.config_path:'';if(b.dataset.t==='mylist')loadML();if(b.dataset.t==='ml')loadMLTab();if(b.dataset.t==='proof'){pollProof();loadLeak()}});
 
 let logEpoch=null;
 let S=null, hits=[], hitAfter=0, logs=[], logAfter=0, errCount=0, srcOn=new Set(), srcAll=new Set(['app','scheduler','clearnet','browser','tor','onion','tools','mylist']);
 let dirty={set:false,tor:false};
 
 // ---------- header buttons
+const panic=async(level,msg)=>{if(!confirm(msg))return;try{const r=await api('/api/panic',{level});$('#pNote').textContent='Done: '+r.done.join(', ')+'.';toast('Panic ('+level+') done');poll()}catch(e){toast(e.message,1)}};
+$('#pSoft').onclick=()=>panic('soft','Stop the noise now?');
+$('#pMed').onclick=()=>panic('medium','Stop the noise and clear the log and the noise browser’s cookies?');
+$('#pHard').onclick=()=>panic('hard','Stop noise and Tor, and delete the log, cookies and connection records noisyCricket kept? Your settings stay.');
 $('#bStart').onclick=()=>act('/api/start').then(clearApply);
 $('#bStop').onclick=()=>act('/api/stop').then(clearApply);
 $('#bPause').onclick=()=>act('/api/pause',{paused:!(S&&S.paused)});
@@ -666,6 +680,18 @@ function mapWhyEmpty(o){
   else why=`${ls.internet} internet connection${ls.internet>1?'s':''} seen; they’ll appear on the next refresh.`;
   return `<div class="note small">${why}</div>`;
 }
+const LKI={ok:['✓','ok'],bad:['✗','bad'],info:['ℹ',''],unknown:['?','mute']};
+async function loadLeak(){try{renderLeak(await api('/api/leakcheck'))}catch(e){}}
+function renderLeak(o){
+  const sm=o.summary,run=o.running;
+  $('#lkHead').innerHTML=run?'<span class="spin">⟳</span> Checking…':!sm?'':
+    sm.bad?`<span class="bad">✗ ${esc(sm.headline)}</span>`:sm.unknown||o.preview?`<span class="warnc">? ${o.preview?'Quick look — press “Run checks” for the full test':esc(sm.headline)}</span>`:`<span class="ok">✓ ${esc(sm.headline)}</span>`;
+  $('#lkRows').innerHTML=(o.checks||[]).map(c=>{const [ic,cl]=LKI[c.status]||LKI.unknown;
+    return `<div class="row" style="align-items:flex-start;margin:6px 0"><b class="${cl}" style="width:22px;font-size:1.2em">${ic}</b><div style="flex:1"><b>${esc(c.title)}</b><div class="small"><span class="mute">You want to see:</span> ${esc(c.want)}</div><div class="small"><span class="mute">We saw:</span> <span class="${cl}">${esc(c.saw)}</span></div>${c.hint&&c.status!=='ok'?`<div class="small mute">${esc(c.hint)}</div>`:''}</div></div>`}).join('');
+  $('#lkWhen').textContent=o.ts?'Last run '+new Date(o.ts*1000).toLocaleTimeString():'';
+  $('#lkRun').disabled=!!run;$('#lkRun').textContent=run?'Checking…':'Run checks';
+  if(run)setTimeout(loadLeak,1200)}
+$('#lkRun').onclick=async()=>{await act('/api/leakcheck/run');loadLeak()};
 function renderProof(o){
   $('#pObs').checked=o.enabled;
   $('#pHead').innerHTML=!o.available?'<span class="warnc">Connection watching isn\'t available on this computer (the psutil package is missing).</span>':
@@ -854,7 +880,7 @@ function fillTor(force){
   if(!S||(dirty.tor&&!force))return;const c=S.profile.transports.tor;
   $('#tEnable').checked=c.enabled;$('#tOnion').checked=c.onion;$('#tClear').checked=c.clearnet_via_tor;if(c.clearnet_via_tor)$('#tClear').closest('details').open=true;$('#tManage').checked=c.manage;
   $('#tSocks').value=c.socks;$('#tCtl').value=c.control||'';$('#tExt').style.display=c.manage?'none':'flex';
-  $('#tSeeds').value=((c.onion_seeds&&c.onion_seeds.length)?c.onion_seeds:S.builtin_onion_seeds.map(b=>b.url)).join('\n');$('#tBridges').value=(c.bridges||[]).join('\n');
+  $('#tSeeds').value=((c.onion_seeds&&c.onion_seeds.length)?c.onion_seeds:S.builtin_onion_seeds.map(b=>b.url)).join('\n');$('#tBridges').value=(c.bridges||[]).join('\n');$('#tExit').value=(c.exit_countries||[]).join(', ');
   (document.querySelector(`input[name=bmode][value=${c.bridge_mode||'off'}]`)||{}).checked=true;$('#bAuto').checked=c.bridge_auto!==false;
   $('#tBuiltin').innerHTML=S.builtin_onion_seeds.map(b=>`<div>${esc(b.name)}: <code>${esc(b.url)}</code></div>`).join('');
   dirty.tor=false;
@@ -862,7 +888,7 @@ function fillTor(force){
 $$('#t-tor input,#t-tor textarea').forEach(i=>i.oninput=()=>{dirty.tor=true;$('#tExt').style.display=$('#tManage').checked?'none':'flex';$('#tSaved').textContent='unsaved changes'});
 $('#tClear').onchange=()=>{if($('#tClear').checked&&!confirm('Route ordinary clearnet noise through Tor?\n\nThis is NOT recommended: it adds load to Tor exit relays and Tor-exit search traffic is a distinctive pattern.\n\nUse only if you specifically want it.'))$('#tClear').checked=false};
 async function saveTor(auto){
-  try{await api('/api/config',{transports:{tor:{enabled:$('#tEnable').checked,onion:$('#tOnion').checked,clearnet_via_tor:$('#tClear').checked,manage:$('#tManage').checked,socks:$('#tSocks').value,control:$('#tCtl').value||null,onion_seeds:$('#tSeeds').value,bridges:$('#tBridges').value,bridge_mode:(document.querySelector('input[name=bmode]:checked')||{}).value||'off',bridge_auto:$('#bAuto').checked}}});
+  try{await api('/api/config',{transports:{tor:{enabled:$('#tEnable').checked,onion:$('#tOnion').checked,clearnet_via_tor:$('#tClear').checked,manage:$('#tManage').checked,socks:$('#tSocks').value,control:$('#tCtl').value||null,onion_seeds:$('#tSeeds').value,bridges:$('#tBridges').value,exit_countries:$('#tExit').value,bridge_mode:(document.querySelector('input[name=bmode]:checked')||{}).value||'off',bridge_auto:$('#bAuto').checked}}});
     dirty.tor=false;$('#tSaved').textContent='Saved ✓ '+(S&&S.running?(needApply(),'(going live…)'):'');await poll()}catch(e){$('#tSaved').textContent='Not saved: '+e.message;if(!auto)toast(e.message,1)}
 }
 $('#tSave').onclick=()=>saveTor(false);

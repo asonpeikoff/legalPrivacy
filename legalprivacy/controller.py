@@ -140,6 +140,9 @@ class Controller:
             if bad:
                 raise ConfigError("invalid onion address(es): " + ", ".join(bad[:3]))
             tor_raw["onion_seeds"] = good
+        if "exit_countries" in tor_raw and isinstance(tor_raw["exit_countries"], str):
+            import re as _re
+            tor_raw["exit_countries"] = [c for c in _re.split(r"[\s,;]+", tor_raw["exit_countries"]) if c]
         if "bridges" in tor_raw and isinstance(tor_raw["bridges"], str):
             tor_raw["bridges"] = [ln.strip() for ln in tor_raw["bridges"].splitlines() if ln.strip()]
         apply_overrides(new, raw)
@@ -167,13 +170,15 @@ class Controller:
         mode = "managed" if cfg.manage else "external"
         if self.tor is None or self.tor.mode != mode or self.tor.ext_socks != cfg.socks \
                 or self.tor.bridges != [b.strip() for b in cfg.bridges if b.strip()] \
-                or self.tor.configured_bridge_mode != cfg.bridge_mode or self.tor.bridge_auto != cfg.bridge_auto:
+                or self.tor.configured_bridge_mode != cfg.bridge_mode or self.tor.bridge_auto != cfg.bridge_auto \
+                or self.tor.exit_countries != [c.strip().lower() for c in cfg.exit_countries]:
             if self.tor and self.tor.state not in ("stopped",):
                 self.tor.stop()
             self.tor = TorManager(self.log, mode=mode, socks=cfg.socks, control=cfg.control,
                                   control_password=cfg.control_password,
                                   bridges=cfg.bridges, auto_install=cfg.auto_install,
-                                  bridge_mode=cfg.bridge_mode, bridge_auto=cfg.bridge_auto)
+                                  bridge_mode=cfg.bridge_mode, bridge_auto=cfg.bridge_auto,
+                                  exit_countries=cfg.exit_countries)
         return self.tor
 
     # ── DNS resolver table: health + verification ──────────────────────────
@@ -686,6 +691,53 @@ class Controller:
             finally:
                 self.app["clear_logs_on_restart"] = keep
             self.log.info("app", "Settings applied live.")
+
+    # ── Panic: stop now, and (optionally) leave nothing behind ───────────────
+    def panic(self, level: str = "soft") -> dict:
+        """soft: stop the noise. medium: + clear the log and noise-browser cookies.
+        hard: + stop Tor and delete everything noisyCricket recorded (Proof data, cookies, logs).
+        Your settings (profile) are never deleted."""
+        import shutil
+        from .paths import app_dir
+        if level not in ("soft", "medium", "hard"):
+            raise ConfigError("panic level must be soft, medium or hard")
+        done = []
+        if self.running:
+            self.stop()
+            done.append("noise stopped")
+        else:
+            done.append("noise was already stopped")
+        if level in ("medium", "hard"):
+            self.log.clear()
+            done.append("log cleared")
+            shutil.rmtree(app_dir() / "browser", ignore_errors=True)
+            done.append("noise-browser cookies deleted")
+        if level == "hard":
+            if self.tor and self.tor.state not in ("stopped",):
+                self.tor.stop()
+                done.append("Tor stopped")
+            try:
+                self.observer.stop()
+            except Exception:
+                pass
+            for name in ("observe.json",):
+                try:
+                    (app_dir() / name).unlink()
+                except OSError:
+                    pass
+            try:
+                wipe_old_log_files()
+            except Exception:
+                pass
+            done.append("Proof data and log files deleted")
+        self.log.info("app", f"Panic ({level}): " + ", ".join(done) + ".")
+        return {"level": level, "done": done}
+
+    def leak_runner(self):
+        from .leakcheck import LeakRunner
+        if not hasattr(self, "_leak"):
+            self._leak = LeakRunner(self)
+        return self._leak
 
     def _run_loop(self) -> None:
         try:

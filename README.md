@@ -183,6 +183,16 @@ On macOS, other programs' connections are only visible when legalPrivacy runs as
 administrator; otherwise the tab shows the noise only and says so. The watcher can be
 switched off on the tab.
 
+## Is it working? (leak check, panic, Tor exits)
+
+- **Proof tab → "Is it working?"** shows each check as *what you want to see*, *what we saw* and a plain verdict:
+  ✓ working, ✗ not working (with what to do), ℹ for your information, ? not tested yet. It checks that noise is on,
+  that your DNS choice isn't being redirected by your network, that Tor is connected and really leaves from a
+  different address than yours, and that the noise runs in a real browser that looks like yours. Nothing changes your settings.
+- **Settings → Panic**: stop now; or also clear the log and the noise browser's cookies; or also stop Tor and delete what
+  noisyCricket recorded about connections. Your settings are never deleted.
+- **Tor tab → Advanced → Prefer Tor exits in these countries** (e.g. `de, nl`). A preference only; .onion sites don't use exits.
+
 ## DNS
 
 | Setting | What it does |
