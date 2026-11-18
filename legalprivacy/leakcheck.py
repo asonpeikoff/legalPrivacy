@@ -52,10 +52,13 @@ def build_checks(f: dict[str, Any]) -> list[dict]:
                           "Your router or provider is answering instead of the servers you picked, so your choice "
                           "isn't taking effect. A VPN or encrypted DNS (DoH/DoT) in your system gets around this."))
         else:
-            good = [r for r in checked if r["verdict"] in ("ok", "slow")]
+            good = [r for r in checked if r["verdict"] in ("ok", "slow", "disputed")]
             down = [r for r in checked if r["verdict"] == "down"]
+            liars = [r for r in checked if r["verdict"] in ("hijack", "disagrees")]
             if good:
-                saw = f"{len(good)} of {len(checked)} chosen servers answered for themselves"
+                saw = f"{len(good)} of {len(checked)} chosen servers answered honestly for themselves"
+                if liars:
+                    saw += f"; {len(liars)} caught giving wrong answers and left out"
                 out.append(_c("dns", "Lookups use the servers you chose", "Answers come from the servers you chose",
                               saw, "ok", f"{len(down)} not answering; the fallback covers it." if down else ""))
             else:
