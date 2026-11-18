@@ -111,10 +111,10 @@ jobs:
             Your browser opens the dashboard, you answer three quick questions, and it starts. A real Chrome, Edge,
             Brave or Chromium on the computer makes the browsing look human; Tor is optional and set up for you.
 
-            Or from source: `pip install git+https://github.com/asonpeikoff/noisyCricket` then `legalprivacy-launch`.
+            Or from source: `pip install git+https://github.com/asonpeikoff/legalPrivacy` then `legalprivacy-launch`.
 
             ### What's new
-            See the [changelog](https://github.com/asonpeikoff/noisyCricket/blob/master/CHANGELOG.md).
+            See the [changelog](https://github.com/asonpeikoff/legalPrivacy/blob/master/CHANGELOG.md).
           files: |
             dist/legalprivacy-launch-linux/legalprivacy-launch-linux
             dist/legalprivacy-launch-windows.exe/legalprivacy-launch-windows.exe
