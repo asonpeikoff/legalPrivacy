@@ -23,10 +23,12 @@ existing settings, start-up commands (`cricket`, `cricket-launch`) and `CRICKET_
 
 | You have | Do this |
 |---|---|
-| A release download | Double-click `legalprivacy-launch-windows.exe`, `legalprivacy-launch-macos` or `legalprivacy-launch-linux` |
+| A release download (Linux for now) | `chmod +x legalprivacy-launch-linux`, then run it. Windows and macOS downloads are still under development (see below). |
 | The source (Python 3.10+) | Double-click `Start-legalPrivacy.bat` (Windows) or `start-legalprivacy.command` (macOS/Linux). The first run sets up a private environment. |
 | pip | `pip install .` then `legalprivacy-launch` (or `python -m legalprivacy`) |
 | Docker | `docker compose up -d`, then `docker compose logs legalprivacy` for the dashboard link. See [docs/DOCKER.md](docs/DOCKER.md). |
+
+> **Windows and macOS:** ready-made downloads are still under development and are not being built right now; we are leaving them for later. The source launchers (`Start-legalPrivacy.bat`, `start-legalprivacy.command`) and `pip install` are kept and still work from source. The build setup for both is kept, commented out, in `.github/workflows/release.yml`.
 
 Your browser opens the dashboard. The first run asks three questions (how much noise, whether
 to add Tor `.onion` noise, whether to start automatically) and then starts. Every other setting
