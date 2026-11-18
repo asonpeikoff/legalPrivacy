@@ -497,6 +497,10 @@ table.dns td{vertical-align:middle}
     <div class="card"><h3>Off vs on, last 24 hours</h3><div id="pOnOff"></div></div>
     <div class="card"><h3>Does the noise look like you? <details class="why"><summary>ⓘ</summary><div>Compares the rhythm of the noise with your own traffic from the minutes when the noise was off: time of day, how long busy bursts last, how long the quiet gaps are, and how busy a busy minute is. 100% means an observer couldn't tell the two apart on that measure (1 − Kolmogorov–Smirnov distance). For a stronger test that uses your browser history, see the ML tab.</div></details></h3><div id="pCmp"></div></div>
   </div>
+  <div class="card"><h3>Browser address trace <details class="why"><summary>ⓘ</summary><div>Every address the noise browser's tabs showed in the last while, newest first, and what made it change: the noise opening a page or clicking a result, the page redirecting itself, or a jump to another site that was blocked. Sites (mostly through their ads) sometimes try to send a tab through other sites on their own; the noise browser doesn't let them. If you ever see a tab flicker through addresses, this list shows what it was.</div></details></h3>
+    <div id="trHead" class="small"></div>
+    <div id="trList" class="small" style="max-height:320px;overflow:auto"></div>
+  </div>
 </section>
 
 <section id="t-tools" class="tab">
@@ -588,7 +592,12 @@ async function poll(){
 setInterval(poll,1000);
 let pMap=null,pTimer=null;
 function proofOn(){return $('#t-proof').classList.contains('on')}
+async function pollTrace(){
+  try{const d=await api('/api/browser/trace');
+    $('#trHead').textContent=!d.running?'The noise browser isn\'t running right now.':(d.blocked?`${d.blocked} jump${d.blocked>1?'s':''} to other sites blocked since noise started.`:'No jumps to other sites so far.');
+    $('#trList').innerHTML=d.items.map(n=>`<div><span class="mute">${new Date(n.ts*1000).toLocaleTimeString()}</span> tab ${n.tab} · <code>${esc(shortUrl(n.url))}</code> <span style="color:var(${n.why.startsWith('blocked')?'--warn':'--mute'})">${esc(n.why)}</span></div>`).join('')||'<span class="mute">Nothing yet.</span>'}catch(e){}}
 async function pollProof(){
+  if($('#t-proof').classList.contains('on'))pollTrace();
   if(!proofOn())return;
   try{const o=await api('/api/observe');renderProof(o)}catch(e){}
 }

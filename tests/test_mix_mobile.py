@@ -239,3 +239,37 @@ def test_firefox_engine_runs_phone_identities_as_desktop_without_devtools():
     t._session(ident)
     ctx = t._browser.contexts[0]
     assert "is_mobile" not in ctx and t._browser.cdp == [] and ctx["user_agent"] == ident.user_agent
+
+
+def test_a_page_cannot_send_the_tab_to_another_site_on_its_own():
+    from legalprivacy.browser import _site
+    assert _site("news.example.co.uk") == "example.co.uk" and _site("www.google.com") == "google.com"
+
+    class CDP:
+        def __init__(self): self.sent, self.handlers = [], {}
+        def on(self, ev, fn): self.handlers[ev] = fn
+        def send(self, method, params=None):
+            self.sent.append((method, params))
+            return {"frameTree": {"frame": {"id": "MAIN"}}} if method == "Page.getFrameTree" else {}
+
+    class Pg:
+        url = "https://www.example.com/article"
+
+    t = _transport()
+    page, cdp = Pg(), CDP()
+    t._tabs[1] = page
+    t._guard_tab(page, cdp)
+    paused = cdp.handlers["Fetch.requestPaused"]
+
+    def nav(url, frame="MAIN"):
+        cdp.sent.clear()
+        paused({"requestId": "r", "frameId": frame, "request": {"url": url}})
+        return cdp.sent[0][0]
+    assert nav("https://blog.example.com/next") == "Fetch.continueRequest"          # same site: fine
+    assert nav("https://ads.tracker.net/click") == "Fetch.fulfillRequest"           # another site: blocked
+    assert nav("https://ads.tracker.net/frame", frame="AD") == "Fetch.continueRequest"   # an ad's own frame
+    t._doing(page, "noise: open (page)", "https://other.org/")
+    assert nav("https://cdn.redirect.io/x") == "Fetch.continueRequest"              # while the noise is opening
+    t._doing(page, None)
+    assert nav("https://other.org/landing") == "Fetch.continueRequest"              # where it was sent
+    assert t.blocked_navs == 1 and t.nav_log[-1]["why"].startswith("blocked")

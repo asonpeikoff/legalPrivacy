@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.10.2
+
+- **Fix: tabs flickering through other sites.** Some sites, mostly through their ads, send the whole tab through a
+  chain of other sites a moment after loading; on phones, a very short swipe could also count as a tap on an ad.
+  The noise browser now blocks that: once a page has loaded, its tab can move within the same site, or to the
+  result the noise clicked, but a page can't send it anywhere else. The tab simply stays where it was. Swipes are
+  always long enough not to be taps.
+- **Browser address trace** (Proof tab): every address the noise browser's tabs showed recently, newest first, with
+  what made it change: the noise opening a page or clicking a result, the page redirecting itself, or a jump that
+  was blocked. The Live Log also warns if a tab ever goes through several different sites within seconds.
+
 ## v2.10.1
 
 - **Fix: the noise browser popped up windows.** It was meant to run hidden by default, but it opened an "off-screen"
