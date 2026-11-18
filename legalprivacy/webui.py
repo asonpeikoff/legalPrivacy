@@ -161,6 +161,8 @@ class UIServer:
                                  f"{e['level'].upper():5s} [{e['source']}] {e['message']}"
                                  for e in ctl.log.since(0, "debug", limit=5000)]
                         return self._send(200, "\n".join(lines).encode(), "text/plain; charset=utf-8")
+                    if u.path == "/api/leakcheck":
+                        return self._json(ctl.leak_runner().state())
                     if u.path == "/api/tools/resolvers":
                         return self._json(ctl.resolvers_check())
                     if u.path == "/api/mylist":
@@ -235,6 +237,10 @@ class UIServer:
                         ctl.stop()
                     elif path == "/api/apply":
                         ctl.reapply()
+                    elif path == "/api/leakcheck/run":
+                        ctl.leak_runner().run()
+                    elif path == "/api/panic":
+                        return self._json(ctl.panic(str(body.get("level", "soft"))))
                     elif path == "/api/pause":
                         ctl.pause(bool(body.get("paused", True)))
                     elif path == "/api/test":

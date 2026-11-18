@@ -75,6 +75,7 @@ class TransportConfig:
     bridges: list[str] = field(default_factory=list)       # bridge lines for censored networks
     bridge_mode: str = "off"          # off | obfs4 | snowflake | meek (built into the Tor bundle) | custom (yours)
     bridge_auto: bool = True          # if Tor can't connect directly, try the built-in bridges by itself
+    exit_countries: list[str] = field(default_factory=list)   # prefer Tor exits in these countries (2-letter codes)
 
     def validate(self, name: str) -> None:
         if self.browser not in ("auto", "on", "off"):
@@ -83,6 +84,10 @@ class TransportConfig:
             raise ConfigError(f"transport '{name}': browser_window must be hidden, offscreen or visible")
         if self.browser_engine not in ("auto", "chromium", "firefox"):
             raise ConfigError(f"transport '{name}': browser_engine must be auto, chromium or firefox")
+        self.exit_countries = [c.strip().lower() for c in self.exit_countries if str(c).strip()]
+        for c in self.exit_countries:
+            if not (len(c) == 2 and c.isalpha()):
+                raise ConfigError(f"tor exit country '{c}' must be a two-letter country code, e.g. de or nl")
         if self.bridge_mode not in ("off", "obfs4", "snowflake", "meek", "custom"):
             raise ConfigError("tor bridge_mode must be off, obfs4, snowflake, meek or custom")
         if self.identities_per_circuit < 1:
