@@ -22,3 +22,17 @@ def test_reapply_when_stopped_is_a_noop():
     c = Controller(profile_path=os.path.join(tempfile.mkdtemp(), "p.json"))
     c.reapply()
     assert not c.running
+
+
+def test_start_reason_is_logged_and_repeated_starts_are_called_out():
+    d = tempfile.mkdtemp()
+    c = Controller(profile_path=os.path.join(d, "p.json"))
+    c.apply_config({"transports": {"clearnet": {"enabled": True, "browser": "off"}}})
+    c.start(reason="autostart on launch")
+    try:
+        assert any("autostart on launch" in e["message"] for e in c.log.since(0))
+        for _ in range(5):
+            c.reapply()
+        assert any("started" in e["message"] and "times in the last minute" in e["message"] for e in c.log.since(0))
+    finally:
+        c.stop()

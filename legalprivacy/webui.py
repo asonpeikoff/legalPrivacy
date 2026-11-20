@@ -356,7 +356,7 @@ def run_ui(profile_path: str | None = None, port: int | None = None, open_browse
         ctl.observer.start()              # Proof tab: local connection counts, never leaves this computer            # fetch live query/domain sources in the background right away
     if ctl.app.get("autostart") and not ctl.first_run:
         try:
-            ctl.start()
+            ctl.start(reason="autostart on launch")
         except ConfigError as exc:
             ctl.log.error("app", str(exc))
     if open_browser if open_browser is not None else ctl.app.get("open_browser", True):
