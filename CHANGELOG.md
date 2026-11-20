@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- More attribution: the README, the dashboard Help tab, the native app (Help menu and About), the package metadata and the release notes now credit and link the blog we are named after, *Legalizing Privacy* by Amy Peikoff.
+
 ## v2.12.0
 - **Live-apply is now verified:** a "settings in effect" chip in the header, a "Live and verified" message after each change, and a Live Log line listing exactly what changed (private values are not printed).
 - **Native desktop app** (`legalprivacy-gui`): a real Tk window, with no browser, web view or HTTP, that talks to the controller directly. Dashboard, Activity, Live Log, Tor, Settings and Proof tabs (checks, the three activity graphs, HAR import), live apply with a "settings in effect" chip, light/dark look, and the web dashboard kept as a backup in the File menu. Uses only Python's built-in Tk (`python3-tk` on Debian/Ubuntu); no new dependencies.
