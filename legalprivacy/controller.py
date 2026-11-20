@@ -74,6 +74,9 @@ class Controller:
             path=app_dir() / "observe.json")
         from .har import HarStore
         self.har = HarStore(app_dir() / "har.json")      # derived counts from an imported browser recording
+        self._hist_cache: tuple | None = None            # (read at, [(time, site)]) for the baseline fallback
+        self._hist_thread: threading.Thread | None = None
+        self.observer.baseline_fn = self._baseline
         self._feed_timer_started = False
         from .accounts import AccountsManager
         self.accounts = AccountsManager(          # optional signed-in accounts; clearnet only, never Tor
@@ -216,6 +219,36 @@ class Controller:
         self.har.forget("hosts" if what == "hosts" else "all")
         self.log.info("har", "Removed the imported browser recording's " + ("site list." if what == "hosts" else "data."))
         return self.har_state()
+
+    def _history_events(self) -> list | None:
+        """Browser history as a last-resort baseline: read in the background (it can take seconds), kept in
+        memory for 10 minutes, never saved. None until the first read finishes."""
+        c, now = self._hist_cache, time.time()
+        if (c is None or now - c[0] > 600) and not (self._hist_thread and self._hist_thread.is_alive()):
+            def go():
+                try:
+                    from .history import visit_events
+                    ev = sorted(visit_events(time.time() - 14 * 86400, time.time())["events"])
+                except Exception:
+                    ev = []
+                self._hist_cache = (time.time(), ev)
+            self._hist_thread = threading.Thread(target=go, daemon=True, name="history-baseline")
+            self._hist_thread.start()
+        return c[1] if c else None
+
+    def _baseline(self) -> dict:
+        """Your baseline: imported HAR, else noise-off minutes, else browser history; see baseline.py."""
+        from .baseline import select
+        har, obs = self.har.load(), self.observer.rows()
+        sel = select(har, obs, None)
+        if sel["source"] == "none":                          # only touch browser history when nothing else will do
+            ev = self._history_events()
+            sel = select(har, obs, ev, history_pending=ev is None)
+        return sel
+
+    def baseline_status(self) -> dict:
+        from .baseline import public
+        return public(self._baseline())
 
     def observe_state(self) -> dict:
         st = self.observer.state()
@@ -381,25 +414,50 @@ class Controller:
         days = max(2.0, min(60.0, float(days)))
         now = time.time()
         since = now - days * 86400
-        real = visit_events(since, now)
+        from .baseline import HOWTO, har_events, human_span
+        har = self.har.load()
+        real_note, until, from_har = "", now, False
+        if har and har.get("top_hosts") and har["entries"] >= 50 and (har["last"] - har["first"]) >= 2 * 3600:
+            real = {"events": har_events(har), "errors": []}          # your imported recording comes first
+            since, until, from_har = har["first"], har["last"], True  # compare only over the hours it covers
+            real_note = ("Your baseline is the browser recording you imported. Site names for each moment were "
+                         "re-drawn from its top-sites list, so revisit habits are approximate, and noise was "
+                         "compared only over the hours the recording covers.")
+        else:
+            real = visit_events(since, now)
         hits = [h for h in (self.runner.hit_log if self.runner else []) if h["lane"] != "tor"]
         session_span = (hits[-1]["ts"] - hits[0]["ts"]) if len(hits) > 1 else 0
-        if len(hits) >= 200 and session_span >= 86400:
+        if len(hits) >= 200 and session_span >= 86400 and not from_har:
             import urllib.parse as up
             noise = [(h["ts"], (up.urlparse(h["url"]).hostname if "://" in h["url"] else h["url"]) or "")
                      for h in hits]
             source = "this session's noise"
         else:
-            noise = simulate_noise(self.profile, self._domain_pool(_r), since, now)
+            noise = simulate_noise(self.profile, self._domain_pool(_r), since, until)
             source = "noise simulated from your current settings"
         ranks = {d: i for i, d in enumerate(self.feeds.items("tranco"))}
         res = evaluate(real["events"], [(t, s.removeprefix("www.")) for t, s in noise if s], ranks)
+        n_real = len(real["events"])
+        if from_har:
+            res["baseline"] = {"source": "har", "status": f"Your baseline: {human_span(until - since)} from your HAR file "
+                                                          f"(approximate: see the note below)."}
+        elif n_real >= 50:
+            res["baseline"] = {"source": "history", "status": f"Your baseline: {n_real:,} visits from your browser "
+                                                              f"history over the last {days:g} days."}
+        else:
+            res["baseline"] = {"source": "none", "status": "Not enough data yet to say how you browse, so no score is "
+                                                           "shown. " + HOWTO}
+        if "error" in res and n_real < 50:
+            res["error"] = ("Not enough data to compare. " + ("Your browser history is empty, erased or too short. "
+                            if not n_real else f"Only {n_real} of your visits were found (at least 50 are needed). ") + HOWTO)
+        if real_note:
+            res.setdefault("warnings", []).append(real_note)
         res.update({"real_visits": len(real["events"]), "noise_events": len(noise), "noise_source": source,
-                    "days": days, "errors": real["errors"], "ran_at": now})
+                    "days": days, "errors": real["errors"], "ran_at": time.time()})
         model = res.pop("_model", None)
         if model is not None:
             self._ml_model, self._ml_ranks = model, ranks
-            hist = list(self.app.get("ml_history") or [])[-29:] + [[round(now), res["score"]]]
+            hist = list(self.app.get("ml_history") or [])[-29:] + [[round(time.time()), res["score"]]]
             self.app["ml_history"] = hist             # scores only: no browsing data is kept
             self._save()
         self._ml_last = res
@@ -408,6 +466,7 @@ class Controller:
 
     def ml_state(self) -> dict:
         return {"last": getattr(self, "_ml_last", None), "history": self.app.get("ml_history") or [],
+                "baseline": self.baseline_status(),
                 "auto": bool(self.app.get("ml_auto")), "can_predict": getattr(self, "_ml_model", None) is not None}
 
     def ml_predict(self, site: str, hour: int, weekday: int) -> dict:
