@@ -141,6 +141,7 @@ class HarStore:
 
     def __init__(self, path: Path | None):
         self.path = path
+        self._cache: tuple | None = None            # (mtime, data): the Proof tab polls, the file rarely changes
 
     def save(self, data: dict) -> None:
         if not self.path:
@@ -156,9 +157,14 @@ class HarStore:
         if not self.path:
             return None
         try:
+            mt = self.path.stat().st_mtime_ns
+            if self._cache and self._cache[0] == mt:
+                return self._cache[1]
             d = json.loads(self.path.read_text(encoding="utf-8"))
             d["minutes"] = {int(k): v for k, v in d["minutes"].items()}
-            return d if d.get("minutes") else None
+            d = d if d.get("minutes") else None
+            self._cache = (mt, d)
+            return d
         except (OSError, ValueError, KeyError, AttributeError):
             return None
 

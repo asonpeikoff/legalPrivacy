@@ -106,6 +106,7 @@ class TrafficObserver:
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._last_bytes = None
+        self.baseline_fn: Callable[[], dict | None] | None = None   # set by the controller: where "you" comes from
         self._last_save = 0.0
         self._load()
 
@@ -255,19 +256,30 @@ class TrafficObserver:
                                       f"connected {int(now - n['first'])} s"})
         return out
 
-    def compare(self) -> dict:
-        """Does the noise's rhythm look like yours? Uses minutes with noise OFF as your baseline."""
+    def rows(self) -> list[dict]:
         with self._lock:
-            rows = [self._row(t, m) for t, m in sorted(self.minutes.items())]
-        base = [r for r in rows if not r["on"]]
+            return [self._row(t, m) for t, m in sorted(self.minutes.items())]
+
+    def compare(self, baseline: dict | None = None) -> dict:
+        """Does the noise's rhythm look like yours? `baseline` (from baseline.select) says where "yours" comes
+        from: an imported recording or browser history. Without one, minutes with noise OFF are the baseline."""
+        rows = self.rows()
         noisy = [r for r in rows if r["on"]]
-        base_active = [r["you"] > 0 for r in base]
+        if baseline is None and self.baseline_fn:
+            baseline = self.baseline_fn()
+        if baseline and baseline.get("source") in ("har", "history"):
+            base, need = baseline["rows"], baseline["min_active"]
+        else:
+            base, need = [{"t": r["t"], "n": r["you"], "hosts": r["you"]} for r in rows if not r["on"]], 60
+        base_active = [r["n"] > 0 for r in base]
         noise_active = [(r["req"] > 0 or r["noise"] > 0) for r in noisy]
         out = {"baseline_minutes": len(base), "noise_minutes": len(noisy),
                "baseline_active": sum(base_active), "noise_active": sum(noise_active), "metrics": []}
-        if sum(base_active) < 60 or sum(noise_active) < 30:
+        if baseline:
+            out["baseline"] = {k: v for k, v in baseline.items() if k != "rows"}
+        if sum(base_active) < need or sum(noise_active) < 30:
             out["verdict"] = "collecting"
-            out["needed"] = {"baseline_active": max(0, 60 - sum(base_active)),
+            out["needed"] = {"baseline_active": max(0, need - sum(base_active)),
                              "noise_active": max(0, 30 - sum(noise_active))}
             return out
 
@@ -276,7 +288,7 @@ class TrafficObserver:
 
         b_on, b_off = runs(base_active)
         n_on, n_off = runs(noise_active)
-        hb = hours(base, lambda r: r["you"] > 0)
+        hb = hours(base, lambda r: r["n"] > 0)
         hn = hours(noisy, lambda r: r["req"] > 0 or r["noise"] > 0)
         # comparing time of day is only fair once both sides have been seen across much of the day
         fair = len({int(h) for h in hb}) >= 8 and len({int(h) for h in hn}) >= 8
@@ -286,7 +298,7 @@ class TrafficObserver:
             ("Burst length", "How many minutes in a row stay busy", ks_similarity(b_on, n_on)),
             ("Quiet gaps", "How long the pauses between bursts last", ks_similarity(b_off, n_off)),
             ("Busyness", "How many sites in a busy minute",
-             ks_similarity([r["you"] for r in base if r["you"] > 0], [max(r["noise"], r["req"]) for r in noisy
+             ks_similarity([r["hosts"] for r in base if r["n"] > 0], [max(r["noise"], r["req"]) for r in noisy
                                                                       if r["noise"] or r["req"]])),
         ]
         out["metrics"] = [{"name": n, "what": w, "similarity": s} for n, w, s in metrics]
