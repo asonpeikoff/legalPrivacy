@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- **Activity graphs** (Proof tab): the intended pattern for your settings (from the rate planner, for reference), this session's actual requests over the planned band with off-plan hours in red, and your baseline vs the noise by hour of day with burst and quiet-gap lengths. Each has a plain-language verdict and an explanation when there is no data yet.
+- **Import a browser recording (HAR file)** as your baseline (Network tab, Save all as HAR). Parsed in memory; only times and site names are read, and only per-minute counts and a deletable list of site names are kept. 50 MB / 500,000 request limits; Chrome and Firefox files.
+- **Baseline fallback:** "how you browse" is now the imported HAR, else minutes seen with the noise off, else browser history. The Proof and ML tabs show which is used and how much data it has, and show "not enough data" with how to fix it instead of a score when history is empty or erased. Panic (hard) also deletes the imported data.
 - **Optional signed-in accounts** (Settings → Accounts, off by default): the noise browser can browse read-only (load and scroll, never click) while signed in to your own Google and Microsoft accounts. You sign in by hand in a visible window; per-account switch, hourly/daily caps, random escalating pause after a robot check or 429 (with Resume now), never over Tor, separate cookies, deleted by Panic (medium/hard).
 - Releases are built for **Linux only** for now. Windows and macOS executables are still under development and are deliberately not being built right now; their build setup is kept (commented out) in the release workflow, and the source launchers still work.
 - Removed the "also route ordinary web noise through Tor" option and the Tor exit-country preference. Ordinary web noise never goes through Tor; the Tor lane visits only .onion sites. Old settings files that still contain those keys keep working (the keys are ignored).

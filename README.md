@@ -185,6 +185,43 @@ On macOS, other programs' connections are only visible when legalPrivacy runs as
 administrator; otherwise the tab shows the noise only and says so. The watcher can be
 switched off on the tab.
 
+### Activity graphs and importing a browser recording
+
+Below the comparison, the Proof tab has three graphs, each with a one-line verdict:
+
+1. **Intended pattern** (reference only): expected requests per hour of the day for your current
+   settings. It is not a mock-up: it comes from the same rate planner the noise uses (`rate.py`:
+   level, random or steady, how random) run over many simulated days, with hours outside
+   *Active hours* set to zero. The band is the 10th to 90th percentile, the line the median. The
+   persona changes which sites are visited, not how many or when.
+2. **This session, actual vs intended:** what the noise really did in each 10 minutes over the last
+   6 hours, drawn over the planned band. Whole hours well above or below the plan are red, and the
+   verdict names them ("busier than planned between 02:00 and 04:00").
+3. **Your baseline vs the noise:** your share of activity by hour of day next to the noise's, plus
+   how long your busy bursts and quiet gaps last compared with the noise's.
+
+**Where "how you browse" comes from.** Browser history can be old, and legalPrivacy has tools that
+erase it, so it is never assumed. Your baseline is the first of these with enough data:
+
+1. a **browser recording (HAR file)** you import;
+2. minutes the traffic observer saw with the noise **off**;
+3. your **browser history**, if present.
+
+The Proof and ML tabs say which one is used and how much there is ("2 h from your HAR file",
+"12 days of browser history"). With none, they show "not enough data" and how to provide some,
+rather than a misleading score.
+
+**Importing a recording.** Open your browser's developer tools, go to the **Network** tab, keep it
+recording while you browse as usual, then **Save all as HAR** (Export). Choose that file in the
+Proof tab (Chrome, Edge and Firefox files both work; up to 50 MB and 500,000 requests). A HAR file can
+contain cookies, headers and page contents, so only each request's **time** and **site name** are
+read, in memory; the file is not kept, and addresses, paths, query strings, headers, cookies and
+contents are never stored or logged. What is saved (`har.json` in the app folder) is requests and
+different sites per minute, plus a list of site names with counts that you can delete separately
+("Delete site list") or together with everything else ("Forget imported data"). Panic (hard)
+removes it too. The ML test can use a recording of at least 2 hours; it rebuilds approximate visits
+from the saved counts and site names, so revisit habits are approximate.
+
 ## Is it working? (leak check, panic, Tor exits)
 
 - **Proof tab → "Is it working?"** shows each check as *what you want to see*, *what we saw* and a plain verdict:

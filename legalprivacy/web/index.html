@@ -750,13 +750,14 @@ function renderProof(o){
   const c=o.compare||{};
   if(c.verdict==='collecting'){
     $('#pCmp').innerHTML=`<div class="mute">Collecting data. Needs about ${c.needed.baseline_active} more busy minutes of <b>your own</b> traffic with the noise off, and ${c.needed.noise_active} more with it on.</div>
-      <div class="small mute" style="margin-top:6px">Tip: use your computer normally with legalPrivacy stopped for an hour or two, then start it.</div>`;
+      <div class="small mute" style="margin-top:6px">Tip: use your computer normally with legalPrivacy stopped for an hour or two, then start it, or import a browser recording (HAR file) further down this tab.</div>`;
   }else{
     const word={similar:'<b class="ok">Looks like you</b>',somewhat:'<b class="warnc">Somewhat like you</b>',different:'<b class="bad">Noticeably different</b>'}[c.verdict]||'';
     $('#pCmp').innerHTML=`<div class="big">${Math.round((c.score||0)*100)}%</div><div>${word}${c.weakest?` · least similar: ${esc(c.weakest)}`:''}</div>`+
       (c.metrics||[]).map(m=>`<div class="row" style="margin:4px 0" title="${esc(m.what)}"><span style="width:120px">${esc(m.name)}</span><div class="bar" style="flex:1"><i style="width:${(m.similarity||0)*100}%"></i></div><span style="width:44px;text-align:right" title="${m.similarity==null?'Not enough data yet':''}">${m.similarity==null?'later':Math.round(m.similarity*100)+'%'}</span></div>`).join('')+
       `<div class="small mute">Based on ${c.baseline_active} busy minutes of yours and ${c.noise_active} with noise.</div>`;
   }
+  if(c.baseline&&c.baseline.status)$('#pCmp').insertAdjacentHTML('beforeend',`<div class="small ${c.baseline.enough?'mute':'warnc'}" style="margin-top:6px">${esc(c.baseline.status)}</div>`);
 }
 function svgTimeline(rows){
   if(!rows.length)return '<div class="mute">No data yet.</div>';
