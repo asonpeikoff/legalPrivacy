@@ -147,6 +147,8 @@ class UIServer:
                 try:
                     if u.path == "/api/accounts":
                         return self._json(ctl.accounts.status())
+                    if u.path == "/api/har":
+                        return self._json(ctl.har_state())
                     if u.path == "/api/observe":
                         return self._json(ctl.observe_state())
                     if u.path == "/api/state":
@@ -230,7 +232,10 @@ class UIServer:
                     n = int(self.headers.get("Content-Length") or 0)
                     if n < 0:
                         raise ValueError("negative length")
-                    if n > 1_000_000:
+                    if u.path == "/api/har/import":      # a browser recording can be large (limit 50 MB)
+                        if n > 52 * 1024 * 1024:
+                            return self._json({"error": "That file is larger than 50 MB. Record a shorter session and try again."}, 413)
+                    elif n > 1_000_000:
                         return self._json({"error": "request too large"}, 413)
                     body = json.loads(self.rfile.read(n) or b"{}")
                     if not isinstance(body, dict):
@@ -249,6 +254,10 @@ class UIServer:
                         ctl.leak_runner().run()
                     elif path in ("/api/accounts/signin", "/api/accounts/forget", "/api/accounts/resume"):
                         return self._json(ctl.accounts_action(path.rsplit("/", 1)[1], str(body.get("provider", ""))))
+                    elif path == "/api/har/import":
+                        return self._json(ctl.har_import(body))
+                    elif path == "/api/har/forget":
+                        return self._json(ctl.har_forget(str(body.get("what", "all"))))
                     elif path == "/api/panic":
                         return self._json(ctl.panic(str(body.get("level", "soft"))))
                     elif path == "/api/pause":

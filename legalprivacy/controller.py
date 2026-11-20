@@ -72,6 +72,8 @@ class Controller:
             noise_requests=self._requests_in_minute,
             tor_pid=lambda: (self.tor.pid if self.tor else None),
             path=app_dir() / "observe.json")
+        from .har import HarStore
+        self.har = HarStore(app_dir() / "har.json")      # derived counts from an imported browser recording
         self._feed_timer_started = False
         from .accounts import AccountsManager
         self.accounts = AccountsManager(          # optional signed-in accounts; clearnet only, never Tor
@@ -188,6 +190,32 @@ class Controller:
         if not r:
             return 0
         return sum(1 for h in list(r.hit_log) if t <= h["ts"] < t + 60)
+
+    # ── imported browser recording (HAR): counts and site names only ───────
+    def har_state(self) -> dict:
+        from .har import summary
+        return summary(self.har.load())
+
+    def har_import(self, body: dict) -> dict:
+        from .har import HarError, parse_har
+        src = body if isinstance(body.get("log"), dict) else body.get("text")
+        if src is None:
+            raise ConfigError("Choose a HAR file to import.")
+        try:
+            data = parse_har(src, denylist=self.feeds.denylist())
+        except HarError as exc:
+            raise ConfigError(str(exc)) from None
+        finally:
+            src = body = None                              # the file's contents are not kept
+        self.har.save(data)
+        self.log.info("har", f"Imported a browser recording: {data['entries']} requests "
+                             f"({data['skipped']} skipped). Only times and site names were kept.")
+        return self.har_state()
+
+    def har_forget(self, what: str = "all") -> dict:
+        self.har.forget("hosts" if what == "hosts" else "all")
+        self.log.info("har", "Removed the imported browser recording's " + ("site list." if what == "hosts" else "data."))
+        return self.har_state()
 
     def observe_state(self) -> dict:
         st = self.observer.state()
@@ -729,7 +757,7 @@ class Controller:
                 self.observer.stop()
             except Exception:
                 pass
-            for name in ("observe.json",):
+            for name in ("observe.json", "har.json"):
                 try:
                     (app_dir() / name).unlink()
                 except OSError:
