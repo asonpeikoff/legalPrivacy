@@ -51,8 +51,8 @@ def _text_menu() -> int:
         except (EOFError, KeyboardInterrupt):
             return "q"
 
+    ctl = Controller()                  # once: each Controller starts background threads
     while True:
-        ctl = Controller()
         tor_cfg = ctl.profile.transports["tor"]
         print("\n  ⚖️ legalPrivacy (text mode)\n")
         print(f"  Tor: {'ON' if tor_cfg.enabled else 'off'}  (program: {find_tor_binary() or 'not installed'}; "

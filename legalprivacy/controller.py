@@ -72,6 +72,8 @@ class Controller:
             noise_requests=self._requests_in_minute,
             tor_pid=lambda: (self.tor.pid if self.tor else None),
             path=app_dir() / "observe.json")
+        from .har import HarStore
+        self.har = HarStore(app_dir() / "har.json")      # derived counts from an imported browser recording
         self._feed_timer_started = False
         from .accounts import AccountsManager
         self.accounts = AccountsManager(          # optional signed-in accounts; clearnet only, never Tor
@@ -188,6 +190,32 @@ class Controller:
         if not r:
             return 0
         return sum(1 for h in list(r.hit_log) if t <= h["ts"] < t + 60)
+
+    # ── imported browser recording (HAR): counts and site names only ───────
+    def har_state(self) -> dict:
+        from .har import summary
+        return summary(self.har.load())
+
+    def har_import(self, body: dict) -> dict:
+        from .har import HarError, parse_har
+        src = body if isinstance(body.get("log"), dict) else body.get("text")
+        if src is None:
+            raise ConfigError("Choose a HAR file to import.")
+        try:
+            data = parse_har(src, denylist=self.feeds.denylist())
+        except HarError as exc:
+            raise ConfigError(str(exc)) from None
+        finally:
+            src = body = None                              # the file's contents are not kept
+        self.har.save(data)
+        self.log.info("har", f"Imported a browser recording: {data['entries']} requests "
+                             f"({data['skipped']} skipped). Only times and site names were kept.")
+        return self.har_state()
+
+    def har_forget(self, what: str = "all") -> dict:
+        self.har.forget("hosts" if what == "hosts" else "all")
+        self.log.info("har", "Removed the imported browser recording's " + ("site list." if what == "hosts" else "data."))
+        return self.har_state()
 
     def observe_state(self) -> dict:
         st = self.observer.state()
@@ -623,6 +651,11 @@ class Controller:
 
     def start(self) -> None:
         with self._lock:
+            old = self._thread
+            if old is not None and old.is_alive() and self._stop.is_set():
+                old.join(timeout=15)             # a run that is still shutting down: let it finish first
+                if old.is_alive():
+                    raise ConfigError("The previous run is still shutting down; try again in a moment.")
             if self.running:
                 return
             self._stop = threading.Event()
@@ -724,7 +757,7 @@ class Controller:
                 self.observer.stop()
             except Exception:
                 pass
-            for name in ("observe.json",):
+            for name in ("observe.json", "har.json"):
                 try:
                     (app_dir() / name).unlink()
                 except OSError:
@@ -764,6 +797,10 @@ class Controller:
             self.runner.run_forever()
         except Exception as exc:
             self.log.error("scheduler", f"Runner crashed: {exc!r}")
+            try:
+                self.runner.close()              # don't leave browsers behind after a crash
+            except Exception:
+                pass
 
     def stop(self, stop_tor: bool = False) -> None:
         self.accounts.stop()
@@ -772,6 +809,8 @@ class Controller:
             t = self._thread
         if t:
             t.join(timeout=8)
+            if t.is_alive():
+                self.log.warn("app", "The noise is taking a while to wind down; it will stop on its own.")
         self.log.info("app", "Stopped.")
         if stop_tor and self.tor:
             self.tor.stop()

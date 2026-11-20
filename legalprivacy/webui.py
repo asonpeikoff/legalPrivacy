@@ -147,6 +147,8 @@ class UIServer:
                 try:
                     if u.path == "/api/accounts":
                         return self._json(ctl.accounts.status())
+                    if u.path == "/api/har":
+                        return self._json(ctl.har_state())
                     if u.path == "/api/observe":
                         return self._json(ctl.observe_state())
                     if u.path == "/api/state":
@@ -228,7 +230,16 @@ class UIServer:
                     return self._json({"error": "bad origin"}, 403)
                 try:
                     n = int(self.headers.get("Content-Length") or 0)
-                    body = json.loads(self.rfile.read(min(n, 1_000_000)) or b"{}")
+                    if n < 0:
+                        raise ValueError("negative length")
+                    if u.path == "/api/har/import":      # a browser recording can be large (limit 50 MB)
+                        if n > 52 * 1024 * 1024:
+                            return self._json({"error": "That file is larger than 50 MB. Record a shorter session and try again."}, 413)
+                    elif n > 1_000_000:
+                        return self._json({"error": "request too large"}, 413)
+                    body = json.loads(self.rfile.read(n) or b"{}")
+                    if not isinstance(body, dict):
+                        raise ValueError("body must be an object")
                 except (ValueError, json.JSONDecodeError):
                     return self._json({"error": "invalid JSON"}, 400)
                 ctl, path = srv.ctl, u.path
@@ -243,6 +254,10 @@ class UIServer:
                         ctl.leak_runner().run()
                     elif path in ("/api/accounts/signin", "/api/accounts/forget", "/api/accounts/resume"):
                         return self._json(ctl.accounts_action(path.rsplit("/", 1)[1], str(body.get("provider", ""))))
+                    elif path == "/api/har/import":
+                        return self._json(ctl.har_import(body))
+                    elif path == "/api/har/forget":
+                        return self._json(ctl.har_forget(str(body.get("what", "all"))))
                     elif path == "/api/panic":
                         return self._json(ctl.panic(str(body.get("level", "soft"))))
                     elif path == "/api/pause":
@@ -303,11 +318,35 @@ class UIServer:
             self.quit_event.set()
 
 
+def running_instance(port: int) -> str | None:
+    """Link of a legalPrivacy dashboard already running on this port (same install token), else None."""
+    import urllib.request
+    tok = _load_token()
+    try:
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/api/state", headers={"X-Token": tok})
+        with urllib.request.urlopen(req, timeout=2) as r:           # nosec - loopback only
+            if r.status == 200 and "version" in json.loads(r.read().decode() or "{}"):
+                return f"http://127.0.0.1:{port}/?t={tok}"
+    except Exception:
+        pass
+    return None
+
+
 def run_ui(profile_path: str | None = None, port: int | None = None, open_browser: bool | None = None,
            print_fn=lambda *a: print(*a, flush=True)) -> int:
     """Start controller + dashboard; block until Quit. Returns exit code."""
     ctl = Controller(profile_path)
-    srv = UIServer(ctl, port or int(ctl.app.get("port", 8765)))
+    want = port or int(ctl.app.get("port", 8765))
+    other = running_instance(want)
+    if other:                                  # already running: reuse it, never start a second copy
+        print_fn(f"\n  legalPrivacy is already running: {other}\n")
+        if open_browser if open_browser is not None else ctl.app.get("open_browser", True):
+            try:
+                webbrowser.open(other)
+            except Exception:
+                pass
+        return 0
+    srv = UIServer(ctl, want)
     print_fn(f"\n  ⚖️ legalPrivacy dashboard: {srv.url}\n  (keep this window open; use Quit in the page, or Ctrl+C, to stop)\n")
     ctl.log.info("app", f"Dashboard listening on 127.0.0.1:{srv.port}")
     ctl._start_feed_timer()
