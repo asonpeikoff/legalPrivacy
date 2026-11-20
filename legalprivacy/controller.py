@@ -7,6 +7,8 @@ snapshot for the dashboard.
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 import platform
 import random
 import socket
@@ -774,8 +776,51 @@ class Controller:
             self._thread.start()
             self.accounts.start()                 # idle unless an account is signed in AND switched on
             self._note_start(reason)
+            self._running_dict = profile_to_dict(prof)
+            self._applied_at = time.time()
             self.log.info("app", f"Started ({reason}): lanes = " + ", ".join(
                 f"{l.name}[{'/'.join(l.engines)}]" for l in lanes))
+
+    # ── is what runs what you saved? ───────────────────────────────────────
+    @staticmethod
+    def _fingerprint(prof) -> str:
+        flat = {k: v for k, v in Controller._flat(profile_to_dict(prof)).items()
+                if not k.endswith(".own_ua")}          # learned from your browser at start, not a setting you chose
+        return hashlib.sha256(json.dumps(flat, sort_keys=True, default=str).encode()).hexdigest()[:8]
+
+    @staticmethod
+    def _flat(d, pre="") -> dict:
+        out = {}
+        for k, v in (d or {}).items():
+            key = f"{pre}{k}"
+            if isinstance(v, dict):
+                out.update(Controller._flat(v, key + "."))
+            else:
+                out[key] = v
+        return out
+
+    _PRIVATE = ("password", "bridge", "token", "seed", "sites", "weights", "account", "custom", "pin")
+
+    def _settings_diff(self, old: dict | None, new: dict) -> list[str]:
+        a, b = self._flat(old or {}), self._flat(new)
+        out = []
+        for k in sorted(set(a) | set(b)):
+            if k.endswith(".own_ua"):
+                continue
+            if a.get(k) != b.get(k):
+                if any(w in k.lower() for w in self._PRIVATE):
+                    out.append(f"{k} changed")
+                else:
+                    out.append(f"{k}: {a.get(k)} → {b.get(k)}")
+        return out
+
+    def settings_status(self) -> dict:
+        """Whether the running noise uses exactly the settings that are saved."""
+        r = self.runner
+        run_fp = self._fingerprint(r.profile) if r is not None and self.running else None
+        saved_fp = self._fingerprint(self.profile)
+        return {"running": bool(run_fp), "in_effect": run_fp == saved_fp if run_fp else None,
+                "saved": saved_fp, "running_fp": run_fp, "applied_at": getattr(self, "_applied_at", None)}
 
     def _note_start(self, reason: str) -> None:
         """Keep the last minute of starts; say so in the log when noise keeps being (re)started."""
@@ -795,6 +840,7 @@ class Controller:
             if not self.running:
                 return
             paused = bool(self.runner and self.runner.paused)
+            before = getattr(self, "_running_dict", None)
             keep = self.app.get("clear_logs_on_restart", True)
             self.app["clear_logs_on_restart"] = False
             try:
@@ -804,7 +850,15 @@ class Controller:
                     self.pause(True)
             finally:
                 self.app["clear_logs_on_restart"] = keep
-            self.log.info("app", "Settings applied live.")
+            changes = self._settings_diff(before, getattr(self, "_running_dict", {}))
+            st = self.settings_status()
+            if st["in_effect"]:
+                shown = "; ".join(changes[:8]) + (f"; and {len(changes) - 8} more" if len(changes) > 8 else "")
+                self.log.info("app", f"Applied live and verified (settings fingerprint {st['saved']}): "
+                                     f"{shown or 'no setting had changed'}.")
+            else:
+                self.log.warn("app", "Applied, but the running settings do not match the saved ones "
+                                     f"(running {st['running_fp']}, saved {st['saved']}). Press Stop, then Start.")
 
     # ── Panic: stop now, and (optionally) leave nothing behind ───────────────
     def panic(self, level: str = "soft") -> dict:
@@ -947,6 +1001,7 @@ class Controller:
             "hour_target": round(self.runner.hour_target) if self.runner and self.running else None,
             "opennic": [x.split("|") for x in self.feeds.items("opennic")],
             "dns": self.dns_report(),
+            "settings": self.settings_status(),
             "accounts": self.accounts.status(),
         }
 
