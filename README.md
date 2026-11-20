@@ -262,7 +262,29 @@ from the saved counts and site names, so revisit habits are approximate.
   automated. A spare account is safer. Nothing is ever sent, deleted or changed in the mailbox. Google sometimes refuses
   sign-in in an automated browser; if so, the account simply can't be used.
 
-## Desktop window (optional)
+## Native desktop app
+
+`legalprivacy-gui` (or `python -m legalprivacy.gui`) opens a real desktop window: no browser, no web view and no
+network port. It uses Tk, which ships with Python on Windows and macOS (on Debian/Ubuntu install it with
+`sudo apt install python3-tk`; on Fedora `sudo dnf install python3-tkinter`), so nothing extra is installed with pip.
+If Tk is missing it says so and opens the web dashboard instead.
+
+- **Header:** Start / Pause / Stop (F5 / F6 / F7), a status light, a Tor chip and a "settings in effect" chip.
+- **Dashboard:** state, uptime, the lanes with their hits and daily budgets, what it is doing right now, and the
+  1-10 level with random or steady.
+- **Activity:** recent hits, newest first (site names only). **Live Log:** coloured by level, filter, pause scrolling,
+  copy, clear.
+- **Tor:** enable, connection progress, Start / Stop / New identity, bridges.
+- **Settings:** DNS, cookie lifetime, noise-browser window, autostart, the three Panic buttons (each asks first).
+- **Proof:** the "is it working?" checks (You want to see / We saw), the three activity graphs, importing a browser
+  recording (HAR) and where your baseline comes from.
+
+Changes in Dashboard, Tor and Settings save and go live by themselves about a second after you stop editing, and
+the header chip confirms they are in effect. View → Dark mode switches the look. The web dashboard stays as the
+backup: File → "Open the web dashboard (backup)". Closing the window stops the noise and Tor. If a dashboard is
+already running, a second copy offers to open that one instead.
+
+## Desktop window (optional, web view)
 
 Prefer an app window to a browser tab? `pip install "legalprivacy[desktop]"` then run `legalprivacy-desktop`.
 It shows the same dashboard in its own window (using your system's web view: Edge WebView2 on Windows, WebKit on macOS
