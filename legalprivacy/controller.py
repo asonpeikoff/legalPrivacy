@@ -250,6 +250,15 @@ class Controller:
         from .baseline import public
         return public(self._baseline())
 
+    def activity_state(self) -> dict:
+        """Data for the Proof tab's activity graphs: intended pattern, this session, baseline vs noise."""
+        from .activity import baseline_vs_noise, intended, session
+        ex = self.profile.extras
+        plan = intended(self.profile.rate, self._search_share(), ex.active_hours, ex.active_from, ex.active_to, ex.persona)
+        return {"intended": plan, "session": session(self.observer.timeline(6), plan, self.running),
+                "baseline": baseline_vs_noise(self._baseline(), self.observer.rows()), "har": self.har_state(),
+                "now": time.time()}
+
     def observe_state(self) -> dict:
         st = self.observer.state()
         st["enabled"] = bool(self.app.get("observe", True))

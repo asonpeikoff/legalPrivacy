@@ -147,6 +147,8 @@ class UIServer:
                 try:
                     if u.path == "/api/accounts":
                         return self._json(ctl.accounts.status())
+                    if u.path == "/api/activity":
+                        return self._json(ctl.activity_state())
                     if u.path == "/api/har":
                         return self._json(ctl.har_state())
                     if u.path == "/api/observe":
