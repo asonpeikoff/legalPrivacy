@@ -110,8 +110,14 @@ def session(timeline: list[dict], plan: dict, running: bool, step: int = 10) -> 
     elif not flags:
         verdict, state = f"✓ On plan: the last {judged} full hour{'s' if judged > 1 else ''} stayed inside the planned range.", "ok"
     else:
-        parts = [f"{f['dir']} than planned at {hh(time.localtime(f['t0']).tm_hour)}–{hh(time.localtime(f['t1']).tm_hour)}"
-                 for f in flags]
+        spans: list[list] = []                     # merge consecutive hours that went the same way
+        for f in flags:
+            if spans and spans[-1][0] == f["dir"] and spans[-1][2] == f["t0"]:
+                spans[-1][2] = f["t1"]
+            else:
+                spans.append([f["dir"], f["t0"], f["t1"]])
+        parts = [f"{d} than planned between {hh(time.localtime(a).tm_hour)} and {hh(time.localtime(b).tm_hour)}"
+                 for d, a, b in spans]
         verdict, state = "✗ Off plan: noise was " + "; ".join(parts) + ".", "off"
     return {"buckets": buckets, "flags": flags, "verdict": verdict, "state": state, "running": running}
 

@@ -79,6 +79,17 @@ table.dns td{vertical-align:middle}
 #t-proof{--you:#2a9d8f;--you-map:#2a9d8f}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]) #t-proof{--you:#3fb8a9;--you-map:#3fb8a9}}
 :root[data-theme=dark] #t-proof{--you:#3fb8a9;--you-map:#3fb8a9}
+/* activity graphs (Proof tab) */
+.act{--anoi:var(--acc)}
+.act .band{fill:var(--acc);opacity:.17}.act .gridl{stroke:var(--line);stroke-width:1;opacity:.6}
+.act svg text{fill:var(--mute);font-size:10px}.act svg text.ttl{font-size:11px}
+.gv{margin:6px 0 2px;font-weight:600}.gv.ok{color:var(--acc)}.gv.off{color:var(--bad)}.gv.neutral{color:var(--mute);font-weight:400}
+.srcrow{display:grid;grid-template-columns:minmax(150px,1.2fr) 2fr minmax(110px,.9fr);gap:8px;padding:7px 0;border-top:1px solid var(--line);align-items:baseline}
+.srcrow:first-child{border-top:0}.srcrow .st{text-align:right;font-weight:600}.srcrow .st.ok{color:var(--acc)}
+.howto{background:var(--info2);border-radius:8px;padding:8px 12px;margin:8px 0}
+.howto ol{margin:4px 0 4px 20px;padding:0}
+@media (max-width:600px){.srcrow{grid-template-columns:1fr}.srcrow .st{text-align:left}}
+@media (prefers-reduced-motion:reduce){.act *{transition:none!important;animation:none!important}}
 .mlgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
 .lgd{display:inline-flex;align-items:center;gap:6px;margin-right:12px;font-size:12px;color:var(--mute)}.lgd i{width:10px;height:10px;border-radius:2px;display:inline-block}
 .mixbar{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--line);margin:6px 0 10px}
@@ -493,6 +504,7 @@ tbody tr:hover td{background:var(--code)}
     <div class="row">Look at the last <input type="number" id="stDays" value="14" min="2" max="60" style="width:70px"> days <span class="small mute">(14 recommended, default)</span> <button id="stRun" class="pri">Run test</button>
       <label class="chk" style="margin:0 0 0 10px"><input type="checkbox" id="mlAuto"><span>Run automatically once a day <span class="mute">(off by default)</span></span></label></div>
     <div id="mlWarn"></div>
+    <div id="mlBase" class="small" style="margin:6px 0"></div>
     <div id="mlHead"></div>
   </div>
   <div id="mlBody" style="display:none">
@@ -547,6 +559,30 @@ tbody tr:hover td{background:var(--code)}
     <div class="card"><h3>Off vs on, last 24 hours</h3><div id="pOnOff"></div></div>
     <div class="card"><h3>Does the noise look like you? <details class="why"><summary>ⓘ</summary><div>Compares the rhythm of the noise with your own traffic from the minutes when the noise was off: time of day, how long busy bursts last, how long the quiet gaps are, and how busy a busy minute is. 100% means an observer couldn't tell the two apart on that measure (1 − Kolmogorov–Smirnov distance). For a stronger test that uses your browser history, see the ML tab.</div></details></h3><div id="pCmp"></div></div>
   </div>
+  <div class="card act" id="actBase"><h3><svg class="ic" aria-hidden="true"><use href="#i-proof"/></svg>Where “how you browse” comes from <details class="why"><summary>ⓘ</summary><div>The comparisons below need a picture of your own browsing. legalPrivacy uses the first of these that has enough data: a browser recording you import, minutes it saw with the noise off, then your browser history. History can be old or erased, so it is the last resort, and with no data nothing is scored.</div></details></h3>
+    <div id="actSources"><div class="mute small">Loading…</div></div>
+    <div class="howto small"><b>Import a browser recording (HAR file)</b>
+      <ol><li>Open your browser's developer tools (F12) and go to the <b>Network</b> tab.</li>
+        <li>Keep it recording while you browse as usual for a while (an hour or more is useful; a day is better).</li>
+        <li>Choose <b>Save all as HAR</b> (Export), then pick that file here.</li></ol>
+      <div class="mute">A HAR file can contain cookies, headers and page contents. legalPrivacy reads only each request's <b>time</b> and <b>site name</b>, in memory, on this computer. It keeps only counts per minute and a list of site names; addresses, paths, cookies, headers and contents are never stored or logged. Limits: 50 MB, 500,000 requests.</div></div>
+    <div class="row"><input type="file" id="harFile" accept=".har,.json,application/json" aria-label="HAR file to import">
+      <button id="harGo" class="pri"><svg class="ic sm" aria-hidden="true"><use href="#i-dl"/></svg>Import</button>
+      <button id="harHosts" title="Keep the counts but delete the list of site names">Delete site list</button>
+      <button id="harForget" title="Delete everything imported from the file">Forget imported data</button></div>
+    <div id="harMsg" class="small" role="status" aria-live="polite"></div>
+    <details class="small" id="harTopWrap" style="display:none"><summary>Sites in your recording (names and counts only)</summary><div id="harTop" class="mute"></div></details>
+  </div>
+  <div class="card act"><h3>1. Intended pattern <span class="mute small">(for reference)</span> <details class="why"><summary>ⓘ</summary><div>What your current settings are meant to produce: expected requests per hour of the day. It comes from the same planner the noise uses (level, random or steady, how random, active hours), run over many simulated days. The shaded band is the usual spread (10th to 90th percentile), the line the middle. Persona changes which sites are visited, not how many or when.</div></details></h3>
+    <div id="aIntended"></div><div class="small"><span class="lgd"><i style="background:var(--acc);opacity:.35"></i>planned range</span><span class="lgd"><i style="background:var(--ink)"></i>typical hour</span></div>
+    <div id="aIntendedV" class="gv neutral"></div></div>
+  <div class="card act"><h3>2. This session: actual vs intended <details class="why"><summary>ⓘ</summary><div>Requests the noise really made in each 10 minutes over the last 6 hours, over the planned range for that hour. Whole hours where the noise ran well above or below the plan are drawn in red. The teal line is how many different addresses your own apps were connected to (a different measure from requests, shown for rhythm only).</div></details></h3>
+    <div id="aSession"></div><div class="small"><span class="lgd"><i style="background:var(--acc)"></i>noise requests</span><span class="lgd"><i style="background:var(--acc);opacity:.35"></i>planned range</span><span class="lgd"><i style="background:var(--bad)"></i>off plan</span><span class="lgd"><i style="background:var(--you)"></i>your apps (sites connected)</span></div>
+    <div id="aSessionV" class="gv neutral"></div></div>
+  <div class="card act"><h3>3. Your baseline vs the noise, by hour of day <details class="why"><summary>ⓘ</summary><div>Each line is the share of that day's activity falling in each hour, so the shapes can be compared even though you and the noise do different amounts. Below: how long busy bursts and quiet gaps last, in minutes, for you and for the noise.</div></details></h3>
+    <div id="aBase"></div><div class="small"><span class="lgd"><i style="background:var(--you)"></i><span id="aYouName">you</span></span><span class="lgd"><i style="background:var(--acc)"></i>noise (this session)</span></div>
+    <div id="aBaseV" class="gv neutral"></div>
+    <div class="mlgrid" id="aRuns" style="margin-top:8px"></div></div>
   <div class="card"><h3>Browser address trace <details class="why"><summary>ⓘ</summary><div>Every address the noise browser's tabs showed in the last while, newest first, and what made it change: the noise opening a page or clicking a result, the page redirecting itself, or a jump to another site that was blocked. Sites (mostly through their ads) sometimes try to send a tab through other sites on their own; the noise browser doesn't let them. If you ever see a tab flicker through addresses, this list shows what it was.</div></details></h3>
     <div id="trHead" class="small"></div>
     <div id="trList" class="small" style="max-height:320px;overflow:auto"></div>
@@ -740,6 +776,94 @@ function svgTimeline(rows){
 }
 $('#pObs').onchange=()=>act('/api/app',{observe:$('#pObs').checked});
 setInterval(pollProof,2000);
+
+// ---------- activity graphs (Proof tab): intended pattern, this session vs plan, baseline vs noise, HAR import
+function renderMlBase(b){const el=$('#mlBase');if(!el)return;
+  if(!b){el.innerHTML='';return}
+  const none=b.source==='none'||(b.enough===false);
+  el.innerHTML=`<div class="note ${none?'warn':''} small" style="margin:0">${esc(b.status||'')}${none?'':''} <span class="mute">Details and the HAR import are in the Proof tab.</span></div>`}
+const aH=h=>String(h).padStart(2,'0')+':00';
+function aGrid(W,H,L,R,T,B,mx,unit){
+  let g='';const step=mx<=10?2:mx<=25?5:mx<=60?10:mx<=150?25:50;
+  for(let k=0;k<=mx;k+=step){const y=T+(H-T-B)*(1-k/mx);g+=`<line class="gridl" x1="${L}" x2="${W-R}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}"/><text x="${L-5}" y="${(y+3).toFixed(1)}" text-anchor="end">${k}</text>`}
+  return g+`<text class="ttl" x="${L}" y="${T-1}" dy="-1">${esc(unit)}</text>`}
+function svgIntended(p){
+  const W=900,H=230,L=38,R=8,T=18,B=24,pw=W-L-R,ph=H-T-B,mx=Math.max(5,...p.p90)*1.12;
+  const x=h=>L+h*pw/24,y=v=>T+ph-(v/mx)*ph;let g=aGrid(W,H,L,R,T,B,mx,'requests / hour'),pts=[];
+  for(let h=0;h<24;h++){const lo=p.p10[h],hi=p.p90[h],md=p.p50[h];
+    g+=`<rect class="band" x="${x(h).toFixed(1)}" y="${y(hi).toFixed(1)}" width="${(pw/24).toFixed(1)}" height="${Math.max(0,y(lo)-y(hi)).toFixed(1)}"/>`;
+    pts.push(`${x(h).toFixed(1)},${y(md).toFixed(1)} ${x(h+1).toFixed(1)},${y(md).toFixed(1)}`);
+    g+=`<rect x="${x(h).toFixed(1)}" y="${T}" width="${(pw/24).toFixed(1)}" height="${ph}" fill="transparent"><title>${aH(h)}: ${md?`typically ${md} requests (range ${lo}–${hi})`:'quiet (outside active hours or nearly idle)'}</title></rect>`;
+    if(h%4===0)g+=`<text x="${x(h).toFixed(1)}" y="${H-8}" text-anchor="middle">${aH(h)}</text>`}
+  g+=`<polyline points="${pts.join(' ')}" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linejoin="round"/><text x="${W-R}" y="${H-8}" text-anchor="end">24:00</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Intended requests per hour of the day: ${esc(p.verdict)}"><title>Intended pattern: expected requests per hour</title>${g}</svg>`}
+function svgSession(s,plan){
+  const bs=s.buckets||[];if(!bs.length)return '';
+  const W=900,H=230,L=38,R=8,T=18,B=24,pw=W-L-R,ph=H-T-B,n=bs.length,bw=pw/n;
+  const mx=Math.max(5,...bs.map(b=>Math.max(b.hi,b.req,b.you)))*1.12,y=v=>T+ph-(v/mx)*ph;
+  const off=t=>(s.flags||[]).some(f=>t>=f.t0&&t<f.t1);
+  let g=aGrid(W,H,L,R,T,B,mx,'per 10 minutes'),line=[];
+  bs.forEach((b,i)=>{const x=L+i*bw;
+    g+=`<rect class="band" x="${x.toFixed(1)}" y="${y(b.hi).toFixed(1)}" width="${(bw+.4).toFixed(1)}" height="${Math.max(0,y(b.lo)-y(b.hi)).toFixed(1)}"/>`;
+    if(b.req)g+=`<rect x="${(x+1).toFixed(1)}" y="${y(b.req).toFixed(1)}" width="${Math.max(1,bw-2).toFixed(1)}" height="${(y(0)-y(b.req)).toFixed(1)}" fill="${off(b.t)?'var(--bad)':'var(--acc)'}" rx="1.5"><title>${new Date(b.t*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}: ${b.req} requests (planned ${b.lo}–${b.hi})${off(b.t)?' · off plan':''}</title></rect>`;
+    line.push(`${(x+bw/2).toFixed(1)},${y(b.you).toFixed(1)}`);
+    if(i%6===0){const d=new Date(b.t*1000);g+=`<text x="${x.toFixed(1)}" y="${H-8}">${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}</text>`}});
+  g+=`<polyline points="${line.join(' ')}" fill="none" stroke="var(--you)" stroke-width="1.5" stroke-linejoin="round"/>`;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Noise requests per 10 minutes over the last 6 hours against the planned range. ${esc(s.verdict)}"><title>This session, actual versus intended</title>${g}</svg>`}
+function svgShares(bv){
+  const W=900,H=230,L=38,R=8,T=18,B=24,pw=W-L-R,ph=H-T-B,mxp=Math.max(10,Math.ceil(Math.max(...bv.you,...bv.noise)*100/5)*5)*1.05;
+  const x=h=>L+(h+.5)*pw/24,y=v=>T+ph-(v*100/mxp)*ph;let g=aGrid(W,H,L,R,T,B,mxp,'% of the day’s activity');
+  const path=a=>a.map((v,h)=>`${x(h).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  for(let h=0;h<24;h+=4)g+=`<text x="${(L+h*pw/24).toFixed(1)}" y="${H-8}" text-anchor="middle">${aH(h)}</text>`;
+  g+=`<polyline points="${path(bv.you)}" fill="none" stroke="var(--you)" stroke-width="2.5" stroke-linejoin="round"/><polyline points="${path(bv.noise)}" fill="none" stroke="var(--acc)" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="6 3"/>`;
+  for(let h=0;h<24;h++)g+=`<rect x="${(L+h*pw/24).toFixed(1)}" y="${T}" width="${(pw/24).toFixed(1)}" height="${ph}" fill="transparent"><title>${aH(h)}: you ${(bv.you[h]*100).toFixed(1)}% · noise ${(bv.noise[h]*100).toFixed(1)}%</title></rect>`;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Share of activity by hour of day, you versus the noise. ${esc(bv.verdict)}"><title>Your baseline versus the noise by hour of day</title>${g}</svg>`}
+function svgRuns(h,labels,title){
+  const W=420,H=150,L=34,R=6,T=16,B=26,pw=W-L-R,ph=H-T-B,n=labels.length,mx=Math.max(10,Math.ceil(Math.max(...h.you,...h.noise)*10)*10)*1.05;
+  const y=v=>T+ph-(v*100/mx)*ph,gw=pw/n;let g=aGrid(W,H,L,R,T,B,mx,'% of bursts / gaps');
+  labels.forEach((lb,i)=>{const x=L+i*gw;
+    g+=`<rect x="${(x+gw*.1).toFixed(1)}" y="${y(h.you[i]).toFixed(1)}" width="${(gw*.38).toFixed(1)}" height="${(y(0)-y(h.you[i])).toFixed(1)}" fill="var(--you)" rx="1.5"><title>${lb} min: you ${Math.round(h.you[i]*100)}%</title></rect>`+
+       `<rect x="${(x+gw*.5).toFixed(1)}" y="${y(h.noise[i]).toFixed(1)}" width="${(gw*.38).toFixed(1)}" height="${(y(0)-y(h.noise[i])).toFixed(1)}" fill="var(--acc)" rx="1.5"><title>${lb} min: noise ${Math.round(h.noise[i]*100)}%</title></rect><text x="${(x+gw/2).toFixed(1)}" y="${H-10}" text-anchor="middle">${lb}</text>`});
+  return `<div><b class="small">${esc(title)}</b><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)}: you versus the noise"><title>${esc(title)}</title>${g}</svg></div>`}
+function gv(el,text,state){el.className='gv '+(state==='ok'?'ok':state==='off'?'off':'neutral');el.textContent=text||''}
+function renderActivity(a){
+  // where the baseline comes from
+  const b=a.baseline.baseline||{},stl={'in use':['✓ in use','ok'],'not needed':['available, not needed',''],short:['not enough yet',''],none:['not available',''],pending:['reading…','']};
+  $('#actSources').innerHTML=(b.sources||[]).map(r=>{const [t,c]=stl[r.state]||['',''];
+    return `<div class="srcrow"><b>${esc(r.name)}</b><span class="mute">${esc(r.detail)}${r.note?' · '+esc(r.note):''}</span><span class="st ${c}">${esc(t)}</span></div>`}).join('')+
+    `<div class="small ${b.enough?'mute':''}" style="margin-top:6px">${esc(b.status||'')}</div>`;
+  const h=a.har||{};
+  $('#harTopWrap').style.display=h.present&&(h.top_hosts||[]).length?'':'none';
+  $('#harTop').textContent=(h.top_hosts||[]).slice(0,25).map(x=>x[0]+' ('+x[1]+')').join(', ');
+  $('#harHosts').disabled=!(h.present&&(h.top_hosts||[]).length);$('#harForget').disabled=!h.present;
+  // 1 intended
+  $('#aIntended').innerHTML=svgIntended(a.intended);gv($('#aIntendedV'),a.intended.verdict,'neutral');
+  // 2 session
+  const s=a.session;$('#aSession').innerHTML=svgSession(s,a.intended);gv($('#aSessionV'),'Verdict: '+s.verdict.replace(/^([✓✗]\s*)/,'$1'),s.state);
+  // 3 baseline vs noise
+  const bv=a.baseline;$('#aYouName').textContent='you ('+(b.source==='har'?'HAR import':b.source==='history'?'browser history':b.source==='observer'?'noise-off minutes':'no data yet')+(b.enough?', '+b.label.split(' from ')[0].split(' of ')[0]:'')+')';
+  if(!b.enough){
+    $('#aBase').innerHTML=`<div class="note warn small"><b>Not enough data about you yet, so nothing is scored.</b> ${esc(b.howto||'')}</div>`;$('#aRuns').innerHTML='';gv($('#aBaseV'),'');
+  }else{
+    $('#aBase').innerHTML=svgShares(bv);gv($('#aBaseV'),'Verdict: '+bv.verdict,bv.state);
+    $('#aRuns').innerHTML=bv.bursts&&bv.noise_minutes>=30?svgRuns(bv.bursts,bv.labels,'How long busy bursts last (minutes in a row)')+svgRuns(bv.gaps,bv.labels,'How long quiet gaps last (minutes)'):'<div class="small mute">Burst and gap lengths appear once the noise has run for about 30 busy minutes.</div>';
+  }
+}
+let actBusy=false;
+async function pollActivity(){if(!proofOn()||actBusy)return;actBusy=true;try{renderActivity(await api('/api/activity'))}catch(e){}finally{actBusy=false}}
+setInterval(pollActivity,4000);
+$$('#nav button').forEach(b=>{if(b.dataset.t==='proof')b.addEventListener('click',()=>setTimeout(pollActivity,0))});
+$('#harGo').onclick=async()=>{
+  const f=$('#harFile').files[0],m=$('#harMsg');
+  if(!f){m.innerHTML='<span class="warnc">Choose a .har file first (see the steps above).</span>';return}
+  if(f.size>50*1024*1024){m.innerHTML='<span class="bad">That file is larger than 50 MB. Record a shorter session and try again.</span>';return}
+  m.textContent='Reading the file here and keeping only times and site names…';$('#harGo').disabled=true;
+  try{const r=await fetch('/api/har/import',{method:'POST',headers:{'X-Token':TOKEN,'Content-Type':'application/json'},body:f});
+    const j=await r.json().catch(()=>({error:'bad response'}));if(!r.ok||j.error)throw new Error(j.error||r.statusText);
+    m.innerHTML=`<span class="ok">✓ Imported ${j.entries.toLocaleString()} requests over ${j.span_hours} h.</span> The file itself was not kept.`;$('#harFile').value='';pollActivity()}
+  catch(e){m.innerHTML=`<span class="bad">${esc(e.message)}</span>`}finally{$('#harGo').disabled=false}};
+$('#harForget').onclick=async()=>{try{await api('/api/har/forget',{});$('#harMsg').textContent='Imported data deleted.';pollActivity()}catch(e){$('#harMsg').textContent=e.message}};
+$('#harHosts').onclick=async()=>{try{await api('/api/har/forget',{what:'hosts'});$('#harMsg').textContent='Site list deleted (counts per minute kept).';pollActivity()}catch(e){$('#harMsg').textContent=e.message}};
 
 // ---------- render
 function render(){
@@ -1233,6 +1357,7 @@ function svgTrend(h){if(!h.length)return 'No runs yet.';const W=300,H=90,P=24,xs
     <path d="${d}" fill="none" stroke="var(--noi)" stroke-width="2"/>${h.map((r,i)=>`<circle cx="${xs[i]}" cy="${y(r[1])}" r="4" fill="var(--noi)" stroke="var(--panel)" stroke-width="2"><title>${new Date(r[0]*1000).toLocaleString()}: ${r[1]}%</title></circle>`).join('')}</svg>
     <div class="small mute">Last: ${h[h.length-1][1]}% · lower is better</div>`}
 function renderML(d){
+  renderMlBase(d.baseline);
   const warn=[...(d.warnings||[]),...(d.errors||[]).map(e=>'Could not read: '+e)];
   $('#mlWarn').innerHTML=warn.map(w=>`<div class="note small">⚠️ ${esc(w)}</div>`).join('');
   if(d.error){$('#mlHead').innerHTML=`<div class="note bad small">${esc(d.error)} (${d.real_visits??0} of your visits found)</div>`;$('#mlBody').style.display='none';return}
@@ -1245,7 +1370,7 @@ function renderML(d){
   $('#mlTells').innerHTML=d.tells.length?'<table><tbody>'+d.tells.map(t=>`<tr><td><b>${esc(FNAME[t.feature]||t.feature)}</b> <span class="mute">(${t.auc}%)</span></td><td>${esc(t.advice)}</td></tr>`).join('')+'</tbody></table>':'No single signal stands out.';
   $('#mlVals').innerHTML='<table><thead><tr><th>Signal</th><th>Value</th><th>You</th><th>Noise</th><th>Leans</th></tr></thead><tbody>'+d.giveaways.map(g=>`<tr><td>${esc(FNAME[g.feature]||g.feature)}</td><td>${esc(valName(g.feature,g.value))}</td><td>${g.you}</td><td>${g.noise}</td><td><i class="dot" style="background:var(--${g.leans==='noise'?'noi':'you'})"></i>${g.leans} (${g.ratio>=1?g.ratio+'×':(1/g.ratio).toFixed(1)+'×'})</td></tr>`).join('')+'</tbody></table>';
 }
-async function loadMLTab(){try{const m=await api('/api/ml');$('#mlAuto').checked=m.auto;$('#mlTrend').innerHTML=svgTrend(m.history);if(m.last)renderML(m.last)}catch(e){}}
+async function loadMLTab(){try{const m=await api('/api/ml');renderMlBase(m.baseline);$('#mlAuto').checked=m.auto;$('#mlTrend').innerHTML=svgTrend(m.history);if(m.last)renderML(m.last)}catch(e){}}
 $('#mlHour').innerHTML=[...Array(24).keys()].map(h=>`<option value="${h}" ${h===21?'selected':''}>${String(h).padStart(2,'0')}:00</option>`).join('');
 $('#stRun').onclick=async()=>{$('#mlHead').innerHTML='<div class="small mute">Reading your history and simulating the noise… a few seconds.</div>';$('#stRun').disabled=true;
   try{renderML(await api('/api/tools/selftest?days='+encodeURIComponent($('#stDays').value||14)));const m=await api('/api/ml');$('#mlTrend').innerHTML=svgTrend(m.history)}
