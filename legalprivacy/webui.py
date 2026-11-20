@@ -303,11 +303,35 @@ class UIServer:
             self.quit_event.set()
 
 
+def running_instance(port: int) -> str | None:
+    """Link of a legalPrivacy dashboard already running on this port (same install token), else None."""
+    import urllib.request
+    tok = _load_token()
+    try:
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/api/state", headers={"X-Token": tok})
+        with urllib.request.urlopen(req, timeout=2) as r:           # nosec - loopback only
+            if r.status == 200 and "version" in json.loads(r.read().decode() or "{}"):
+                return f"http://127.0.0.1:{port}/?t={tok}"
+    except Exception:
+        pass
+    return None
+
+
 def run_ui(profile_path: str | None = None, port: int | None = None, open_browser: bool | None = None,
            print_fn=lambda *a: print(*a, flush=True)) -> int:
     """Start controller + dashboard; block until Quit. Returns exit code."""
     ctl = Controller(profile_path)
-    srv = UIServer(ctl, port or int(ctl.app.get("port", 8765)))
+    want = port or int(ctl.app.get("port", 8765))
+    other = running_instance(want)
+    if other:                                  # already running: reuse it, never start a second copy
+        print_fn(f"\n  legalPrivacy is already running: {other}\n")
+        if open_browser if open_browser is not None else ctl.app.get("open_browser", True):
+            try:
+                webbrowser.open(other)
+            except Exception:
+                pass
+        return 0
+    srv = UIServer(ctl, want)
     print_fn(f"\n  ⚖️ legalPrivacy dashboard: {srv.url}\n  (keep this window open; use Quit in the page, or Ctrl+C, to stop)\n")
     ctl.log.info("app", f"Dashboard listening on 127.0.0.1:{srv.port}")
     ctl._start_feed_timer()

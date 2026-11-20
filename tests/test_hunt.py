@@ -69,3 +69,23 @@ def test_failed_browser_launch_stops_playwright_driver():
             with pytest.raises(RuntimeError):
                 t._ensure()
     assert len(stopped) == 3 and t._pw is None
+
+
+def test_second_launch_reuses_running_dashboard(monkeypatch):
+    from legalprivacy import webui
+    d = tempfile.mkdtemp()
+    monkeypatch.setenv("LEGALPRIVACY_HOME", d)
+    c = Controller(profile_path=os.path.join(d, "p.json"))
+    srv = webui.UIServer(c, 0)
+    threading.Thread(target=srv.httpd.serve_forever, daemon=True).start()
+    try:
+        url = webui.running_instance(srv.port)
+        assert url and f":{srv.port}/?t={srv.token}" in url
+        opened = []
+        monkeypatch.setattr(webui.webbrowser, "open", lambda u: opened.append(u))
+        out = []
+        assert webui.run_ui(os.path.join(d, "p.json"), srv.port, True, print_fn=lambda *a: out.append(a)) == 0
+        assert opened == [url]
+    finally:
+        srv.httpd.shutdown()
+    assert webui.running_instance(srv.port) is None
