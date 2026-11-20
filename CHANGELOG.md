@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+- **Live-apply is now verified:** a "settings in effect" chip in the header, a "Live and verified" message after each change, and a Live Log line listing exactly what changed (private values are not printed).
+- **Optional desktop window** (`pip install "legalprivacy[desktop]"`, then `legalprivacy-desktop`): the same dashboard in its own window.
+
 ## v2.11.0
 - **Activity graphs** (Proof tab): the intended pattern for your settings (from the rate planner, for reference), this session's actual requests over the planned band with off-plan hours in red, and your baseline vs the noise by hour of day with burst and quiet-gap lengths. Each has a plain-language verdict and an explanation when there is no data yet.
 - **Import a browser recording (HAR file)** as your baseline (Network tab, Save all as HAR). Parsed in memory; only times and site names are read, and only per-minute counts and a deletable list of site names are kept. 50 MB / 500,000 request limits; Chrome and Firefox files.

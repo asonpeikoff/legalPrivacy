@@ -334,6 +334,18 @@ def running_instance(port: int) -> str | None:
     return None
 
 
+def start_services(ctl) -> None:
+    """Background pieces every front end needs once the dashboard server is up."""
+    ctl._start_feed_timer()
+    if ctl.app.get("observe", True):
+        ctl.observer.start()              # Proof tab: local connection counts, never leaves this computer
+    if ctl.app.get("autostart") and not ctl.first_run:
+        try:
+            ctl.start(reason="autostart on launch")
+        except ConfigError as exc:
+            ctl.log.error("app", str(exc))
+
+
 def run_ui(profile_path: str | None = None, port: int | None = None, open_browser: bool | None = None,
            print_fn=lambda *a: print(*a, flush=True)) -> int:
     """Start controller + dashboard; block until Quit. Returns exit code."""
@@ -351,14 +363,7 @@ def run_ui(profile_path: str | None = None, port: int | None = None, open_browse
     srv = UIServer(ctl, want)
     print_fn(f"\n  ⚖️ legalPrivacy dashboard: {srv.url}\n  (keep this window open; use Quit in the page, or Ctrl+C, to stop)\n")
     ctl.log.info("app", f"Dashboard listening on 127.0.0.1:{srv.port}")
-    ctl._start_feed_timer()
-    if ctl.app.get("observe", True):
-        ctl.observer.start()              # Proof tab: local connection counts, never leaves this computer            # fetch live query/domain sources in the background right away
-    if ctl.app.get("autostart") and not ctl.first_run:
-        try:
-            ctl.start(reason="autostart on launch")
-        except ConfigError as exc:
-            ctl.log.error("app", str(exc))
+    start_services(ctl)
     if open_browser if open_browser is not None else ctl.app.get("open_browser", True):
         if not srv.open_browser():
             print_fn("  Could not open a browser automatically — copy the link above into one.")
