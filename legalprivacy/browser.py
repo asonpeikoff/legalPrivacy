@@ -282,8 +282,12 @@ class BrowserTransport(Transport):
         if self.engine == "firefox":
             # Firefox (Gecko): its own TLS/HTTP fingerprint, the same as people browsing with Firefox.
             self._pw = sync_playwright().start()
-            self._browser = self._pw.firefox.launch(headless=self.headless,
-                                                    proxy={"server": self.proxy} if self.proxy else None)
+            try:
+                self._browser = self._pw.firefox.launch(headless=self.headless,
+                                                        proxy={"server": self.proxy} if self.proxy else None)
+            except Exception:
+                self._drop_driver()
+                raise
             self._major = (self._browser.version or "0").split(".")[0]
             self.on_event("info", f"Real browser started: Firefox {self._browser.version}"
                                   f" ({'headless' if self.headless else 'visible'})")
@@ -297,11 +301,24 @@ class BrowserTransport(Transport):
             args += ["--window-position=-32000,-32000", "--window-size=1366,850"]
         if getenv("NO_SANDBOX") == "1" or (hasattr(os, "geteuid") and os.geteuid() == 0):
             args.append("--no-sandbox")                    # Chromium refuses to sandbox as root
-        self._browser = self._pw.chromium.launch(executable_path=self.executable, headless=self.headless,
-                                                 args=args, proxy={"server": self.proxy} if self.proxy else None)
+        try:
+            self._browser = self._pw.chromium.launch(executable_path=self.executable, headless=self.headless,
+                                                     args=args, proxy={"server": self.proxy} if self.proxy else None)
+        except Exception:
+            self._drop_driver()
+            raise
         self._major = (self._browser.version or "0").split(".")[0]
         self.on_event("info", f"Real browser started: {Path(self.executable).name} {self._browser.version}"
                               f" ({'headless' if self.headless else 'off-screen window' if self.offscreen else 'visible'})")
+
+    def _drop_driver(self) -> None:
+        """A failed launch must not leave Playwright's driver process behind: every retry would start another."""
+        try:
+            if self._pw:
+                self._pw.stop()
+        except Exception:
+            pass
+        self._pw = self._browser = None
 
     def close(self) -> None:
         for s in list(self._sessions.values()):
@@ -408,10 +425,10 @@ class BrowserTransport(Transport):
         finally:
             self._expect_tab = False
         self._our_pages.add(page)
-        page.on("close", lambda pg: self._our_pages.discard(pg))
         self._tab_seq += 1
         tab = self._tab_seq
         self._tabs[tab] = page
+        page.on("close", lambda pg: (self._our_pages.discard(pg), self._tabs.pop(tab, None)))
 
         def _nav(frame):
             if frame is not page.main_frame:

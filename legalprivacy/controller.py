@@ -623,6 +623,11 @@ class Controller:
 
     def start(self) -> None:
         with self._lock:
+            old = self._thread
+            if old is not None and old.is_alive() and self._stop.is_set():
+                old.join(timeout=15)             # a run that is still shutting down: let it finish first
+                if old.is_alive():
+                    raise ConfigError("The previous run is still shutting down; try again in a moment.")
             if self.running:
                 return
             self._stop = threading.Event()
@@ -764,6 +769,10 @@ class Controller:
             self.runner.run_forever()
         except Exception as exc:
             self.log.error("scheduler", f"Runner crashed: {exc!r}")
+            try:
+                self.runner.close()              # don't leave browsers behind after a crash
+            except Exception:
+                pass
 
     def stop(self, stop_tor: bool = False) -> None:
         self.accounts.stop()
@@ -772,6 +781,8 @@ class Controller:
             t = self._thread
         if t:
             t.join(timeout=8)
+            if t.is_alive():
+                self.log.warn("app", "The noise is taking a while to wind down; it will stop on its own.")
         self.log.info("app", "Stopped.")
         if stop_tor and self.tor:
             self.tor.stop()
