@@ -262,6 +262,13 @@ from the saved counts and site names, so revisit habits are approximate.
   automated. A spare account is safer. Nothing is ever sent, deleted or changed in the mailbox. Google sometimes refuses
   sign-in in an automated browser; if so, the account simply can't be used.
 
+## Desktop window (optional)
+
+Prefer an app window to a browser tab? `pip install "legalprivacy[desktop]"` then run `legalprivacy-desktop`.
+It shows the same dashboard in its own window (using your system's web view: Edge WebView2 on Windows, WebKit on macOS
+and GTK/Qt WebKit on Linux), and closing the window quits the app. If the extra isn't installed it opens the normal
+browser dashboard instead. This is a first step; links to other websites may open inside the window.
+
 ## DNS
 
 **When some of your DNS servers can't be trusted.** Each time the servers are checked, legalPrivacy also tests whether they are honest:
