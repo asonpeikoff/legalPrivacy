@@ -230,14 +230,16 @@ class UIServer:
                     return self._json({"error": "bad origin"}, 403)
                 try:
                     n = int(self.headers.get("Content-Length") or 0)
+                    if n < 0:
+                        raise ValueError("negative length")
                     if u.path == "/api/har/import":      # a browser recording can be large (limit 50 MB)
                         if n > 52 * 1024 * 1024:
                             return self._json({"error": "That file is larger than 50 MB. Record a shorter session and try again."}, 413)
-                        raw = self.rfile.read(n)
-                    else:
-                        raw = self.rfile.read(min(n, 1_000_000))
-                    body = json.loads(raw or b"{}")
-                    raw = None
+                    elif n > 1_000_000:
+                        return self._json({"error": "request too large"}, 413)
+                    body = json.loads(self.rfile.read(n) or b"{}")
+                    if not isinstance(body, dict):
+                        raise ValueError("body must be an object")
                 except (ValueError, json.JSONDecodeError):
                     return self._json({"error": "invalid JSON"}, 400)
                 ctl, path = srv.ctl, u.path
