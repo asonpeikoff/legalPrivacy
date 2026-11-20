@@ -89,3 +89,45 @@ def test_second_launch_reuses_running_dashboard(monkeypatch):
     finally:
         srv.httpd.shutdown()
     assert webui.running_instance(srv.port) is None
+
+
+def test_old_tor_exit_does_not_fail_the_new_one():
+    from legalprivacy.events import EventLog
+    from legalprivacy.tormanager import TorManager
+
+    class P:
+        stdout = iter(())
+
+        def wait(self):
+            return 1
+    tm = TorManager(EventLog())
+    tm._proc, tm.state = object(), "bootstrapping"      # a newer process is in charge
+    tm._pump_output(P())
+    assert tm.state == "bootstrapping"
+    old = P()
+    tm._proc = old                                      # the current one dying is still reported
+    tm._pump_output(old)
+    assert tm.state == "error"
+
+
+def _post(srv, path, body=b"{}", headers=None):
+    import http.client
+    c = http.client.HTTPConnection("127.0.0.1", srv.port, timeout=5)
+    h = {"X-Token": srv.token, "Content-Type": "application/json"}
+    h.update(headers or {})
+    c.request("POST", path, body=body, headers=h)
+    return c.getresponse().status
+
+
+def test_post_rejects_negative_huge_and_non_object_bodies(monkeypatch):
+    from legalprivacy import webui
+    d = tempfile.mkdtemp()
+    monkeypatch.setenv("LEGALPRIVACY_HOME", d)
+    srv = webui.UIServer(Controller(profile_path=os.path.join(d, "p.json")), 0)
+    threading.Thread(target=srv.httpd.serve_forever, daemon=True).start()
+    try:
+        assert _post(srv, "/api/pause", b"[1]") == 400
+        assert _post(srv, "/api/pause", b"", {"Content-Length": "-5"}) == 400
+        assert _post(srv, "/api/pause", b"x", {"Content-Length": "5000000"}) == 413
+    finally:
+        srv.httpd.shutdown()

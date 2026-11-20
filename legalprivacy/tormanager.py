@@ -468,6 +468,8 @@ class TorManager:
                 level = "debug"
             self.log.add(level, "tor", line)
         code = proc.wait()
+        if proc is not self._proc:          # an older Tor that was stopped or replaced: not a failure of the new one
+            return
         if not self._stop_evt.is_set() and self.state != "stopped":
             self._fail(f"Tor exited unexpectedly (code {code}). See the log for details.")
 

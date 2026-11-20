@@ -228,7 +228,13 @@ class UIServer:
                     return self._json({"error": "bad origin"}, 403)
                 try:
                     n = int(self.headers.get("Content-Length") or 0)
-                    body = json.loads(self.rfile.read(min(n, 1_000_000)) or b"{}")
+                    if n < 0:
+                        raise ValueError("negative length")
+                    if n > 1_000_000:
+                        return self._json({"error": "request too large"}, 413)
+                    body = json.loads(self.rfile.read(n) or b"{}")
+                    if not isinstance(body, dict):
+                        raise ValueError("body must be an object")
                 except (ValueError, json.JSONDecodeError):
                     return self._json({"error": "invalid JSON"}, 400)
                 ctl, path = srv.ctl, u.path
