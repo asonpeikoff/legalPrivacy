@@ -717,7 +717,7 @@ class Controller:
     def running(self) -> bool:
         return bool(self._thread and self._thread.is_alive())
 
-    def start(self) -> None:
+    def start(self, reason: str = "you pressed Start") -> None:
         with self._lock:
             old = self._thread
             if old is not None and old.is_alive() and self._stop.is_set():
@@ -773,8 +773,19 @@ class Controller:
             self._thread = threading.Thread(target=self._run_loop, daemon=True, name="legalprivacy-runner")
             self._thread.start()
             self.accounts.start()                 # idle unless an account is signed in AND switched on
-            self.log.info("app", "Started: lanes = " + ", ".join(
+            self._note_start(reason)
+            self.log.info("app", f"Started ({reason}): lanes = " + ", ".join(
                 f"{l.name}[{'/'.join(l.engines)}]" for l in lanes))
+
+    def _note_start(self, reason: str) -> None:
+        """Keep the last minute of starts; say so in the log when noise keeps being (re)started."""
+        now = time.time()
+        recent = [(t, r) for t, r in getattr(self, "_starts", []) if now - t < 60] + [(now, reason)]
+        self._starts = recent
+        if len(recent) >= 5:
+            why = ", ".join(sorted({r for _, r in recent}))
+            self.log.warn("app", f"Noise was started {len(recent)} times in the last minute (reasons: {why}). "
+                                 "If you did not expect this, note which reason it is.")
 
     def reapply(self) -> None:
         """Make the running noise pick up settings that were just saved: rebuild it in place.
@@ -788,7 +799,7 @@ class Controller:
             self.app["clear_logs_on_restart"] = False
             try:
                 self.stop()
-                self.start()
+                self.start(reason="settings applied")
                 if paused:
                     self.pause(True)
             finally:
