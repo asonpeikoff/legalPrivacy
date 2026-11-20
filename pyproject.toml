@@ -26,6 +26,10 @@ cricket-launch = "legalprivacy.launcher:main"
 dev = ["pytest>=8.0"]
 desktop = ["pywebview>=5"]          # native window for the dashboard (legalprivacy-desktop)
 
+[project.urls]
+Repository = "https://github.com/asonpeikoff/legalPrivacy"
+"Named after (blog)" = "https://legalizingprivacy.substack.com"
+
 [tool.setuptools.packages.find]
 include = ["legalprivacy*"]
 

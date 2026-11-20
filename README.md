@@ -6,7 +6,12 @@ real browser, behaves like a person, follows a daily rhythm, and can make option
 `.onion` noise. Everything it does is visible in a local dashboard, and nothing about your
 activity is stored after it stops.
 
-The name is a homage to the blog [*Legalizing Privacy*](https://legalizingprivacy.substack.com). This project was called noisyCricket until v2.9;
+> **Named after a blog.** legalPrivacy is named in homage to [*Legalizing Privacy*](https://legalizingprivacy.substack.com)
+> by **Amy Peikoff**, "writing about why and how to legalize privacy, using the principles of private property and freedom
+> of contract". Read it: [home](https://legalizingprivacy.substack.com) · [about](https://legalizingprivacy.substack.com/about) ·
+> [archive](https://legalizingprivacy.substack.com/archive).
+
+This project was called noisyCricket until v2.9;
 existing settings, start-up commands (`cricket`, `cricket-launch`) and `CRICKET_*` environment variables keep working.
 
 <p align="center">
@@ -373,6 +378,13 @@ legalprivacy doctor --profile profiles/example.yaml
 legalprivacy tor status|start|install|newnym   # the app's private Tor
 legalprivacy relay bridges | gen-client | gen  # bridges and relay configurations
 ```
+
+## Credits
+
+- **Name and inspiration:** the blog [*Legalizing Privacy*](https://legalizingprivacy.substack.com) by Amy Peikoff
+  ([about](https://legalizingprivacy.substack.com/about), [archive](https://legalizingprivacy.substack.com/archive)).
+  Its argument, that privacy should be protected through our rights to property and contract, is why this project exists.
+- Tor, the Tor Expert Bundle and its pluggable transports are the work of the [Tor Project](https://www.torproject.org).
 
 ## Development
 

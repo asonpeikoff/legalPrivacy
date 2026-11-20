@@ -268,6 +268,8 @@ def build_app_class():
             menu.add_cascade(label="View", menu=vm)
             hm = tk.Menu(menu, tearoff=0)
             hm.add_command(label="About legalPrivacy", command=self.about)
+            hm.add_command(label="Read the blog we are named after (Legalizing Privacy)",
+                           command=lambda: webbrowser.open("https://legalizingprivacy.substack.com"))
             menu.add_cascade(label="Help", menu=hm)
             r.configure(menu=menu)
 
@@ -449,6 +451,7 @@ def build_app_class():
                 "About legalPrivacy",
                 f"legalPrivacy {__version__}\n\nPrivacy noise generator with optional Tor/onion mode.\n"
                 "This is the native desktop app; the web dashboard is available from the File menu.\n\n"
+                "Named in homage to the blog Legalizing Privacy by Amy Peikoff:\nhttps://legalizingprivacy.substack.com\n\n"
                 "Everything runs on this computer.", parent=self.root)
 
         def quit_app(self) -> None:

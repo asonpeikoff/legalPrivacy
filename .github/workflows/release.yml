@@ -111,6 +111,8 @@ jobs:
 
             Or from source: `pip install git+https://github.com/asonpeikoff/legalPrivacy` then `legalprivacy-launch`.
 
+            Named in homage to the blog [Legalizing Privacy](https://legalizingprivacy.substack.com) by Amy Peikoff.
+
             ### What's new
             See the [changelog](https://github.com/asonpeikoff/legalPrivacy/blob/master/CHANGELOG.md).
           files: |
