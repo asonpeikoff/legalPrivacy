@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import sys
 import threading
 import urllib.parse
 import webbrowser
@@ -77,6 +78,16 @@ def _load_token() -> str:
     return tok
 
 
+class _Server(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request, client_address) -> None:
+        """A browser tab closing mid-response is normal, not an error worth a traceback on the console."""
+        if isinstance(sys.exc_info()[1], (ConnectionError, TimeoutError)):
+            return
+        super().handle_error(request, client_address)
+
+
 class UIServer:
     def __init__(self, ctl: Controller, port: int = 8765):
         self.ctl = ctl
@@ -92,8 +103,7 @@ class UIServer:
             try:
                 # LEGALPRIVACY_BIND=0.0.0.0 is only for running inside a container, whose port is then
                 # published to 127.0.0.1 on the host (see docs/DOCKER.md). Default: this computer only.
-                srv = ThreadingHTTPServer((getenv("BIND", "127.0.0.1"), p), BaseHTTPRequestHandler)
-                srv.daemon_threads = True
+                srv = _Server((getenv("BIND", "127.0.0.1"), p), BaseHTTPRequestHandler)
                 return srv
             except OSError:
                 continue

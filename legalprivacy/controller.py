@@ -59,7 +59,6 @@ class Controller:
         wipe_old_log_files()                      # older versions wrote cricket.log to disk
         self.log = EventLog()                     # live log is memory-only (never written to disk)
         self._save_lock = threading.RLock()       # autosave: concurrent saves are serialised
-        threading.Thread(target=self._ml_auto_loop, daemon=True, name="ml-auto").start()
         self.profile_path = profile_path or str(config_path())
         self.first_run = not Path(self.profile_path).exists()
         self.app: dict[str, Any] = dict(APP_DEFAULTS)
@@ -93,6 +92,7 @@ class Controller:
         self.log.info("app", f"legalPrivacy {__version__} on {platform.system()} {platform.release()} "
                              f"(Python {platform.python_version()})")
         self.log.info("app", f"Config: {self.profile_path}")
+        threading.Thread(target=self._ml_auto_loop, daemon=True, name="ml-auto").start()   # needs self.app, so last
 
     # ── config ──────────────────────────────────────────────────────────────
     def _load(self) -> None:
@@ -272,9 +272,10 @@ class Controller:
         plan.cfg = self.profile.dns
         if self.profile.dns.mode != "system":
             plan.check_async()
-            if not getattr(self, "_dns_timer", False):
+            with self._lock:
+                first = not getattr(self, "_dns_timer", False)
                 self._dns_timer = True
-
+            if first:
                 def loop():
                     while True:
                         time.sleep(600)
@@ -706,14 +707,16 @@ class Controller:
 
     def _start_feed_timer(self) -> None:
         """Only if the user opted in: re-fetch sources when they are ~3 months old."""
-        if self._feed_timer_started or not self.app.get("auto_refresh_sources"):
-            return
-        self._feed_timer_started = True
+        with self._lock:
+            if self._feed_timer_started or not self.app.get("auto_refresh_sources"):
+                return
+            self._feed_timer_started = True
 
         def loop():
-            while True:
+            while self.app.get("auto_refresh_sources"):     # switching it off in Settings ends the timer
                 self.feeds.refresh_async()
                 time.sleep(1800)
+            self._feed_timer_started = False
         threading.Thread(target=loop, daemon=True, name="feed-timer").start()
 
     def refresh_feeds(self) -> None:

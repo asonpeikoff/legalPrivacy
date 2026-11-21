@@ -357,8 +357,13 @@ class TrafficObserver:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return
+        if not isinstance(data, dict):
+            return
         cutoff = self.clock() - KEEP_DAYS * 86400
         for k, v in data.items():
-            t = int(k)
-            if t >= cutoff:
-                self.minutes[t] = dict(v)
+            try:                                   # a damaged entry must not stop the app from starting
+                t = int(k)
+                if t >= cutoff and isinstance(v, dict):
+                    self.minutes[t] = dict(v)
+            except (TypeError, ValueError):
+                continue

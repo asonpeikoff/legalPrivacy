@@ -49,6 +49,18 @@ def write_private(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
+def ensure_utf8_console() -> None:
+    """Windows consoles default to cp1252, which cannot print the symbols in our messages (a crash on the
+    first print). Switch the standard streams to UTF-8 with replacement; harmless elsewhere and when a
+    stream is missing (windowed launch) or already redirected."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            if stream is not None and (getattr(stream, "encoding", "") or "").lower().replace("-", "") != "utf8":
+                stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def resource_root() -> Path:
     """Where bundled read-only files live (repo root, or PyInstaller's _MEIPASS)."""
     meipass = getattr(sys, "_MEIPASS", None)

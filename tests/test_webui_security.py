@@ -116,3 +116,17 @@ def test_saved_settings_and_new_data_folder_are_owner_only():
         assert paths.app_dir().stat().st_mode & 0o777 == 0o700
     finally:
         os.environ["LEGALPRIVACY_HOME"] = old
+
+
+def test_ensure_utf8_console_makes_a_cp1252_stream_printable():
+    import io
+    from legalprivacy.paths import ensure_utf8_console
+    old = sys.stdout
+    raw = io.BytesIO()
+    sys.stdout = io.TextIOWrapper(raw, encoding="cp1252", errors="strict")
+    try:
+        ensure_utf8_console()
+        print("\u2696\ufe0f legalPrivacy", flush=True)      # would raise UnicodeEncodeError under cp1252
+        assert "legalPrivacy" in raw.getvalue().decode("utf-8")
+    finally:
+        sys.stdout = old

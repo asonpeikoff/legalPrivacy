@@ -484,6 +484,7 @@ class TorManager:
 
     def _monitor_loop(self) -> None:
         ctrl: TorControl | None = None
+        last_err = ""
         while not self._stop_evt.is_set() and self.state not in ("stopped", "error"):
             try:
                 if ctrl is None:
@@ -501,8 +502,13 @@ class TorManager:
                 ctrl = None
                 if self.mode == "external" or self.state == "ready":
                     self.stats.setdefault("control_error", str(exc))
-            except Exception:
+            except Exception as exc:               # a bug or odd reply: keep monitoring, but say so (once per kind)
+                if ctrl:
+                    ctrl.close()
                 ctrl = None
+                if repr(exc) != last_err:
+                    last_err = repr(exc)
+                    self.log.debug("tor", f"Tor monitor error: {last_err}")
             self._stop_evt.wait(2.0)
         if ctrl:
             ctrl.close()
