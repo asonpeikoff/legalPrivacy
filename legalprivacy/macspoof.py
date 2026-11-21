@@ -16,13 +16,22 @@ carrying the default route is skipped unless forced; bridges, bridge/bond member
 interfaces are never touched; changes need root. Nothing survives a reboot unless you pass
 `--persist` (NetworkManager only).
 
+Headless by design: this module needs only the Python standard library (no dashboard, browser or
+third-party packages), so `python3 -m legalprivacy.macspoof ...` (or `legalprivacy-mac`) works on a
+minimal install, over SSH, from a systemd unit, or inside a Qubes OS sys-net.
+
+Qubes OS: the MAC that matters is the physical NIC's, which lives in sys-net. Inside an AppVM
+the only NIC is a Xen virtual interface (vif), which this tool refuses to touch.
+
 Exit codes: 0 ok, 1 error, 2 bad arguments, 3 permission denied.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
+import socket
 import secrets
 import subprocess
 import sys
@@ -104,8 +113,19 @@ def _default_state_path() -> Path:
 
 
 def _default_tor_probe() -> bool:
-    from .tormanager import port_open
-    return any(port_open("127.0.0.1", p, timeout=0.3) for p in TOR_PORTS)
+    for port in TOR_PORTS:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.3):
+                return True
+        except OSError:
+            continue
+    return False
+
+
+XEN_DRIVERS = ("vif", "xen-netfront", "xen_netfront")
+QUBES_MARKER = "/usr/share/qubes/marker-vm"
+QUBES_RW_CONFIG = "/rw/config"
+_HOOK_BEGIN, _HOOK_END = "# BEGIN legalprivacy-mac-rotate", "# END legalprivacy-mac-rotate"
 
 
 class MacSpoofer:
@@ -114,13 +134,15 @@ class MacSpoofer:
                  tor_probe: Callable[[], bool] = _default_tor_probe,
                  clock: Callable[[], float] = time.time, systemd_dir: str = "/etc/systemd/system",
                  cron_dir: str = "/etc/cron.d",
-                 systemd_active: Callable[[], bool] = lambda: Path("/run/systemd/system").is_dir()):
+                 systemd_active: Callable[[], bool] = lambda: Path("/run/systemd/system").is_dir(),
+                 qubes_marker: str = QUBES_MARKER, rw_config: str = QUBES_RW_CONFIG):
         self.run, self.sysfs = run, sysfs
         self.state_path = Path(state_path) if state_path else None
         self._euid = euid or (lambda: os.geteuid() if hasattr(os, "geteuid") else 0)
         self.tor_probe, self.clock = tor_probe, clock
         self.systemd_dir, self.cron_dir = systemd_dir, cron_dir
         self._systemd_active = systemd_active
+        self.qubes_marker, self.rw_config = qubes_marker, rw_config
 
     # ---- state
     def _path(self) -> Path:
@@ -164,6 +186,19 @@ class MacSpoofer:
         m = self._read(iface, "address")
         return m.lower() if m else None
 
+    def driver(self, iface: str) -> str | None:
+        try:
+            return os.path.basename(os.readlink(os.path.join(self.sysfs, iface, "device", "driver")))
+        except OSError:
+            return None
+
+    def qubes_vm_type(self) -> str | None:
+        """None outside Qubes OS; otherwise the VM type if qubesdb answers, else 'unknown'."""
+        if not Path(self.qubes_marker).exists():
+            return None
+        rc, out, _ = self.run(["qubesdb-read", "/qubes-vm-type"])
+        return out.strip() if rc == 0 and out.strip() else "unknown"
+
     def interface_info(self, iface: str) -> dict:
         wifi = self._exists(iface, "wireless") or self._exists(iface, "phy80211")
         physical = self._exists(iface, "device")
@@ -176,10 +211,13 @@ class MacSpoofer:
             reason = "bridge or bond member"
         elif not physical:
             reason = "virtual interface"
+        elif self.driver(iface) in XEN_DRIVERS:
+            reason = ("Xen virtual NIC (Qubes AppVM): the MAC on the wire belongs to the NIC in "
+                      "sys-net; run this tool there")
         elif self._read(iface, "type") not in (None, "1"):
             reason = "not an Ethernet-type interface"
         return {"iface": iface, "kind": "wifi" if wifi else ("ethernet" if physical else "virtual"),
-                "eligible": reason is None, "reason": reason, "current": self.current_mac(iface)}
+                "eligible": reason is None, "reason": reason, "current": self.current_mac(iface), "driver": self.driver(iface)}
 
     def list_interfaces(self) -> list[dict]:
         try:
@@ -298,6 +336,11 @@ class MacSpoofer:
                         "default_route": i["iface"] in active})
         return out
 
+    def environment(self) -> dict:
+        ifs = self.list_interfaces()
+        return {"qubes_vm_type": self.qubes_vm_type(),
+                "xen_virtual_interfaces": [i["iface"] for i in ifs if i["driver"] in XEN_DRIVERS]}
+
     def _change(self, row: dict, mode: str, mac: str | None, persist: bool, st: dict) -> None:
         iface = row["iface"]
         info = self.interface_info(iface)
@@ -414,6 +457,28 @@ class MacSpoofer:
                           "last": 0}
         self.save_state(st)
         self._install_timer()
+        self._qubes_hook(True)
+        out = self.rotation_status()
+        out["warnings"] = self._rotation_warnings(bool(include_active))
+        return out
+
+    def _rotation_warnings(self, include_active: bool) -> list[str]:
+        w = []
+        ifs = [i for i in self.list_interfaces() if i["eligible"]]
+        active = self.default_route_ifaces()
+        if not include_active and ifs and all(i["iface"] in active for i in ifs):
+            w.append("every eligible interface carries the default route, so nothing will rotate "
+                     "without --include-active")
+        if include_active and self.qubes_vm_type() is not None:
+            w.append("Qubes: a VPN in a downstream qube (sys-vpn) is invisible from here; each rotation "
+                     "drops the link and the VPN must reconnect (keep its kill switch on)")
+        return w
+
+    def rotate_resume(self) -> dict:
+        """Reinstall the timer from the saved settings (used at boot on Qubes, where /etc resets)."""
+        self.require_root()
+        if self.load_state()["rotation"].get("enabled"):
+            self._install_timer()
         return self.rotation_status()
 
     def rotate_disable(self) -> dict:
@@ -422,18 +487,43 @@ class MacSpoofer:
         st["rotation"]["enabled"] = False
         self.save_state(st)
         self._remove_timer()
+        self._qubes_hook(False)
         return self.rotation_status()
 
-    def _tick_command(self) -> list[str]:
-        return [sys.executable, "-m", "legalprivacy.cli", "mac", "rotate", "--tick"]
+    def _tick_command(self, flag: str = "--tick") -> list[str]:
+        return [sys.executable, "-m", "legalprivacy.macspoof", "rotate", flag]
+
+    def _env(self) -> str:
+        """PYTHONPATH and state dir, so a root-run timer finds a package installed for another user."""
+        pkg_root = str(Path(__file__).resolve().parents[1])
+        return f"PYTHONPATH={pkg_root} LEGALPRIVACY_HOME={self._path().parent}"
+
+    def _qubes_hook(self, install: bool) -> None:
+        """Qubes: /etc and /usr/lib in a template-based qube reset on reboot, but /rw/config/rc.local
+        persists. Keep a marked block there that reinstalls the timer at boot (only while enabled)."""
+        rc_local = Path(self.rw_config, "rc.local")
+        if self.qubes_vm_type() is None or not Path(self.rw_config).is_dir():
+            return
+        old = rc_local.read_text() if rc_local.exists() else "#!/bin/sh\n"
+        keep, skipping = [], False
+        for line in old.splitlines():
+            if line.strip() == _HOOK_BEGIN:
+                skipping = True
+            elif line.strip() == _HOOK_END:
+                skipping = False
+            elif not skipping:
+                keep.append(line)
+        if install:
+            keep += [_HOOK_BEGIN, f"{self._env()} {' '.join(self._tick_command('--resume'))}", _HOOK_END]
+        rc_local.write_text("\n".join(keep) + "\n")
+        rc_local.chmod(0o755)
 
     def _install_timer(self) -> None:
-        home = str(self._path().parent)
         cmd = " ".join(self._tick_command())
         if self._use_systemd():
             Path(self.systemd_dir, f"{UNIT}.service").write_text(
                 "[Unit]\nDescription=legalPrivacy timed MAC rotation\n\n[Service]\nType=oneshot\n"
-                f"Environment=LEGALPRIVACY_HOME={home}\nExecStart={cmd}\n")
+                "".join(f"Environment={kv}\n" for kv in self._env().split()) + f"ExecStart={cmd}\n")
             Path(self.systemd_dir, f"{UNIT}.timer").write_text(
                 "[Unit]\nDescription=legalPrivacy timed MAC rotation\n\n[Timer]\n"
                 f"OnBootSec={TICK_MINUTES}min\nOnUnitActiveSec={TICK_MINUTES}min\n\n"
@@ -446,7 +536,7 @@ class MacSpoofer:
             Path(self.cron_dir).mkdir(parents=True, exist_ok=True)
             Path(self.cron_dir, UNIT).write_text(
                 f"# legalPrivacy timed MAC rotation\n*/{TICK_MINUTES} * * * * root "
-                f"LEGALPRIVACY_HOME={home} {cmd}\n")
+                f"{self._env()} {cmd}\n")
 
     def _remove_timer(self) -> None:
         if Path(self.systemd_dir, f"{UNIT}.timer").exists():
@@ -495,14 +585,27 @@ class MacSpoofer:
 
 # --------------------------------------------------------------------------- CLI
 
+_DESC = ("Randomize, set or restore MAC addresses. Exit codes: 0 ok, 1 error, 2 bad arguments, "
+         "3 permission denied. On Qubes OS run it in sys-net, not in an AppVM.")
+_EPILOG = f"legalPrivacy is named in homage to the blog Legalizing Privacy by Amy Peikoff: {BLOG_URL}"
+
+
 def add_parser(sub) -> None:
-    import argparse
-    p = sub.add_parser(
-        "mac", help="spoof or restore network interface MAC addresses (Linux, needs root)",
-        description="Randomize, set or restore MAC addresses. Exit codes: 0 ok, 1 error, "
-                    "2 bad arguments, 3 permission denied.",
-        epilog=f"legalPrivacy is named in homage to the blog Legalizing Privacy by Amy Peikoff: {BLOG_URL}",
-        formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = sub.add_parser("mac", help="spoof or restore network interface MAC addresses (Linux, needs root)",
+                       description=_DESC, epilog=_EPILOG,
+                       formatter_class=argparse.RawDescriptionHelpFormatter)
+    _populate(p)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Standalone headless entry point (`legalprivacy-mac`, `python -m legalprivacy.macspoof`)."""
+    p = argparse.ArgumentParser(prog="legalprivacy-mac", description=_DESC, epilog=_EPILOG,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    _populate(p)
+    return cmd_mac(p.parse_args(argv))
+
+
+def _populate(p) -> None:
     msub = p.add_subparsers(dest="mac_command", required=True)
 
     def common(sp, force=True):
@@ -534,6 +637,7 @@ def add_parser(sub) -> None:
     g.add_argument("--enable", action="store_true")
     g.add_argument("--disable", action="store_true")
     g.add_argument("--tick", action="store_true", help=argparse.SUPPRESS)
+    g.add_argument("--resume", action="store_true", help=argparse.SUPPRESS)
     ro.add_argument("--interval", type=int, default=60, metavar="MIN",
                     help=f"minutes between rotations, {MIN_INTERVAL} to {MAX_INTERVAL} (default 60)")
     ro.add_argument("--include-active", action="store_true",
@@ -564,22 +668,36 @@ def cmd_mac(args, spoofer: MacSpoofer | None = None) -> int:
         if cmd == "status":
             rows = sp.status()
             rot = sp.rotation_status()
+            env = sp.environment()
             if as_json:
-                print(json.dumps({"ok": True, "interfaces": rows, "rotation": rot}, indent=2))
+                print(json.dumps({"ok": True, "interfaces": rows, "rotation": rot, "environment": env}, indent=2))
             else:
                 for r in rows:
                     tag = ("spoofed" if r["spoofed"] else "original") if r["eligible"] else f"skip: {r['reason']}"
                     print(f"{r['iface']:<12} {r['kind']:<8} current={r['current']} "
                           f"permanent={r['permanent']} {tag}{' [default route]' if r['default_route'] else ''}")
+                if env["qubes_vm_type"]:
+                    print(f"qubes: {env['qubes_vm_type']}")
+                if env["xen_virtual_interfaces"] and not any(r["eligible"] for r in rows):
+                    print("note: only Xen virtual NICs here (a Qubes AppVM). Spoof the physical NIC "
+                          "from sys-net instead.")
                 print(f"rotation: {'on, every ' + str(rot['interval']) + ' min' if rot['enabled'] else 'off'}")
             return EXIT_OK
         if cmd == "rotate":
             if args.tick:
                 rows = sp.rotate_tick()
+            elif args.resume:
+                rot = sp.rotate_resume()
+                print(json.dumps({"ok": True, "rotation": rot}) if as_json else "rotation timer reinstalled")
+                return EXIT_OK
             elif args.enable:
                 rot = sp.rotate_enable(args.interval, args.include_active)
-                print(json.dumps({"ok": True, "rotation": rot}) if as_json
-                      else f"rotation on: every {rot['interval']} min")
+                if as_json:
+                    print(json.dumps({"ok": True, "rotation": rot}))
+                else:
+                    print(f"rotation on: every {rot['interval']} min")
+                    for w in rot.get("warnings", []):
+                        print(f"warning: {w}", file=sys.stderr)
                 return EXIT_OK
             elif args.disable:
                 rot = sp.rotate_disable()
@@ -614,3 +732,7 @@ def cmd_mac(args, spoofer: MacSpoofer | None = None) -> int:
     elif rows:
         print(_fmt_rows(rows))
     return EXIT_ERROR if bad else EXIT_OK
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

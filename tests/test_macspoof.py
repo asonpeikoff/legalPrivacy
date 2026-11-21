@@ -36,7 +36,8 @@ class Fake:
         self.sp = MacSpoofer(run=self.run, sysfs=str(self.sys), state_path=Path(self.tmp, "state.json"),
                              euid=lambda: 0, tor_probe=lambda: False, clock=lambda: self.now,
                              systemd_dir=str(Path(self.tmp, "systemd")), cron_dir=str(Path(self.tmp, "cron")),
-                             systemd_active=lambda: self.systemd)
+                             systemd_active=lambda: self.systemd,
+                             qubes_marker=str(Path(self.tmp, "marker-vm")), rw_config=str(Path(self.tmp, "rw")))
         Path(self.tmp, "systemd").mkdir()
         self.now = 1_000_000.0
 
@@ -56,6 +57,8 @@ class Fake:
     def run(self, cmd):
         self.calls.append(list(cmd))
         prog = cmd[0]
+        if prog == "qubesdb-read":
+            return 0, "NetVM\n", ""
         if prog == "systemctl":
             self.timer_cmds.append(cmd)
             return 0, "", ""
@@ -378,3 +381,98 @@ def test_rotation_falls_back_to_cron_without_systemd():
     assert Path(f.tmp, "cron", macspoof.UNIT).exists()
     f.sp.rotate_disable()
     assert not Path(f.tmp, "cron", macspoof.UNIT).exists()
+
+
+# ---- Qubes OS and headless
+
+def _make_qubes(f):
+    Path(f.tmp, "marker-vm").write_text("")
+    Path(f.tmp, "rw").mkdir()
+
+
+def test_xen_virtual_nic_is_refused_even_with_force():
+    """Inside a Qubes AppVM the only NIC is a Xen vif; its MAC is not the one on the wire."""
+    f = Fake(default="eth0")
+    drv = f.sys / "eth0" / "device"
+    (Path(f.tmp, "drivers", "vif")).mkdir(parents=True)
+    os.symlink(Path(f.tmp, "drivers", "vif"), drv / "driver")
+    row = by_iface(f.sp.randomize(["eth0"], force=True))["eth0"]
+    assert row["status"] == "refused" and "sys-net" in row["reason"] and f.mac("eth0") == PERM_ETH
+    assert "eth0" not in by_iface(f.sp.randomize(all_=True, force=True))
+    assert f.sp.environment()["xen_virtual_interfaces"] == ["eth0"]
+
+
+def test_qubes_environment_detected_and_absent_elsewhere():
+    f = Fake()
+    assert f.sp.environment()["qubes_vm_type"] is None
+    _make_qubes(f)
+    assert f.sp.environment()["qubes_vm_type"] == "NetVM"
+
+
+def test_qubes_rotation_hook_persists_in_rw_config_and_is_removed_on_disable():
+    f = Fake()
+    _make_qubes(f)
+    rc = Path(f.tmp, "rw", "rc.local")
+    rc.write_text("#!/bin/sh\necho mine\n")
+    f.sp.rotate_enable(30, include_active=True)
+    text = rc.read_text()
+    assert "echo mine" in text and "rotate --resume" in text and "PYTHONPATH=" in text
+    assert rc.stat().st_mode & 0o111
+    f.sp.rotate_enable(45)                                  # re-enable: still one block
+    assert rc.read_text().count("BEGIN legalprivacy-mac-rotate") == 1
+    f.sp.rotate_disable()
+    assert rc.read_text() == "#!/bin/sh\necho mine\n"
+
+
+def test_no_qubes_hook_outside_qubes():
+    f = Fake()
+    Path(f.tmp, "rw").mkdir()
+    f.sp.rotate_enable(30)
+    assert not Path(f.tmp, "rw", "rc.local").exists()
+
+
+def test_resume_reinstalls_timer_only_when_enabled():
+    f = Fake()
+    f.sp.rotate_enable(30)
+    for p in Path(f.tmp, "systemd").iterdir():              # simulate the reboot that wipes /etc
+        p.unlink()
+    f.sp.rotate_resume()
+    assert Path(f.tmp, "systemd", f"{macspoof.UNIT}.timer").exists()
+    f.sp.rotate_disable()
+    f.sp.rotate_resume()
+    assert not Path(f.tmp, "systemd", f"{macspoof.UNIT}.timer").exists()
+
+
+def test_timer_unit_carries_pythonpath_and_uses_the_stdlib_entry_point():
+    f = Fake()
+    f.sp.rotate_enable(30)
+    svc = Path(f.tmp, "systemd", f"{macspoof.UNIT}.service").read_text()
+    assert "Environment=PYTHONPATH=" in svc and "legalprivacy.macspoof rotate --tick" in svc
+
+
+def test_rotation_warns_on_qubes_with_include_active_and_when_nothing_can_rotate():
+    f = Fake(default="eth0")
+    # eth0 and wlan0 eligible; wlan0 is not default, so no 'nothing rotates' warning
+    assert not f.sp.rotate_enable(30)["warnings"]
+    g = Fake(default="eth0")
+    (g.sys / "wlan0" / "device").rmdir()                    # make wlan0 ineligible: only eth0 remains
+    (g.sys / "wlan0" / "wireless").rmdir()
+    assert any("nothing will rotate" in w for w in g.sp.rotate_enable(30)["warnings"])
+    _make_qubes(g)
+    assert any("sys-vpn" in w for w in g.sp.rotate_enable(30, include_active=True)["warnings"])
+
+
+def test_macspoof_is_headless_and_stdlib_only():
+    import subprocess
+    code = ("import sys; import legalprivacy.macspoof as m; "
+            "bad=[x for x in ('yaml','requests','playwright','psutil','tkinter','legalprivacy.config',"
+            "'legalprivacy.tormanager') if x in sys.modules]; "
+            "sys.exit(1 if bad else m.main(['status','--json']))")
+    p = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                       cwd=os.path.join(os.path.dirname(__file__), ".."))
+    assert p.returncode == 0, p.stderr + p.stdout
+    assert json.loads(p.stdout)["ok"] is True
+
+
+def test_standalone_main_returns_exit_codes():
+    assert macspoof.main(["set", "wlan0", "bogus"]) == 2        # bad MAC is rejected before root is needed

@@ -405,6 +405,8 @@ sudo legalprivacy mac rotate --enable --interval 60      # opt-in, 15 to 1440 mi
 - **Rotation** is off by default and never rotates the default-route interface while a VPN or Tor tunnel is up.
 - **Nothing survives a reboot** unless you pass `--persist` (NetworkManager only) or enable rotation.
 - **Exit codes:** 0 ok, 1 error, 2 bad arguments, 3 permission denied. Every command takes `--json`.
+- **Headless:** stdlib only, so `sudo python3 -m legalprivacy.macspoof ...` (or `legalprivacy-mac`) works without the dashboard or any extra packages.
+- **Qubes OS:** run it in **sys-net**, which owns the physical NIC, not in an AppVM (Xen virtual NICs are refused). See [docs/MAC.md](docs/MAC.md#qubes-os).
 
 A new MAC means a new DHCP lease and possibly a new IP address; captive portals and MAC-filtered networks may ask you to sign in
 again or refuse you. Your hostname and DHCP client identifier are separate identifiers and are not changed. See
