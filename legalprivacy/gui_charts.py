@@ -143,3 +143,37 @@ class BaselineChart(Chart):
                          font=("TkDefaultFont", 8, "bold"))
         self.create_text(x1, y0 - 2, text="share of the day's activity, by hour", anchor="e",
                          fill=self.pal["muted"], font=("TkDefaultFont", 8))
+
+
+class TimelineChart(Chart):
+    """Last 6 hours per minute: different addresses connected, split by who opened them; stripes where the noise was on."""
+
+    def _plot(self, rows: list) -> None:
+        if not rows or not any(r["you"] + r["noise"] + (1 if r.get("tor") else 0) for r in rows):
+            self.message("No connection counts yet. They fill in a minute at a time while this app is open.")
+            return
+        x0, y0, x1, y1 = self.box()
+        mx = nice_max(max(3, max(r["you"] + r["noise"] + (1 if r.get("tor") else 0) for r in rows)))
+        self.y_axis(mx)
+        n = len(rows)
+        w = (x1 - x0) / n
+        for i, r in enumerate(rows):
+            x = x0 + i * w
+            if r.get("on"):
+                self.create_rectangle(x, y0, x + max(w, 1), y1, fill=self.pal["bad"], stipple="gray12", outline="")
+            base = 0
+            for key, col in (("you", self.pal["line"]), ("noise", self.pal["noise"]), ("tor", self.pal["tor"])):
+                v = (1 if r.get(key) else 0) if key == "tor" else r.get(key, 0)
+                if v:
+                    self.create_rectangle(x, scale(base + v, 0, mx, y1, y0), x + max(w - 0.3, 0.8), scale(base, 0, mx, y1, y0),
+                                          fill=col, outline="")
+                    base += v
+        for k in range(5):
+            t = rows[0]["t"] + (rows[-1]["t"] - rows[0]["t"]) * k / 4
+            self.create_text(scale(k, 0, 4, x0, x1), y1 + 12, text=time.strftime("%H:%M", time.localtime(t)),
+                             fill=self.pal["muted"], font=("TkDefaultFont", 8))
+        lx = x0 + 4
+        for label, col in (("your apps", self.pal["line"]), ("legalPrivacy", self.pal["noise"]), ("Tor", self.pal["tor"])):
+            self.create_rectangle(lx, y0 - 10, lx + 8, y0 - 2, fill=col, outline="")
+            self.create_text(lx + 12, y0 - 6, text=label, anchor="w", fill=self.pal["muted"], font=("TkDefaultFont", 8))
+            lx += 14 + 7 * len(label)

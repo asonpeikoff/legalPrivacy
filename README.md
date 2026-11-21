@@ -275,17 +275,29 @@ network port. It uses Tk, which ships with Python on Windows and macOS (on Debia
 If Tk is missing it says so and opens the web dashboard instead.
 
 - **Header:** Start / Pause / Stop (F5 / F6 / F7), a status light, a Tor chip and a "settings in effect" chip.
-- **Dashboard:** state, uptime, the lanes with their hits and daily budgets, what it is doing right now, and the
-  1-10 level with random or steady.
-- **Activity:** recent hits, newest first (site names only). **Live Log:** coloured by level, filter, pause scrolling,
-  copy, clear.
-- **Tor:** enable, connection progress, Start / Stop / New identity, bridges.
-- **Settings:** DNS, cookie lifetime, noise-browser window, autostart, the three Panic buttons (each asks first).
-- **Proof:** the "is it working?" checks (You want to see / We saw), the three activity graphs, importing a browser
-  recording (HAR) and where your baseline comes from.
+- **Dashboard:** hits, failures, uptime, last hit and data today; a hits-per-minute sparkline; the lanes with their
+  budgets; **how much noise** (the 1-10 level and the steady-to-random slider); the **mix of activity** and the
+  **traffic mix** as coloured stacked bars with one slider per part that always add up to 100% (drag one and the others
+  make room; 0% turns a part off), the drift/blend/alternate pattern, and the phone share and device.
+- **Activity:** recent hits, newest first (site names only), with filters and CSV/JSON export. **Live Log:** coloured by
+  level, filter, pause scrolling, copy, clear.
+- **Tor:** status and progress, details, Start / Stop / Restart / New identity / Install / Test, the circuits table,
+  the onion seed editor (with Reset), bridges (modes, your own lines, auto-fallback, Get bridges for my country) and the
+  Tor log.
+- **Settings:** DNS (modes, the resolver table with the per-server verdicts, OpenNIC / Quad9 / your own), user agent,
+  active hours, typos / polite / low-data and the other extras, persona, interests, household, your own activity,
+  search-engine weights, the real-browser and cookie settings, query sources and their freshness, signed-in accounts,
+  general settings and the three Panic buttons (each asks first).
+- **My List** (your sites and how often, find them from history, bookmarks, a file or a recording), **ML** (the "can your
+  traffic be told apart" test with ROC curve, signals, giveaways and predictor), **Proof** (the "is it working?"
+  checks, the three activity graphs, the 6-hour connection timeline, on/off comparison, address trace, HAR import and
+  where your baseline comes from), **Tools** (data estimate, privacy check, DNS leak check, speed test), **Health** and
+  **Help**.
+- Only the animated network map needs a web view; there is an "Open in the web dashboard" button for it.
 
-Changes in Dashboard, Tor and Settings save and go live by themselves about a second after you stop editing, and
-the header chip confirms they are in effect. View → Dark mode switches the look. The web dashboard stays as the
+Changes to any setting save and go live by themselves about a second after you stop editing, and the header
+chip confirms they are in effect. Tooltips explain the less obvious controls, Ctrl+1 to Ctrl+9 jump between tabs, and
+View → Dark mode switches the look (both themes use the web dashboard's colours). The web dashboard stays as the
 backup: File → "Open the web dashboard (backup)". Closing the window stops the noise and Tor. If a dashboard is
 already running, a second copy offers to open that one instead.
 

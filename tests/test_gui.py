@@ -144,10 +144,10 @@ def test_payload_is_accepted_by_the_controller_and_round_trips():
     ctl = Controller(os.path.join(tempfile.mkdtemp(), "p.yaml"))
     v = L.profile_values(ctl.profile, ctl.app)
     v.update(level=8, dns_mode="system", cookie_value=3, cookie_unit="days", window="offscreen",
-             bridge_mode="snowflake", rate_mode="steady")
+             bridge_mode="snowflake", randomness=0)
     ctl.apply_config(L.build_config_payload(v, {"randomness": 1.0}))
     back = L.profile_values(ctl.profile, ctl.app)
-    for k in ("level", "dns_mode", "cookie_value", "cookie_unit", "window", "bridge_mode", "rate_mode"):
+    for k in ("level", "dns_mode", "cookie_value", "cookie_unit", "window", "bridge_mode", "randomness"):
         assert back[k] == v[k], k
     ctl.update_app(L.app_flags({"autostart": True, "observe": False, "clear_logs_on_restart": False}))
     assert ctl.app["autostart"] is True and ctl.app["observe"] is False
@@ -350,7 +350,8 @@ def tk_app(tmp_path, monkeypatch):
 def test_window_builds_polls_and_saves_a_change(tk_app):
     app = tk_app
     app.pump_for(1.6)
-    assert [t.title for t in app.tabs] == ["Dashboard", "Activity", "Live Log", "Tor", "Settings", "Proof"]
+    assert [t.title for t in app.tabs] == ["Dashboard", "Activity", "Live Log", "Tor", "Settings", "My List", "ML",
+                                           "Proof", "Tools", "Health", "Help"]
     assert app.state.get("version") and app.status_var.get() == "Stopped"
     assert str(app.b_start.cget("state")) != "disabled" and "disabled" in app.b_stop.state()
     assert "Applying" not in app.set_chip.cget("text")
@@ -361,8 +362,7 @@ def test_window_builds_polls_and_saves_a_change(tk_app):
     app.pump_for(2.0)
     assert app.ctl.profile.rate.level == 9.0
     assert "Start" in app.apply_var.get() or "Live" in app.apply_var.get()
-    app.tabs[4].dns_mode.set("system")
-    app.edited()
+    app.tabs[4].load({"dns_mode": "system"})            # setting a control saves it like a click would
     app.pump_for(2.0)
     assert app.ctl.profile.dns.mode == "system"
     # the log tab got the start-up lines; dark mode switches without error
@@ -370,7 +370,38 @@ def test_window_builds_polls_and_saves_a_change(tk_app):
     app.set_theme("dark")
     app.set_theme("light")
     # proof tab renders the checks and the three charts from real controller data
-    app.nb.select(5)
+    app.nb.select(7)
     app.pump_for(3.0)
-    assert app.tabs[5].headline.get()
-    assert app.tabs[5].verdicts["intended"].get().startswith("Reads as")
+    assert app.tabs[7].headline.get()
+    assert app.tabs[7].verdicts["intended"].get().startswith("Reads as")
+
+
+def test_every_tab_opens_and_the_controls_match_the_profile(tk_app):
+    app = tk_app
+    app.pump_for(1.0)
+    for i, _t in enumerate(app.tabs):
+        app.nb.select(i)
+        app.pump_for(0.2)
+    vals = {}
+    for t in app.tabs:
+        vals.update(t.values())
+    want = L.profile_values(app.ctl.profile, app.ctl.app)
+    for k in ("level", "dns_mode", "typos", "persona", "q_live", "tor_enabled", "bridge_mode", "mobile_share",
+              "mylist_share", "speed", "window", "traffic_pattern", "ua_choice"):
+        assert vals[k] == want[k], k
+
+
+def test_the_traffic_mix_bar_adds_up_to_100_and_saves(tk_app):
+    app = tk_app
+    app.pump_for(1.0)
+    mix = app.tabs[0].traffic_mix
+    assert abs(sum(mix.values().values()) - 100) < 0.2
+    mix._moved(1, 30)                                  # as if the plain-HTTP slider were dragged to 30%
+    assert mix.values() == {"mix_browser": 70.0, "mix_plain": 30.0}
+    app.pump_for(2.0)
+    assert (app.ctl.profile.traffic.browser, app.ctl.profile.traffic.plain) == (70.0, 30.0)
+    eng = app.tabs[0].eng_mix
+    eng._moved(0, 0)                                   # 0% turns a part off
+    app.pump_for(2.0)
+    assert app.ctl.profile.engines[eng.items[0]["key"]].enabled is False
+    assert abs(sum(eng.values().values()) - 100) < 0.2

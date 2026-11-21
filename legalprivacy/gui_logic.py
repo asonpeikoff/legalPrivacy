@@ -9,20 +9,25 @@ import time
 from typing import Any, Callable
 from urllib.parse import urlparse
 
-# ── palette ─────────────────────────────────────────────────────────────────
+# ── palette (the same colours as the web dashboard) ─────────────────────────
 LIGHT = {
-    "bg": "#f4f6f8", "panel": "#ffffff", "fg": "#1d2733", "muted": "#66727f", "accent": "#2f6fdd",
-    "accent_fg": "#ffffff", "border": "#d3dae1", "ok": "#1f8a4c", "warn": "#b7791f", "bad": "#c0392b",
-    "info": "#2f6fdd", "field": "#ffffff", "select": "#cfe0fb", "band": "#cfe0fb", "line": "#2f6fdd",
-    "you": "#1f8a4c", "noise": "#c0392b", "grid": "#e4e8ec", "log_bg": "#fbfcfd",
+    "bg": "#f5f6f8", "panel": "#ffffff", "fg": "#1c2230", "muted": "#5d677b", "accent": "#2a7348",
+    "accent_fg": "#ffffff", "border": "#dfe3ea", "ok": "#2a7348", "ok_bg": "#e8f3ec", "warn": "#8f5a0e",
+    "warn_bg": "#fdf3df", "bad": "#c0392b", "bad_bg": "#fbe9e7", "tor": "#7a3fb0", "tor_bg": "#f1e8f9",
+    "info": "#2a6fb0", "info_bg": "#e6f0fa", "code": "#f0f2f6", "field": "#ffffff", "select": "#e8f3ec",
+    "hover": "#eef1f5", "band": "#cfe0f3", "line": "#2a6fb0", "you": "#2a7348", "noise": "#c0392b",
+    "grid": "#e4e8ee", "log_bg": "#fbfcfd",
 }
 DARK = {
-    "bg": "#1c2128", "panel": "#252c35", "fg": "#e6edf3", "muted": "#9aa7b4", "accent": "#5b9dff",
-    "accent_fg": "#0d1117", "border": "#3a4450", "ok": "#4cc38a", "warn": "#e3b341", "bad": "#ff7b72",
-    "info": "#79b8ff", "field": "#2d3640", "select": "#35507a", "band": "#2f4a73", "line": "#79b8ff",
-    "you": "#4cc38a", "noise": "#ff7b72", "grid": "#323c47", "log_bg": "#161b22",
+    "bg": "#11141b", "panel": "#1a1f2a", "fg": "#e6e9f0", "muted": "#8b94a8", "accent": "#4cc07d",
+    "accent_fg": "#0b1a12", "border": "#2a3140", "ok": "#4cc07d", "ok_bg": "#183326", "warn": "#e0a94a",
+    "warn_bg": "#35290f", "bad": "#ef6a5b", "bad_bg": "#3a1b17", "tor": "#b98aea", "tor_bg": "#2a1b3b",
+    "info": "#6aaef0", "info_bg": "#16283a", "code": "#222938", "field": "#222938", "select": "#183326",
+    "hover": "#222938", "band": "#1f3a57", "line": "#6aaef0", "you": "#4cc07d", "noise": "#ef6a5b",
+    "grid": "#2a3140", "log_bg": "#0e1218",
 }
 PALETTES = {"light": LIGHT, "dark": DARK}
+MIX_COLORS = ["#2f7d4f", "#3b6fb6", "#c27a1a", "#8a4fb3", "#b23a48", "#2a9d9b", "#7a7a2a", "#5b5b8f", "#a0522d"]
 
 LOG_LEVEL_ORDER = ["debug", "info", "warn", "error"]
 LOG_LEVEL_LABELS = {"debug": "Everything", "info": "Normal", "warn": "Warnings and errors", "error": "Errors only"}
@@ -152,6 +157,89 @@ def newest_first(hits: list[dict], cap: int = ACTIVITY_MAX_ROWS) -> list[dict]:
     return list(reversed(hits[-cap:]))
 
 
+def hit_detail(hit: dict) -> str:
+    return " · ".join(x for x in (hit.get("note"), hit.get("detail")) if x)
+
+
+def hit_ms(hit: dict) -> str:
+    return str(int(hit["latency_ms"])) if hit.get("latency_ms") else ""
+
+
+def fmt_ago(ts: float | None, now: float | None = None) -> str:
+    if not ts:
+        return "—"
+    s = max(0, int((time.time() if now is None else now) - ts))
+    return f"{s} s ago" if s < 90 else f"{s // 60} min ago" if s < 5400 else f"{s // 3600} h ago"
+
+
+def hits_per_minute(hits: list[dict], now: float, minutes: int = 30) -> list[int]:
+    """Hits in each of the last `minutes` minutes, oldest first (the Dashboard sparkline)."""
+    out = [0] * minutes
+    for h in hits:
+        age = int((now - h.get("ts", 0)) // 60)
+        if 0 <= age < minutes:
+            out[minutes - 1 - age] += 1
+    return out
+
+
+def tor_test_text(t: dict | None) -> str:
+    if not t:
+        return ""
+    if t.get("running"):
+        return "Testing Tor… this takes up to a minute."
+    lines = [t.get("summary") or ""]
+    ex, on = t.get("exit"), t.get("onion")
+    if ex:
+        lines.append("Through Tor to the web: " + (f"✓ yes, sites see exit {ex.get('ip')} ({ex.get('ms')} ms)" if ex.get("ok")
+                                                   else f"✗ {ex.get('error') or 'not via Tor'}"))
+    if on:
+        lines.append("Onion site (Tor Project): " + (f"✓ loaded in {on.get('ms')} ms" if on.get("ok")
+                                                      else f"✗ {on.get('error') or 'HTTP ' + str(on.get('status'))}"))
+    return "\n".join(x for x in lines if x)
+
+
+def onoff_rows(oo: dict) -> list[tuple]:
+    off, on = oo.get("off") or {}, oo.get("on") or {}
+
+    def f(v):
+        return "—" if v is None else str(v)
+
+    def kb(d):
+        return "—" if d.get("bytes") is None else str(round(d["bytes"] / 1024))
+    return [("", "Noise off", "Noise on"), ("Minutes observed", f(off.get("minutes")), f(on.get("minutes"))),
+            ("Your apps: addresses / min", f(off.get("you")), f(on.get("you"))),
+            ("legalPrivacy: addresses / min", f(off.get("noise")), f(on.get("noise"))),
+            ("legalPrivacy: requests / min", "—", f(on.get("req"))), ("All traffic: KB / min", kb(off), kb(on))]
+
+
+def compare_lines(c: dict) -> list[tuple]:
+    """Rows for 'Does the noise look like you?': (text, tone, None) lines, or ((name, pct), tone, fraction) bars."""
+    if not c:
+        return [("No data yet.", "off", None)]
+    if c.get("verdict") == "collecting":
+        n = c.get("needed") or {}
+        return [(f"Collecting data. Needs about {n.get('baseline_active', 0)} more busy minutes of your own traffic with the "
+                 f"noise off, and {n.get('noise_active', 0)} more with it on.", "off", None),
+                ("Tip: use your computer normally with legalPrivacy stopped for an hour or two, then start it, or import a "
+                 "browser recording (HAR file) above.", "off", None)]
+    word = {"similar": ("Looks like you", "ok"), "somewhat": ("Somewhat like you", "warn"),
+            "different": ("Noticeably different", "bad")}.get(c.get("verdict"), ("", "off"))
+    score = c.get("score")
+    out = [(f"{round((score or 0) * 100)}%  {word[0]}" + (f" · least similar: {c['weakest']}" if c.get("weakest") else ""),
+            word[1], None)]
+    for m in c.get("metrics") or []:
+        s = m.get("similarity")
+        out.append(((m["name"], "later" if s is None else f"{round(s * 100)}%"), "ok", s or 0.0))
+    out.append((f"Based on {c.get('baseline_active')} busy minutes of yours and {c.get('noise_active')} with noise.", "off", None))
+    return out
+
+
+def trace_row(it: dict) -> tuple:
+    from urllib.parse import urlparse
+    host = urlparse(it.get("url", "")).hostname or it.get("url", "")
+    return fmt_clock(it.get("ts")), it.get("why") or "", short_host(host, 70)
+
+
 # ── header / chips ──────────────────────────────────────────────────────────
 def run_status(state: dict) -> tuple[str, str]:
     """(kind, text): kind in running | paused | stopped."""
@@ -234,66 +322,8 @@ BRIDGE_CHOICES = [("off", "No bridges (direct)"), ("obfs4", "obfs4 (built in)"),
 COOKIE_UNITS = [("hours", 1.0), ("days", 24.0)]
 
 
-def cookie_to_hours(value: float, unit: str) -> float:
-    return max(0.0, float(value)) * (24.0 if unit == "days" else 1.0)
-
-
-def cookie_from_hours(hours: float) -> tuple[float, str]:
-    """Show whole days when it divides evenly, otherwise hours."""
-    h = float(hours or 0)
-    if h >= 24 and abs(h / 24 - round(h / 24)) < 1e-6:
-        return float(round(h / 24)), "days"
-    return round(h, 2), "hours"
-
-
-def build_config_payload(v: dict[str, Any], current_rate: dict | None = None) -> dict:
-    """Controls -> the partial profile dict `Controller.apply_config` takes. `v` holds plain values:
-    level, rate_mode (random|steady), dns_mode, cookie_value, cookie_unit, window, tor_enabled,
-    bridge_mode, bridge_auto. Missing keys are left out so a partial form never overwrites other settings."""
-    out: dict[str, Any] = {}
-    if "level" in v or "rate_mode" in v:
-        rate: dict[str, Any] = {}
-        if "level" in v:
-            rate["level"] = float(min(10, max(1, round(float(v["level"])))))
-        if "rate_mode" in v:
-            steady = v["rate_mode"] == "steady"
-            old = float((current_rate or {}).get("randomness", 1.0) or 0)
-            rate["mode"] = "steady" if steady else "random"
-            rate["randomness"] = 0.0 if steady else (old if old > 0 else 1.0)
-        out["rate"] = rate
-    if "dns_mode" in v:
-        out["dns"] = {"mode": v["dns_mode"]}
-    clear: dict[str, Any] = {}
-    if "cookie_value" in v:
-        clear["cookie_hours"] = cookie_to_hours(v["cookie_value"], v.get("cookie_unit", "hours"))
-    if "window" in v:
-        clear["browser_window"] = v["window"]
-    if clear:
-        out.setdefault("transports", {})["clearnet"] = clear
-    tor: dict[str, Any] = {}
-    for src, dst in (("tor_enabled", "enabled"), ("bridge_mode", "bridge_mode"), ("bridge_auto", "bridge_auto")):
-        if src in v:
-            tor[dst] = v[src]
-    if tor:
-        out.setdefault("transports", {})["tor"] = tor
-    return out
-
-
-def profile_values(profile, app: dict) -> dict:
-    """The control values that match the saved profile (inverse of build_config_payload/app_flags)."""
-    rate, clear, tor = profile.rate, profile.transports["clearnet"], profile.transports["tor"]
-    cv, cu = cookie_from_hours(clear.cookie_hours)
-    steady = rate.mode == "steady" or float(rate.randomness or 0) == 0
-    return {"level": int(round(float(rate.level))), "rate_mode": "steady" if steady else "random",
-            "dns_mode": profile.dns.mode, "cookie_value": cv, "cookie_unit": cu, "window": clear.browser_window,
-            "tor_enabled": bool(tor.enabled), "bridge_mode": tor.bridge_mode, "bridge_auto": bool(tor.bridge_auto),
-            "autostart": bool(app.get("autostart")), "clear_logs_on_restart": bool(app.get("clear_logs_on_restart", True)),
-            "observe": bool(app.get("observe", True))}
-
-
-def app_flags(v: dict[str, Any]) -> dict:
-    """The on/off settings that live in the app section (saved with Controller.update_app)."""
-    return {k: bool(v[k]) for k in ("autostart", "clear_logs_on_restart", "observe") if k in v}
+from .gui_fields import *  # noqa: F401,F403,E402
+from .gui_fields import app_flags, build_config_payload, profile_values  # noqa: F401,E402
 
 
 # ── log view ───────────────────────────────────────────────────────────────
