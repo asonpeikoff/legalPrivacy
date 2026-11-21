@@ -208,6 +208,10 @@ class UIServer:
                         return self._send(200, "\n".join(lines).encode(), "text/plain; charset=utf-8")
                     if u.path == "/api/leakcheck":
                         return self._json(ctl.leak_runner().state())
+                    if u.path == "/api/relay":
+                        return self._json(ctl.relay_state())
+                    if u.path == "/api/tor/dns/addresses":
+                        return self._json(ctl.tor_dns_addresses())
                     if u.path == "/api/tools/resolvers":
                         return self._json(ctl.resolvers_check())
                     if u.path == "/api/mylist":
@@ -315,6 +319,14 @@ class UIServer:
                         return self._json(ctl.get_bridges(str(body.get("country", ""))))
                     elif path == "/api/tor/selftest":
                         ctl.tor_selftest()
+                    elif path == "/api/tor/dns/test":
+                        return self._json(ctl.tor_dns_test())
+                    elif path == "/api/relay/preview":
+                        return self._json(ctl.relay_preview(body))
+                    elif path == "/api/relay/start":
+                        return self._json(ctl.relay_start(body))
+                    elif path == "/api/relay/stop":
+                        return self._json(ctl.relay_stop())
                     elif path.startswith("/api/tor/"):
                         return self._json(ctl.tor_action(path.rsplit("/", 1)[1]))
                     elif path == "/api/config":
@@ -385,6 +397,7 @@ def start_services(ctl) -> None:
             ctl.start(reason="autostart on launch")
         except ConfigError as exc:
             ctl.log.error("app", str(exc))
+    ctl.relay_autostart()                 # only if "start the relay with the app" was chosen; default off
 
 
 def run_ui(profile_path: str | None = None, port: int | None = None, open_browser: bool | None = None,

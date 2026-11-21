@@ -660,7 +660,11 @@ class HelpTab(Tab):
                                     "Tor, which it downloads, checks and starts for you. Many .onion sites are offline at any "
                                     "moment; those are skipped for a while, which is normal."),
                 ("Contribute to Tor.", "“legalprivacy relay gen” writes a middle-relay or bridge configuration; it never runs "
-                                       "an exit."),
+                                       "an exit. The Tor tab has two optional cards, both off by default: Tor DNS (Tor answers "
+                                       "A, AAAA and PTR lookups on a local port; exit relays resolve the names, so it is slower "
+                                       "and is a deliberate, narrow use of exits for DNS only) and Contribute to Tor: run a "
+                                       "relay (a middle relay or bridge as a separate Tor program; start with Practice mode, "
+                                       "which publishes nothing). A relay is not an exit and does not provide DNS."),
                 ("Keyboard.", "F5 Start, F6 Pause or Resume, F7 Stop, Ctrl+1 to Ctrl+9 jump between tabs, Ctrl+Q quit. Tab and "
                               "Shift+Tab move between controls; Space presses a button.")):
             lb = ttk.Label(c.body, text=(head + " " if head else "") + text, style="Card.TLabel", justify="left")
