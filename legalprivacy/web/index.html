@@ -438,7 +438,7 @@ tbody tr:hover td{background:var(--code)}
     <p><b>Activity vs Live Log.</b> Activity lists each request the noise made and what happened on it. Live Log is everything the app says, including starts and stops, Tor's own messages and warnings.</p>
     <p><b>Getting started.</b> Everything already has the recommended setting. Press <b>Start</b>; the first action comes within seconds. Settings save themselves.</p>
     <p><b>Look like yourself.</b> Add the sites you really use on <b>My List</b>, then check the <b>ML</b> tab: it shows how easily your traffic can be told apart from the noise, and which settings help.</p>
-    <p><b>Tor (optional).</b> Off by default. With Tor on, legalPrivacy can visit .onion sites through its own private Tor, which it downloads, checks and starts for you. Many .onion sites are offline at any moment; those are skipped for a while, which is normal. Sending ordinary web noise through Tor is a separate switch, off by default and not recommended.</p>
+    <p><b>Tor (optional).</b> Off by default. With Tor on, legalPrivacy can visit .onion sites through its own private Tor, which it downloads, checks and starts for you. Many .onion sites are offline at any moment; those are skipped for a while, which is normal. Ordinary web noise never goes through Tor; the Tor lane visits only .onion sites.</p>
     <p><b>Contribute to Tor.</b> <code>legalprivacy relay gen</code> writes a middle-relay or bridge configuration; it never runs an exit.</p>
     <p class="small mute">The dashboard is reachable only from this computer (127.0.0.1) and needs the token in its address.</p>
   </div>
@@ -463,7 +463,7 @@ tbody tr:hover td{background:var(--code)}
     <h2 style="margin-top:0">2 of 3</h2><p><b>Add Tor darknet (.onion) noise?</b></p>
     <label class="opt t"><input type="radio" name="tor" value="off" checked> <b>No</b> <span class="mute">— regular internet only (default)</span></label>
     <label class="opt t"><input type="radio" name="tor" value="onion"> <b>Yes — visit onion sites</b> <span class="mute">— fully automatic: legalPrivacy installs and runs its own private Tor for you</span></label>
-    <div class="note small">You can change this any time on the 🧅 Tor tab. Sending ordinary web traffic <i>through</i> Tor is a separate, advanced switch that stays off.</div>
+    <div class="note small">You can change this any time on the 🧅 Tor tab. Ordinary web noise never goes through Tor; Tor is used only for .onion sites.</div>
   </div>
   <div id="w3" style="display:none">
     <h2 style="margin-top:0">3 of 3</h2><p><b>Start automatically whenever you open legalPrivacy?</b></p>
