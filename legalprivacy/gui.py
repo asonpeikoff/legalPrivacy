@@ -536,7 +536,11 @@ def main(profile_path: str | None = None, port: int | None = None) -> int:
     App = build_app_class()
     app = App(root, ctl, want)
     root.deiconify()
+    first_run = ctl.first_run
     start_services(ctl)
+    if first_run:
+        from .gui_wizard import show_wizard
+        root.after(500, lambda: show_wizard(app))
     try:
         root.mainloop()
     finally:
