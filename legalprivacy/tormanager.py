@@ -618,7 +618,10 @@ def _safe_extract(archive: Path, target: Path) -> None:
                 raise RuntimeError(f"unsafe path in archive: {m.name}")
             if not (m.isreg() or m.isdir()):
                 continue                       # no links, devices or pipes: the bundle needs none of them
-            tf.extract(m, target)
+            if hasattr(tarfile, "data_filter"):       # strips owner/setuid bits (Python 3.12+, and recent 3.10/3.11)
+                tf.extract(m, target, filter="data")
+            else:
+                tf.extract(m, target)
 
 
 MOAT = "https://bridges.torproject.org/moat/circumvention/settings"

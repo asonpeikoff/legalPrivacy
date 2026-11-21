@@ -130,3 +130,45 @@ def test_ensure_utf8_console_makes_a_cp1252_stream_printable():
         assert "legalPrivacy" in raw.getvalue().decode("utf-8")
     finally:
         sys.stdout = old
+
+
+def test_endpoints_validate_input_and_downloads_work():
+    import json
+    c, srv = _serve()
+
+    def post(path, obj):
+        return _req(srv, "POST", path, body=json.dumps(obj).encode(), headers={"Content-Type": "application/json"})
+    try:
+        assert post("/api/panic", {"level": "nuclear"})[0] == 400
+        assert post("/api/accounts/forget", {"provider": "../../etc/passwd"})[0] == 400
+        assert post("/api/accounts/signin", {"provider": "nope"})[0] == 400
+        assert post("/api/mylist/scan", {"days": "soon"})[0] == 400
+        assert post("/api/mylist/bookmarks", {"urls": "not-a-list"})[0] == 400
+        bad = post("/api/config", {"transports": {"tor": {"bridges": ["obfs4 1.2.3.4:1 AA\nSocksPort 0.0.0.0:9"]}}})
+        assert bad[0] == 400 and "bridge" in json.loads(bad[2])["error"]
+        assert _req(srv, "GET", "/metrics")[0] == 404                      # off by default
+        status, hdr, body = _req(srv, "GET", "/api/hits.csv")
+        assert status == 200 and body.startswith(b"seq,ts,lane") and "attachment" in hdr["Content-Disposition"]
+        assert _req(srv, "GET", "/api/logs.txt")[0] == 200
+        assert _req(srv, "GET", "/api/nope")[0] == 404
+        har = {"log": {"entries": [{"startedDateTime": "2024-05-01T10:00:00Z",
+                                    "request": {"url": "https://www.example.org/private/path?token=SECRET123"}}] * 25}}
+        st, _, body = post("/api/har/import", har)
+        assert st == 200 and json.loads(body)["present"]
+        logs = json.dumps(c.log.since(0))
+        assert "SECRET123" not in logs and "private/path" not in logs      # the recording's addresses are never logged
+        assert json.loads(_req(srv, "GET", "/api/har")[2])["entries"] == 25
+        assert post("/api/har/forget", {"what": "all"})[0] == 200
+    finally:
+        srv.httpd.shutdown()
+
+
+def test_package_version_matches_pyproject_and_changelog():
+    import re
+    root = os.path.join(os.path.dirname(__file__), "..")
+    import legalprivacy
+    with open(os.path.join(root, "pyproject.toml"), encoding="utf-8") as fh:
+        declared = re.search(r'^version = "([^"]+)"', fh.read(), re.M).group(1)
+    assert legalprivacy.__version__ == declared
+    with open(os.path.join(root, "CHANGELOG.md"), encoding="utf-8") as fh:
+        assert re.search(r"^## v(\S+)", fh.read(), re.M).group(1) in (declared, "Unreleased")
