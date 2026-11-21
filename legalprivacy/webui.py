@@ -321,6 +321,8 @@ class UIServer:
                         ctl.tor_selftest()
                     elif path == "/api/tor/dns/test":
                         return self._json(ctl.tor_dns_test())
+                    elif path == "/api/relay/preview":
+                        return self._json(ctl.relay_preview(body))
                     elif path == "/api/relay/start":
                         return self._json(ctl.relay_start(body))
                     elif path == "/api/relay/stop":

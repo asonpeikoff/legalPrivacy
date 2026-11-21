@@ -676,6 +676,24 @@ class Controller:
         m = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?) ?MBytes", rate or "")
         return float(m.group(1)) if m else None
 
+    def relay_preview(self, body: dict) -> dict:
+        """The torrc these (unsaved) settings would produce, or the plain reason they are not valid. Saves nothing."""
+        from .config import RelayConfig
+        from .relay import generate_torrc
+        cur = self.profile.relay
+        try:
+            mb = float(body.get("bandwidth_mb", self._mb_from_rate(cur.bandwidth_rate) or 1.0))
+            if not (0.1 <= mb <= 1000):
+                raise ConfigError("bandwidth cap must be between 0.1 and 1000 MBytes per second")
+            rc = RelayConfig(mode=str(body.get("mode", cur.mode)), nickname=str(body.get("nickname", cur.nickname)),
+                             contact=str(body.get("contact") or "").strip() or None,
+                             bandwidth_rate=f"{mb:g} MBytes", or_port=int(body.get("or_port", cur.or_port)),
+                             dir_port=0, practice=body.get("practice", cur.practice) is True)
+            rc.validate()
+            return {"torrc": generate_torrc(rc.spec(), data_dir="(the relay's own data folder)"), "error": None}
+        except (ConfigError, TypeError, ValueError) as exc:
+            return {"torrc": "", "error": str(exc)}
+
     def relay_state(self) -> dict:
         from .relayrun import monthly_estimate
         rc = self.profile.relay
