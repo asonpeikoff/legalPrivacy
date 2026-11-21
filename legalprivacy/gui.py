@@ -540,7 +540,7 @@ def main(profile_path: str | None = None, port: int | None = None) -> int:
     start_services(ctl)
     if first_run:
         from .gui_wizard import show_wizard
-        root.after(500, lambda: show_wizard(app))
+        root.after(500, lambda: show_wizard(app))  # noqa: F821 (closure over a name deleted after mainloop)
     try:
         root.mainloop()
     finally:

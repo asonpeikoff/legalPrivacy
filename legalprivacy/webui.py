@@ -2,9 +2,7 @@
 from __future__ import annotations
 
 import json
-import os
 import secrets
-import socket
 import threading
 import urllib.parse
 import webbrowser

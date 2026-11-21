@@ -332,14 +332,14 @@ class Profile:
     })
     relay: RelayConfig = field(default_factory=RelayConfig)
     daily_max_failures: int = 30
-    queries: "QuerySources" = field(default_factory=lambda: QuerySources())
-    rate: "RateConfig" = field(default_factory=lambda: RateConfig())
-    dns: "DnsConfig" = field(default_factory=lambda: DnsConfig())
-    identity: "IdentityConfig" = field(default_factory=lambda: IdentityConfig())
-    mylist: "MyListConfig" = field(default_factory=lambda: MyListConfig())
-    traffic: "TrafficConfig" = field(default_factory=lambda: TrafficConfig())
-    extras: "ExtrasConfig" = field(default_factory=lambda: ExtrasConfig())
-    accounts: dict[str, "AccountConfig"] = field(
+    queries: QuerySources = field(default_factory=lambda: QuerySources())
+    rate: RateConfig = field(default_factory=lambda: RateConfig())
+    dns: DnsConfig = field(default_factory=lambda: DnsConfig())
+    identity: IdentityConfig = field(default_factory=lambda: IdentityConfig())
+    mylist: MyListConfig = field(default_factory=lambda: MyListConfig())
+    traffic: TrafficConfig = field(default_factory=lambda: TrafficConfig())
+    extras: ExtrasConfig = field(default_factory=lambda: ExtrasConfig())
+    accounts: dict[str, AccountConfig] = field(
         default_factory=lambda: {n: AccountConfig() for n in ACCOUNT_PROVIDERS})
 
     def active_engines(self, transport: str) -> list[str]:

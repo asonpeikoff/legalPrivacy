@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import sys
 import threading
-import webbrowser
 
 from .controller import Controller
 from .webui import UIServer, run_ui, running_instance, start_services

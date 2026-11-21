@@ -6,7 +6,7 @@ from __future__ import annotations
 import queue
 import threading
 import time
-from typing import Any, Callable
+from collections.abc import Callable
 from urllib.parse import urlparse
 
 # ── palette (the same colours as the web dashboard) ─────────────────────────

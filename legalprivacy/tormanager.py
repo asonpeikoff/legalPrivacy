@@ -15,7 +15,6 @@ import os
 import platform
 import re
 import shutil
-import signal
 import socket
 import subprocess
 import sys

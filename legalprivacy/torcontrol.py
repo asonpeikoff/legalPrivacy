@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import binascii
-import os
 import re
 import socket
 from .paths import getenv
@@ -37,7 +36,7 @@ class TorControl:
         self._f = None
 
     # -- lifecycle ---------------------------------------------------------
-    def __enter__(self) -> "TorControl":
+    def __enter__(self) -> TorControl:
         self.connect()
         return self
 
@@ -156,7 +155,7 @@ class TorControl:
                 continue
             circ = {"id": parts[0], "status": parts[1], "path": [], "purpose": "", "flags": ""}
             idx = 2
-            if len(parts) > 2 and not "=" in parts[2]:
+            if len(parts) > 2 and "=" not in parts[2]:
                 circ["path"] = [h.split("~")[-1] if "~" in h else h.lstrip("$")[:8]
                                 for h in parts[2].split(",")]
                 idx = 3

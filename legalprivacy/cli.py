@@ -245,7 +245,6 @@ def cmd_relay(args: argparse.Namespace) -> int:
               f"rate {spec.bandwidth_rate}, exit policy reject-all")
         return 0
     if args.relay_command == "bridges":
-        import os
         from pathlib import Path
         bridges_path = Path(__file__).resolve().parents[1] / "data" / "bridges" / "bridges.example.txt"
         if bridges_path.exists():

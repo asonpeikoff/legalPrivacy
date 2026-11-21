@@ -7,7 +7,6 @@ not know which transport will carry them.
 from __future__ import annotations
 
 import random
-import re
 import socket
 import struct
 import urllib.parse

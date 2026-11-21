@@ -28,7 +28,7 @@ import threading
 import time
 from collections import deque
 from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 
 try:
     import psutil
@@ -38,7 +38,7 @@ except ImportError:            # pragma: no cover - psutil is a declared depende
 KEEP_DAYS = 7
 
 
-_ACTIVE: "TrafficObserver | None" = None
+_ACTIVE: TrafficObserver | None = None
 
 
 def note(ip: str, name: str) -> None:

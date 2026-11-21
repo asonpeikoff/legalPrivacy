@@ -21,8 +21,7 @@ from typing import Any
 import yaml
 
 from . import __version__
-from .config import (ConfigError, Profile, apply_overrides, load_profile,
-                     profile_to_dict, save_profile)
+from .config import (ConfigError, Profile, apply_overrides, profile_to_dict)
 from .engines import ENGINE_NAMES, SEARCH_WEIGHTS, load_wordlist
 from .dnsplan import DnsPlan
 from .domains import DomainPool
@@ -1041,7 +1040,8 @@ class Controller:
         if wl:
             path = resolve_resource(wl)
             if Path(path).exists():
-                n = sum(1 for ln in open(path, encoding="utf-8", errors="ignore") if ln.strip())
+                with open(path, encoding="utf-8", errors="ignore") as fh:
+                    n = sum(1 for ln in fh if ln.strip())
                 add("Word list", "ok", f"{path} ({n:,} words)")
             else:
                 add("Word list", "warn", f"{wl} not found — built-in topics will be used")

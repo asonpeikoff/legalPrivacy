@@ -21,9 +21,9 @@ import sys
 import threading
 import time
 import urllib.parse
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 
 # After a sign-in page, robot check or 429 the account's signed-in visits pause for a RANDOM, escalating
 # while (log-uniform, so there is no fixed length to spot): 3-12 h the first time, 12-36 h if it happens again
@@ -320,7 +320,7 @@ def _real_visit(provider: str, url: str, state_path: str, proxy: str | None, sto
     little, read nothing but the address, title and the start of the text. Needs a real browser; not
     exercised by the unit tests."""
     from playwright.sync_api import sync_playwright
-    from .browser import PlaywrightActuator, find_browser
+    from .browser import find_browser
     from .humanize import HumanDriver
     exe = executable or find_browser()
     if not exe:

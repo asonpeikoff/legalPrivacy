@@ -8,8 +8,8 @@ import sys
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass, field
-from typing import Callable
+from dataclasses import dataclass
+from collections.abc import Callable
 
 from .config import Profile
 from .identity import Identity, make_identity
@@ -688,7 +688,7 @@ class Runner:
 
     def _make_target(self, lane: Lane, eng_name: str, identity: Identity) -> Target:
         from .engines import (CrawlTargetFactory, DnsNoise, DohNoise,
-                              SearchTargetFactory, load_wordlist)
+                              SearchTargetFactory)
         words = self.wordlist
         if eng_name == "onion":
             from .onion import OnionTargetFactory
