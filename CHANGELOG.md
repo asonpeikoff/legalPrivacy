@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- **Data scientist persona now mixes in everyday life** (about 15% of its visits and searches): Gmail, Outlook, YouTube, maps, a bit of shopping and news, and ordinary searches such as "coffee shop near me", on top of the data-science sites.
 - More attribution: the README, the dashboard Help tab, the native app (Help menu and About), the package metadata and the release notes now credit and link the blog we are named after, *Legalizing Privacy* by Amy Peikoff.
 
 ## v2.12.0

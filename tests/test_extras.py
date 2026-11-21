@@ -367,7 +367,7 @@ def test_popular_data_science_sites_come_up_more_and_real_searches_are_used():
     real = set(real_queries("Data science"))
     assert len(real) > 5000
     qs = [p.query() for _ in range(500)]
-    assert 0.65 < sum(q in real for q in qs) / len(qs) < 0.95                      # mostly real people's wording
+    assert 0.55 < sum(q in real for q in qs) / len(qs) < 0.95                      # mostly real people's wording (some are everyday searches)
 
 
 def test_foreign_language_sites_and_pages_are_skipped():
@@ -394,3 +394,16 @@ def test_a_page_in_another_language_is_left_quickly_and_the_site_rested():
     pages = [h for h in r.hit_log if h["engine"] == "crawl"]
     assert pages and all(h["detail"] == "not in English: moved on" for h in pages)
     assert r._host_rested(pages[0]["url"])
+
+
+def test_data_scientist_persona_also_has_everyday_life():
+    from legalprivacy.interests import CATEGORIES, PERSONAS, Persona
+    assert PERSONAS["Data scientist"]["Data science"] > 0.7 and PERSONAS["Data scientist"]["Everyday"] >= 0.1
+    p = Persona(random.Random(9), "Data scientist")
+    picks = [p.site() for _ in range(6000)]
+    everyday = set(CATEGORIES["Everyday"]["sites"])
+    share = sum(x in everyday for x in picks) / len(picks)
+    assert 0.1 < share < 0.2
+    assert picks.count("mail.google.com") > 20 and picks.count("outlook.live.com") > 10
+    qs = [p.query() for _ in range(1000)]
+    assert any(q.endswith("near me") or q.startswith("best ") or q.endswith(" reviews") for q in qs)
