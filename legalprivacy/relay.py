@@ -11,6 +11,7 @@ path to an exit relay here.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 TORRC_HEADER = """\
@@ -49,6 +50,11 @@ class RelaySpec:
             raise RelayConfigError("nickname must be 1-19 chars, letters/digits")
         if not all(c.isalnum() for c in self.nickname):
             raise RelayConfigError("nickname must be alphanumeric")
+        # these two are written into the torrc: no line breaks, so they can never add another setting
+        if self.contact and any(c in self.contact for c in "\r\n\0"):
+            raise RelayConfigError("contact must be a single line")
+        if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)? ?[A-Za-z]*", self.bandwidth_rate or ""):
+            raise RelayConfigError("bandwidth must look like 5Mbit or 500KBytes")
 
 
 def generate_torrc(spec: RelaySpec) -> str:

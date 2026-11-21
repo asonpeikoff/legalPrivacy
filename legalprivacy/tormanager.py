@@ -28,7 +28,7 @@ from typing import Any
 from .config import valid_bridge_line
 from .events import EventLog
 from .paths import tor_dir
-from .torcontrol import TorControl, TorControlError
+from .torcontrol import TorControl, TorControlError, split_hostport
 
 DIST_BASE = "https://dist.torproject.org/torbrowser/"
 BOOTSTRAP_RE = re.compile(r"Bootstrapped (\d+)%(?: \(([^)]*)\))?: (.*)")
@@ -282,7 +282,7 @@ class TorManager:
 
     def _attach_external(self) -> None:
         self.state = "starting"
-        self.socks_host, self.socks_port = _split(self.ext_socks, 9050)
+        self.socks_host, self.socks_port = split_hostport(self.ext_socks, 9050)
         candidates = [(self.socks_host, self.socks_port)]
         if self.socks_port == 9050:
             candidates.append(("127.0.0.1", 9150))     # Tor Browser default
@@ -294,7 +294,7 @@ class TorManager:
             raise RuntimeError(f"No Tor found at {self.ext_socks}. Switch to 'managed' mode "
                                "and legalPrivacy will run its own private Tor.")
         if self.ext_control:
-            self.control_host, self.control_port = _split(self.ext_control, 9051)
+            self.control_host, self.control_port = split_hostport(self.ext_control, 9051)
             if self.socks_port == 9150 and self.control_port == 9051:
                 self.control_port = 9151
         self.log.info("tor", f"Using external Tor at {self.socks_addr}")
@@ -604,11 +604,6 @@ class TorManager:
         self.log.info("tor", f"Tor {ver} installed to {target}")
 
 
-def _split(spec: str, default_port: int) -> tuple[str, int]:
-    host, _, port = spec.rpartition(":") if ":" in spec else (spec, "", "")
-    return (host or "127.0.0.1"), (int(port) if port else default_port)
-
-
 def _safe_extract(archive: Path, target: Path) -> None:
     root = target.resolve()
     with tarfile.open(archive, "r:gz") as tf:
@@ -618,7 +613,10 @@ def _safe_extract(archive: Path, target: Path) -> None:
                 raise RuntimeError(f"unsafe path in archive: {m.name}")
             if not (m.isreg() or m.isdir()):
                 continue                       # no links, devices or pipes: the bundle needs none of them
-            tf.extract(m, target)
+            if hasattr(tarfile, "data_filter"):       # strips owner/setuid bits (Python 3.12+, and recent 3.10/3.11)
+                tf.extract(m, target, filter="data")
+            else:
+                tf.extract(m, target)
 
 
 MOAT = "https://bridges.torproject.org/moat/circumvention/settings"
