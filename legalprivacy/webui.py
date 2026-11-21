@@ -188,6 +188,8 @@ class UIServer:
                         return self._json(ctl.accounts.status())
                     if u.path == "/api/activity":
                         return self._json(ctl.activity_state())
+                    if u.path == "/api/av":
+                        return self._json(ctl.av_state())
                     if u.path == "/api/har":
                         return self._json(ctl.har_state())
                     if u.path == "/api/observe":
@@ -297,6 +299,8 @@ class UIServer:
                         ctl.leak_runner().run()
                     elif path in ("/api/accounts/signin", "/api/accounts/forget", "/api/accounts/resume"):
                         return self._json(ctl.accounts_action(path.rsplit("/", 1)[1], str(body.get("provider", ""))))
+                    elif path.startswith("/api/av/"):
+                        return self._json(ctl.av_action(path.rsplit("/", 1)[1], body))
                     elif path == "/api/har/import":
                         return self._json(ctl.har_import(body))
                     elif path == "/api/har/forget":

@@ -112,6 +112,22 @@ def build_checks(f: dict[str, Any]) -> list[dict]:
                       "Matches yours" if f["own_ua"] else "Uses other browser identities",
                       "ok" if f["own_ua"] else "info",
                       "" if f["own_ua"] else "Settings → User agent → pin to your own browser's user agent."))
+
+    # 7. the optional antivirus scanner never connects (only shown once the person has used the Security tab)
+    av = f.get("av")
+    if av is not None:
+        want = "0 connections during scans"
+        if av.get("connections") is None or av.get("when") is None:
+            out.append(_c("av", "Antivirus scanner stays offline", want, "No scan yet", "unknown",
+                          "Run a scan or the self-test on the Security tab."))
+        elif av["connections"] == 0:
+            how = "network removed" if av.get("isolated") else "connections watched"
+            out.append(_c("av", "Antivirus scanner stays offline", want,
+                          f"0 connections in the last {av.get('kind') or 'scan'} ({how})", "ok"))
+        else:
+            out.append(_c("av", "Antivirus scanner stays offline", want,
+                          f"{av['connections']} connection(s) in the last {av.get('kind') or 'scan'}: NOT OFFLINE", "bad",
+                          "The scanner was stopped. Block clamscan in your firewall, and see the Live Log."))
     return out
 
 
@@ -160,6 +176,10 @@ def gather(ctl, with_network: bool = True) -> dict:
     f["real_browser"] = bool(bi.get("active"))
     ident = ctl.profile.identity
     f["own_ua"] = ident.ua_mode == "pin" and ident.ua_pin == "own"
+    try:
+        f["av"] = ctl.av.proof_fact()
+    except Exception:
+        f["av"] = None
     return f
 
 

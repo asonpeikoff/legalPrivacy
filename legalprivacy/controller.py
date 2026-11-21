@@ -85,6 +85,8 @@ class Controller:
             proxy=lambda: self.profile.transports["clearnet"].proxy,
             tor_addrs=lambda: tuple(filter(None, (getattr(self.tor, "socks_addr", None),
                                                   self.profile.transports["tor"].socks))))
+        from .av import AvManager
+        self.av = AvManager(self.log)             # optional ClamAV manager; runs nothing until you press a button
         self.runner: Runner | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -898,6 +900,12 @@ class Controller:
                 self.observer.stop()
             except Exception:
                 pass
+            try:
+                gone = self.av.wipe()
+                if gone:
+                    done.append("antivirus results and quarantine deleted (signature files and your own files stay)")
+            except Exception:
+                pass
             for name in ("observe.json", "har.json"):
                 try:
                     (app_dir() / name).unlink()
@@ -926,6 +934,41 @@ class Controller:
         except AccountError as exc:
             raise ConfigError(str(exc)) from exc
         return {"ok": True}
+
+    # ── optional antivirus (ClamAV), offline-first: see av.py ────────────────
+    def av_state(self, redetect: bool = False) -> dict:
+        return self.av.state(redetect)
+
+    def av_action(self, action: str, body: dict) -> dict:
+        from .av import AvError
+        av = self.av
+        try:
+            if action == "scan":
+                av.start_scan(body.get("paths"))
+            elif action == "stop":
+                av.stop()
+            elif action == "update":
+                av.start_update(confirmed=body.get("confirmed") is True)
+            elif action == "import":
+                av.start_import(body.get("paths"))
+            elif action == "selftest":
+                av.start_selftest()
+            elif action == "quarantine":
+                av.quarantine(str(body.get("path", "")))
+            elif action == "restore":
+                av.restore(str(body.get("id", "")))
+            elif action == "delete":
+                av.delete_quarantined(str(body.get("id", "")))
+            elif action == "detect":
+                pass
+            elif action == "probe":
+                from .av import get_isolation
+                get_isolation(force=True)
+            else:
+                raise ConfigError("unknown antivirus action")
+        except AvError as exc:
+            raise ConfigError(str(exc)) from exc
+        return av.state(redetect=action in ("detect", "probe"))
 
     def leak_runner(self):
         from .leakcheck import LeakRunner
