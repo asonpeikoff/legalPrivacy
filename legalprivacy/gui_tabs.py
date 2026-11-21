@@ -13,7 +13,7 @@ from . import gui_fields as F
 from . import gui_logic as L
 from .gui_base import Tab
 from .gui_charts import BaselineChart, IntendedChart, SessionChart, TimelineChart
-from .gui_theme import Banner, Card, MixBar, ScrollFrame, Sparkline, autowrap, pill, set_pill, tip
+from .gui_theme import Banner, Card, MixBar, ScrollFrame, Sparkline, autowrap, tip
 
 GAP = 12
 

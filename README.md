@@ -1,4 +1,4 @@
-# legalPrivacy v2.9
+# legalPrivacy
 
 legalPrivacy makes believable background browsing, searches and DNS lookups from your
 computer, so that bulk analysis of your traffic tells much less about you. It runs in a
@@ -227,12 +227,12 @@ different sites per minute, plus a list of site names with counts that you can d
 removes it too. The ML test can use a recording of at least 2 hours; it rebuilds approximate visits
 from the saved counts and site names, so revisit habits are approximate.
 
-## Is it working? (leak check, panic, Tor exits)
+## Is it working? (leak check and panic)
 
 - **Proof tab → "Is it working?"** shows each check as *what you want to see*, *what we saw* and a plain verdict:
   ✓ working, ✗ not working (with what to do), ℹ for your information, ? not tested yet. It checks that noise is on,
-  that your DNS choice isn't being redirected by your network, that Tor is connected and really leaves from a
-  different address than yours, and that the noise runs in a real browser that looks like yours. Nothing changes your settings.
+  that your DNS choice isn't being redirected by your network, that Tor is connected (and, when Tor is on, that a test request really goes out through Tor from a
+  different address than yours), and that the noise runs in a real browser that looks like yours. Nothing changes your settings.
 - **Settings → Panic**: stop now; or also clear the log, the noise browser's cookies and any signed-in account sessions
   (see "Signed-in accounts"; you would have to sign in again); or also stop Tor and delete what legalPrivacy recorded
   about connections. Your settings are never deleted.
@@ -354,7 +354,7 @@ All optional:
 
 On Tor, failures are handled like a person would: sometimes reload the page a minute or two later, sometimes move on, sometimes get a new identity first. A new identity follows 2–5 failures in a row, and circuits also change by themselves every 10–40 minutes.
 
-**Test Tor** (Tor tab) checks that traffic really leaves through Tor and that the Tor Project's onion site loads. Tor errors are shown in plain English ("onion site is offline" rather than "0xf0").
+**Test Tor** (Tor tab) is a check you start yourself: it sends one test request through Tor to confirm it works, and loads the Tor Project's onion site. The noise itself never sends ordinary web traffic through Tor. Tor errors are shown in plain English ("onion site is offline" rather than "0xf0").
 
 | Switch | Default | What it does |
 |---|---|---|
@@ -379,7 +379,10 @@ configuration. It never runs an exit.
   is written.
 - History, bookmarks and files you import are read on your computer; only site names and counts
   are used, and nothing is kept until you approve it.
-- The dashboard is reachable only from your own computer.
+- The dashboard is reachable only from your own computer, and every request needs its token.
+- Settings, the dashboard token and saved account sessions are written readable by you only
+  (owner-only permissions on Linux and macOS). Tor bridge lines are checked before they are
+  written into Tor's configuration.
 
 ## Command line
 
@@ -400,7 +403,9 @@ legalprivacy relay bridges | gen-client | gen  # bridges and relay configuration
 
 ## Development
 
-Tests: `python3 run_tests.py`. The real-browser test is skipped when no browser is found.
+Tests: `pip install -e ".[dev]"` then `python -m pytest -q` (about a minute; the real-browser test and the
+native-window tests skip themselves when there is no browser or display). `python3 run_tests.py` is a quick
+subset that needs no pytest. Lint: `pip install ruff` then `ruff check .` (settings in `pyproject.toml`).
 Maintainer tools: `tools/build_feed_snapshot.py` rebuilds the bundled lists, and
 `tools/build_ua_catalog.py` rebuilds the user-agent library from the official release calendars.
 Design notes: [docs/DESIGN.md](docs/DESIGN.md). Legacy Java prototype: `legacy-src/`.

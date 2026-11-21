@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -21,6 +22,16 @@ DEFAULT_SEEDS = [
 
 class ConfigError(ValueError):
     """Raised for invalid or unsafe profile configuration."""
+
+
+# One Tor bridge line: "[transport] address:port [fingerprint] [key=value ...]". It is written into Tor's
+# configuration file, so it must stay on one line and start like a bridge (never inject another setting).
+_BRIDGE_LINE = re.compile(r"^(?:[A-Za-z_][A-Za-z0-9_]*\s+)?(?:\d{1,3}(?:\.\d{1,3}){3}|\[[0-9A-Fa-f:.]+\]):\d{1,5}"
+                          r"(?:\s+[^\x00-\x1f\x7f]*)?$")
+
+
+def valid_bridge_line(line: str) -> bool:
+    return isinstance(line, str) and len(line) <= 1000 and bool(_BRIDGE_LINE.match(line.strip()))
 
 
 @dataclass
@@ -80,6 +91,10 @@ class TransportConfig:
             raise ConfigError(f"transport '{name}': browser_engine must be auto, chromium or firefox")
         if self.bridge_mode not in ("off", "obfs4", "snowflake", "meek", "custom"):
             raise ConfigError("tor bridge_mode must be off, obfs4, snowflake, meek or custom")
+        for b in self.bridges:
+            if not valid_bridge_line(b):
+                raise ConfigError("a Tor bridge line isn't in the usual form (for example "
+                                  "'obfs4 192.0.2.1:443 FINGERPRINT cert=… iat-mode=0'); paste one bridge per line")
         if self.identities_per_circuit < 1:
             raise ConfigError(f"transport '{name}': identities_per_circuit >= 1")
 
@@ -332,14 +347,14 @@ class Profile:
     })
     relay: RelayConfig = field(default_factory=RelayConfig)
     daily_max_failures: int = 30
-    queries: "QuerySources" = field(default_factory=lambda: QuerySources())
-    rate: "RateConfig" = field(default_factory=lambda: RateConfig())
-    dns: "DnsConfig" = field(default_factory=lambda: DnsConfig())
-    identity: "IdentityConfig" = field(default_factory=lambda: IdentityConfig())
-    mylist: "MyListConfig" = field(default_factory=lambda: MyListConfig())
-    traffic: "TrafficConfig" = field(default_factory=lambda: TrafficConfig())
-    extras: "ExtrasConfig" = field(default_factory=lambda: ExtrasConfig())
-    accounts: dict[str, "AccountConfig"] = field(
+    queries: QuerySources = field(default_factory=lambda: QuerySources())
+    rate: RateConfig = field(default_factory=lambda: RateConfig())
+    dns: DnsConfig = field(default_factory=lambda: DnsConfig())
+    identity: IdentityConfig = field(default_factory=lambda: IdentityConfig())
+    mylist: MyListConfig = field(default_factory=lambda: MyListConfig())
+    traffic: TrafficConfig = field(default_factory=lambda: TrafficConfig())
+    extras: ExtrasConfig = field(default_factory=lambda: ExtrasConfig())
+    accounts: dict[str, AccountConfig] = field(
         default_factory=lambda: {n: AccountConfig() for n in ACCOUNT_PROVIDERS})
 
     def active_engines(self, transport: str) -> list[str]:

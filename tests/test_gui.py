@@ -4,12 +4,10 @@ import os
 import sys
 import tempfile
 import time
-import types
 
 import pytest
 
 from legalprivacy import gui_logic as L
-from legalprivacy.config import Profile
 
 
 # ── formatters ──────────────────────────────────────────────────────────────

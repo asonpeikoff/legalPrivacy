@@ -4,13 +4,13 @@ from __future__ import annotations
 import time
 import tkinter as tk
 import webbrowser
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, ttk
 
 from . import gui_fields as F
 from . import gui_logic as L
 from .gui_base import Tab
 from .gui_charts import BaselineChart, Chart
-from .gui_theme import Banner, Card, ScrollFrame, Sparkline, autowrap, pill, set_pill, tip
+from .gui_theme import Card, ScrollFrame, Sparkline, autowrap, pill, tip
 
 GAP = 12
 BLOG = "https://legalizingprivacy.substack.com"
@@ -552,8 +552,7 @@ class ToolsTab(Tab):
     def _rows(self, out, rows: list[tuple]) -> None:
         for w in out.winfo_children():
             w.destroy()
-        p = self.app.pal
-        for i, (tone, name, detail, advice) in enumerate(rows):
+        for tone, name, detail, advice in rows:
             row = ttk.Frame(out, style="CardBody.TFrame")
             row.pack(fill="x", pady=3)
             pl = pill(row, name, tone)

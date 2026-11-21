@@ -109,7 +109,7 @@ def build_checks(f: dict[str, Any]) -> list[dict]:
                                                    "Install Chrome/Edge and the Playwright package."))
     if f.get("own_ua") is not None:
         out.append(_c("ua", "Noise looks like your own browser", "Same browser and version as yours",
-                      "Matches yours" if f["own_ua"] else "Uses other browser identities", 
+                      "Matches yours" if f["own_ua"] else "Uses other browser identities",
                       "ok" if f["own_ua"] else "info",
                       "" if f["own_ua"] else "Settings → User agent → pin to your own browser's user agent."))
     return out
