@@ -1,158 +1,294 @@
-"""The six tabs of the native desktop app. Each tab is built from ttk widgets, reads what it shows from the
-state dict the app polls (`update(state)`), and reports edits with `app.edited()`; it never talks to the
-network or blocks: slow work goes through `app.work(...)`."""
+"""Dashboard, Activity, Live Log, Tor and Proof tabs of the native app. Each tab reads what it shows from the
+state the app polls (`update_state`), reports edits with `app.edited()` and never blocks: slow work goes
+through `app.work(...)`."""
 from __future__ import annotations
 
+import csv
 import json
-import sys
+import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+from . import gui_fields as F
 from . import gui_logic as L
-from .gui_charts import BaselineChart, IntendedChart, SessionChart
+from .gui_base import Tab
+from .gui_charts import BaselineChart, IntendedChart, SessionChart, TimelineChart
+from .gui_theme import Banner, Card, MixBar, ScrollFrame, Sparkline, autowrap, pill, set_pill, tip
 
-PAD = 10
-
-
-def _wrap_to(container: tk.Misc, labels: list, margin: int = 24) -> None:
-    def fit(_e=None):
-        w = max(200, container.winfo_width() - margin)
-        for lb in labels:
-            try:
-                lb.configure(wraplength=w)
-            except tk.TclError:
-                pass
-    container.bind("<Configure>", fit, add="+")
+GAP = 12
 
 
-class Tab(ttk.Frame):
-    title = ""
-
-    def __init__(self, nb: ttk.Notebook, app):
-        super().__init__(nb, padding=PAD)
-        self.app = app
-
-    def update_state(self, st: dict) -> None: ...
-    def retheme(self) -> None: ...
-    def values(self) -> dict: return {}
-    def load(self, v: dict) -> None: ...
-    def on_show(self) -> None: ...
+def grid_cards(parent, cards: list, columns: int) -> None:
+    """Lay cards out in equal-width columns."""
+    for c in range(columns):
+        parent.columnconfigure(c, weight=1, uniform="cards")
+    for i, card in enumerate(cards):
+        card.grid(row=i // columns, column=i % columns, sticky="nsew", padx=(0 if i % columns == 0 else GAP // 2, 0 if i % columns == columns - 1 else GAP // 2),
+                  pady=(0, GAP))
 
 
-def labelled_scale(parent, var: tk.DoubleVar, lo, hi, command) -> ttk.Scale:
-    sc = ttk.Scale(parent, from_=lo, to=hi, orient="horizontal", variable=var, command=command)
-    return sc
+class Kpi(Card):
+    def __init__(self, master, app, title: str):
+        super().__init__(master, app, title, pad=14)
+        self.value = tk.StringVar(value="—")
+        self.sub = tk.StringVar()
+        ttk.Label(self.body, textvariable=self.value, style="KPI.TLabel").pack(anchor="w")
+        ttk.Label(self.body, textvariable=self.sub, style="CardMuted.TLabel").pack(anchor="w")
+
+    def set(self, value, sub: str = "") -> None:
+        self.value.set(str(value))
+        self.sub.set(sub)
 
 
 # ── Dashboard ───────────────────────────────────────────────────────────────
 class DashboardTab(Tab):
-    title = "Dashboard"
+    title, icon = "Dashboard", "dash"
 
     def __init__(self, nb, app):
         super().__init__(nb, app)
+        self.rowconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(2, weight=1)
-        top = ttk.Frame(self)
-        top.grid(row=0, column=0, sticky="ew")
-        self.state_var, self.uptime_var, self.data_var = tk.StringVar(), tk.StringVar(), tk.StringVar()
-        ttk.Label(top, textvariable=self.state_var, style="Big.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(top, textvariable=self.uptime_var, style="Muted.TLabel").grid(row=1, column=0, sticky="w")
-        ttk.Label(top, textvariable=self.data_var, style="Muted.TLabel").grid(row=2, column=0, sticky="w")
-        self.now_var = tk.StringVar(value=L.now_text(None))
-        ttk.Label(self, textvariable=self.now_var, style="Card.TLabel", padding=8).grid(
-            row=1, column=0, sticky="ew", pady=(PAD, PAD))
-
-        box = ttk.LabelFrame(self, text="Lanes", padding=6)
-        box.grid(row=2, column=0, sticky="nsew")
-        box.columnconfigure(0, weight=1)
-        box.rowconfigure(0, weight=1)
-        cols = ("lane", "does", "hits", "fails", "budget", "problem")
-        self.tree = ttk.Treeview(box, columns=cols, show="headings", height=4, selectmode="none")
-        for c, t, w in (("lane", "Lane", 130), ("does", "What it does", 200), ("hits", "Hits", 60),
-                        ("fails", "Failed", 60), ("budget", "Today (done / allowed)", 320), ("problem", "Last problem", 200)):
-            self.tree.heading(c, text=t)
-            self.tree.column(c, width=w, anchor="w" if c in ("lane", "does", "budget", "problem") else "e",
-                             stretch=c in ("budget", "problem"))
-        sb = ttk.Scrollbar(box, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=sb.set)
-        self.tree.grid(row=0, column=0, sticky="nsew")
-        sb.grid(row=0, column=1, sticky="ns")
-
-        rate = ttk.LabelFrame(self, text="How much noise", padding=PAD)
-        rate.grid(row=3, column=0, sticky="ew", pady=(PAD, 0))
-        rate.columnconfigure(1, weight=1)
-        self.level = tk.DoubleVar(value=5)
-        self.rate_mode = tk.StringVar(value="random")
-        ttk.Label(rate, text="Quiet").grid(row=0, column=0)
-        self.scale = labelled_scale(rate, self.level, 1, 10, self._snap)
-        self.scale.grid(row=0, column=1, sticky="ew", padx=6)
-        ttk.Label(rate, text="Busy").grid(row=0, column=2)
-        self.rate_label = tk.StringVar()
-        self.rate_msg = ttk.Label(rate, textvariable=self.rate_label, style="Muted.TLabel", justify="left")
-        self.rate_msg.grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 0))
-        _wrap_to(rate, [self.rate_msg])
-        rm = ttk.Frame(rate)
-        rm.grid(row=2, column=0, columnspan=3, sticky="w", pady=(6, 0))
-        ttk.Radiobutton(rm, text="Random: changes every hour, like a person (recommended)", value="random",
-                        variable=self.rate_mode, command=self.app.edited).grid(row=0, column=0, sticky="w")
-        ttk.Radiobutton(rm, text="Steady: about the same amount every hour", value="steady",
-                        variable=self.rate_mode, command=self.app.edited).grid(row=1, column=0, sticky="w")
+        self.sf = ScrollFrame(self, app)
+        self.sf.grid(sticky="nsew")
+        f = self.sf.inner
+        f.columnconfigure(0, weight=1)
         self.rate_info: list = []
+        self._mix_keys: dict = {}
+
+        head = ttk.Frame(f)
+        head.grid(row=0, column=0, sticky="ew", pady=(0, GAP))
+        head.columnconfigure(1, weight=1)
+        self.state_var = tk.StringVar(value="Stopped")
+        ttk.Label(head, textvariable=self.state_var, style="H1.TLabel").grid(row=0, column=0, sticky="w")
+        self.now = Banner(head, L.now_text(None), "off", host=head)
+        self.now.grid(row=0, column=1, sticky="ew", padx=(16, 0))
+
+        kp = ttk.Frame(f)
+        kp.grid(row=1, column=0, sticky="ew")
+        self.k_hits, self.k_fail, self.k_up, self.k_last, self.k_data = (
+            Kpi(kp, app, t) for t in ("Hits today", "Failures", "Running for", "Last hit", "Data today"))
+        grid_cards(kp, [self.k_hits, self.k_fail, self.k_up, self.k_last, self.k_data], 5)
+
+        sc = Card(f, app, "Hits per minute (last 30 minutes)", "act")
+        sc.grid(row=2, column=0, sticky="ew", pady=(0, GAP))
+        self.spark = Sparkline(sc.body, app)
+        self.spark.pack(fill="x")
+
+        lc = Card(f, app, "Lanes", "list", help="Each lane is one kind of noise with its own daily budgets.")
+        lc.grid(row=3, column=0, sticky="ew", pady=(0, GAP))
+        app.btn(lc.actions, "Send one test hit", "play", "secondary", self.test_hit,
+                "Fires a single noise request immediately and shows it in Activity.").pack()
+        cols = ("lane", "does", "hits", "fails", "budget", "problem")
+        self.tree = ttk.Treeview(lc.body, columns=cols, show="headings", height=3, selectmode="none")
+        for c, t, w in (("lane", "Lane", 120), ("does", "What it does", 200), ("hits", "Hits", 60), ("fails", "Failed", 60),
+                        ("budget", "Today (done / allowed)", 300), ("problem", "Last problem", 160)):
+            self.tree.heading(c, text=t)
+            self.tree.column(c, width=w, anchor="e" if c in ("hits", "fails") else "w", stretch=c in ("budget", "problem"))
+        self.tree.pack(fill="x")
+        self.empty = lc.note("No lanes yet. Press Start (F5) and the lanes appear here with their hits and budgets.",
+                             pady=(8, 0))
+
+        # How much noise
+        nc = Card(f, app, "How much noise", "set")
+        nc.grid(row=4, column=0, sticky="ew", pady=(0, GAP))
+        self.level = tk.DoubleVar(value=5)
+        r = nc.row()
+        nc.lbl(r, "How much", False).pack(side="left")
+        nc.lbl(r, "  the average amount, however random you make it", True).pack(side="left")
+        r = nc.row()
+        nc.lbl(r, "Less", True).pack(side="left")
+        self.scale = ttk.Scale(r, from_=1, to=10, variable=self.level, command=self._snap, style="Card.Horizontal.TScale")
+        self.scale.pack(side="left", fill="x", expand=True, padx=8)
+        nc.lbl(r, "More", True).pack(side="left")
+        tip(self.scale, "Level 1-10. Even the highest level stays under what gets one address rate-limited.")
+        self._reg("level", lambda: int(round(self.level.get())), lambda x: (self.level.set(x), self._text()))
+        self.rate_msg = nc.note("", muted=True)
+        self.scope_msg = nc.note("", muted=True)
+        r = nc.row((8, 2))
+        nc.lbl(r, "How random").pack(side="left")
+        nc.lbl(r, "  how much each hour varies around that average", True).pack(side="left")
+        r = nc.row()
+        nc.lbl(r, "Steady", True).pack(side="left")
+        self.rand = tk.DoubleVar(value=100)
+        self.rand_scale = ttk.Scale(r, from_=0, to=100, variable=self.rand, command=self._rand_moved,
+                                    style="Card.Horizontal.TScale")
+        self.rand_scale.pack(side="left", fill="x", expand=True, padx=8)
+        nc.lbl(r, "Random", True).pack(side="left")
+        self._reg("randomness", lambda: int(round(self.rand.get() / 10) * 10),
+                  lambda x: (self.rand.set(x), self.rand_msg.configure(text=F.rand_text(int(x)))))
+        self.rand_msg = nc.note("", muted=True)
+        nc.heading("Mix of activity", "always adds up to 100%; drag one and the others make room. 0% turns that part off")
+        self.eng_mix = MixBar(nc.body, app, [], self.app.edited)
+        self.eng_mix.pack(fill="x")
+        self.eng_note = nc.note("Onion sites join this mix automatically when Tor is on (Tor tab).", pady=(4, 0))
+        self._reg("engines_mix", self.eng_mix.values, lambda x: None)
+
+        # Traffic mix
+        tc = Card(f, app, "Traffic mix", "web", help="Ordinary web noise never goes through Tor; .onion noise always "
+                                                      "does, in its own lane.")
+        tc.grid(row=5, column=0, sticky="ew", pady=(0, GAP))
+        tc.note("What kinds of noise run, and how the mix changes over time.")
+        tc.heading("How the mix changes")
+        self.f_radios(tc, "traffic_pattern", [
+            ("drift", "Drift (recommended)", "The shares wander slowly through the day, like a person who browses more on "
+                                              "the phone some hours and more on the computer others."),
+            ("blend", "Blend", "The same mix every hour."),
+            ("alternate", "Alternate", "One kind at a time, switching every 1-3 hours.")])
+        tc.heading("How much of each", "always adds up to 100%")
+        self.traffic_mix = MixBar(tc.body, app, [], self.app.edited)
+        self.traffic_mix.pack(fill="x")
+        self.onion_note = tc.note("Onion sites join this mix automatically when Tor is on (Tor tab).", pady=(4, 0))
+        self._reg("traffic_mix", self.traffic_mix.values, lambda x: None)
+        tc.heading("Phones")
+        r = tc.row()
+        tc.lbl(r, "Share of noise that is a phone").pack(side="left")
+        self.f_spin(r, "mobile_share", 0, 100, 5, 5).pack(side="left", padx=6)
+        tc.lbl(r, "%  (55% recommended: most browsing happens on phones)", True).pack(side="left")
+        r = tc.row()
+        tc.lbl(r, "Phone to emulate").pack(side="left")
+        self.f_combo(r, "device", [("iPhone 13", "iPhone 13 (recommended)"), ("iPhone 15", "iPhone 15"),
+                                   ("iPhone SE (3rd gen)", "iPhone SE (3rd gen)"), ("Pixel 7", "Pixel 7"),
+                                   ("Galaxy S24", "Galaxy S24"), ("mix", "Mix of phones (mostly iPhone 13)")],
+                     30).pack(side="left", padx=8)
+        tc.note("In the real browser, a phone gets that phone's screen size, touch input and its own browser's user agent. "
+                "It still runs on this computer's Chromium underneath, so a site that checks deeply can tell.")
+
+    # -- values/load for the two mix bars
+    def values(self) -> dict:
+        v = super().values()
+        v.pop("traffic_mix", None)
+        v.update({k: x for k, x in self.traffic_mix.values().items()})
+        return v
+
+    def load(self, v: dict) -> None:
+        super().load(v)
+        tor_on = bool(v.get("tor_enabled"))
+        pkg = v.get("packages") == "on" or (v.get("packages") != "off" and v.get("persona") in ("Data scientist", "Developer"))
+        names = F.visible_engines(self.app.ctl.profile.engines, tor_on, pkg)
+        eng_vals = v.get("engines_mix", {})
+        if self._mix_keys.get("eng") != names:
+            self._mix_keys["eng"] = names
+            self.eng_mix.set_items(F.engine_items(eng_vals, names))
+        else:
+            self.eng_mix.set_values(eng_vals)
+        items = F.traffic_items(v, tor_on)
+        keys = [i["key"] for i in items]
+        if self._mix_keys.get("traffic") != keys:
+            self._mix_keys["traffic"] = keys
+            self.traffic_mix.set_items(items)
+        else:
+            self.traffic_mix.set_values(v)
+        for note in (self.eng_note, self.onion_note):
+            note.configure(text="" if tor_on else "Onion sites join this mix automatically when Tor is on (Tor tab).")
+        self.scope_msg.configure(text=F.level_scope(bool(v.get("clearnet_enabled", True)), tor_on))
+        self._text()
+
+    def retheme(self) -> None:
+        self.sf.retheme()
+        self.spark.redraw()
+        self.eng_mix.retheme()
+        self.traffic_mix.retheme()
 
     def _snap(self, _v=None) -> None:
         v = int(round(self.level.get()))
         if abs(self.level.get() - v) > 1e-6:
             self.level.set(v)
-        self.rate_label.set(L.rate_text(v, self.rate_info))
+        self._text()
         self.app.edited()
 
-    def values(self) -> dict:
-        return {"level": int(round(self.level.get())), "rate_mode": self.rate_mode.get()}
+    def _text(self) -> None:
+        self.rate_msg.configure(text=L.rate_text(self.level.get(), self.rate_info))
 
-    def load(self, v: dict) -> None:
-        self.level.set(v["level"])
-        self.rate_mode.set(v["rate_mode"])
-        self.rate_label.set(L.rate_text(v["level"], self.rate_info))
+    def _rand_moved(self, _v=None) -> None:
+        v = int(round(self.rand.get() / 10) * 10)
+        if abs(self.rand.get() - v) > 1e-6:
+            self.rand.set(v)
+        self.rand_msg.configure(text=F.rand_text(v))
+        self.app.edited()
+
+    def test_hit(self) -> None:
+        self.app.work(self.app.ctl.test_once, done=lambda _r: self.app.flash("Sent one test hit; see Activity."))
 
     def update_state(self, st: dict) -> None:
         kind, text = L.run_status(st)
         self.state_var.set(text)
-        self.uptime_var.set("Running for " + L.fmt_uptime(st.get("uptime")) if st.get("running") else "Not running")
+        lanes = st.get("lanes") or []
+        hits, fails = sum(x.get("hits", 0) for x in lanes), sum(x.get("failures", 0) for x in lanes)
+        self.k_hits.set(f"{hits:,}", " · ".join(f"{L.lane_label(x['name'])} {x.get('hits', 0)}" for x in lanes))
+        self.k_fail.set(f"{fails:,}", "network errors / blocks")
+        self.k_up.set(L.fmt_uptime(st.get("uptime")) if st.get("running") else "—",
+                      f"about {st['hour_target']} action{'' if st['hour_target'] == 1 else 's'} this hour" if st.get("hour_target") else "")
+        last = max([x.get("last_hit_ts") or 0 for x in lanes] or [0])
+        self.k_last.set(L.fmt_ago(last), time.strftime("%H:%M:%S", time.localtime(last)) if last else "")
         cap = st.get("data_cap_mb")
-        self.data_var.set(f"Data used today: {L.fmt_bytes(st.get('bytes_today'))}"
-                          + (f" of {cap:g} MB allowed" if cap else ""))
-        self.now_var.set(L.now_text(st.get("current")) if st.get("running") and not st.get("paused")
-                         else ("Paused." if st.get("paused") else "Idle: the noise is not running."))
+        self.k_data.set(L.fmt_bytes(st.get("bytes_today")), f"of {cap:g} MB allowed" if cap else "approximate")
+        if st.get("running") and not st.get("paused"):
+            self.now.configure(text=L.now_text(st.get("current")), style="Noteinfo.TLabel")
+        else:
+            self.now.configure(text="Paused." if st.get("paused") else "Idle: the noise is not running.",
+                               style="Notewarn.TLabel" if st.get("paused") else "Noteoff.TLabel")
         self.rate_info = st.get("rate_info") or self.rate_info
-        self.rate_label.set(L.rate_text(self.level.get(), self.rate_info))
+        self._text()
+        self.spark.set_values(L.hits_per_minute(self.app.ctl.hits(0), time.time(), 30))
         rows = L.lanes_rows(st)
         self.tree.delete(*self.tree.get_children())
         for r in rows:
             self.tree.insert("", "end", values=r)
+        self.tree.configure(height=max(1, len(rows)))
+        if rows:
+            self.empty.pack_forget()
+        elif not self.empty.winfo_ismapped():
+            self.empty.pack(fill="x", anchor="w", pady=(8, 0))
 
 
 # ── Activity ────────────────────────────────────────────────────────────────
 class ActivityTab(Tab):
-    title = "Activity"
+    title, icon = "Activity", "act"
 
     def __init__(self, nb, app):
         super().__init__(nb, app)
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=1)
-        self.count = tk.StringVar(value="No activity yet.")
-        ttk.Label(self, text="Recent hits, newest first. Only the site name is shown, never a full page address.",
-                  style="Muted.TLabel").grid(row=0, column=0, sticky="w")
-        cols = ("time", "lane", "kind", "site", "status")
+        self.configure(padding=(18, 14))
+        bar = ttk.Frame(self)
+        bar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        ttk.Label(bar, text="Recent hits, newest first. Only the site name is shown, never a full page address.",
+                  style="Muted.TLabel").pack(side="left")
+        app.btn(bar, "Export JSON", None, "ghost", lambda: self.export("json")).pack(side="right")
+        app.btn(bar, "Export CSV", None, "ghost", lambda: self.export("csv")).pack(side="right")
+        fl = ttk.Frame(self)
+        fl.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        self.lane_f, self.kind_f, self.err_f, self.q_f = tk.StringVar(value="All lanes"), tk.StringVar(value="All kinds"), \
+            tk.BooleanVar(), tk.StringVar()
+        self.lane_box = ttk.Combobox(fl, state="readonly", width=14, textvariable=self.lane_f,
+                                     values=["All lanes", "Web (browser)", "Web (plain)", "Onion (Tor)"])
+        self.kind_box = ttk.Combobox(fl, state="readonly", width=16, textvariable=self.kind_f,
+                                     values=["All kinds", "search", "page", "DNS lookup", "onion page", "package",
+                                             "clicked a result"])
+        self.lane_box.pack(side="left")
+        self.kind_box.pack(side="left", padx=6)
+        ttk.Checkbutton(fl, text="Problems only", variable=self.err_f).pack(side="left", padx=6)
+        ttk.Entry(fl, textvariable=self.q_f, width=22).pack(side="left", padx=6)
+        ttk.Label(fl, text="filter by site", style="Muted.TLabel").pack(side="left")
+        for w in (self.lane_f, self.kind_f, self.err_f, self.q_f):
+            w.trace_add("write", lambda *_a: self.render())
+        cols = ("time", "lane", "kind", "site", "status", "detail", "ms")
         self.tree = ttk.Treeview(self, columns=cols, show="headings", selectmode="browse")
-        for c, t, w in (("time", "Time", 80), ("lane", "Lane", 120), ("kind", "Kind", 120),
-                        ("site", "Site", 360), ("status", "Status", 140)):
+        for c, t, w in (("time", "Time", 80), ("lane", "Lane", 110), ("kind", "Kind", 110), ("site", "Site", 260),
+                        ("status", "Status", 120), ("detail", "Details", 220), ("ms", "ms", 60)):
             self.tree.heading(c, text=t)
-            self.tree.column(c, width=w, anchor="w", stretch=c == "site")
+            self.tree.column(c, width=w, anchor="e" if c == "ms" else "w", stretch=c in ("site", "detail"))
         sb = ttk.Scrollbar(self, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=sb.set)
-        self.tree.grid(row=1, column=0, sticky="nsew", pady=(6, 0))
-        sb.grid(row=1, column=1, sticky="ns", pady=(6, 0))
-        ttk.Label(self, textvariable=self.count, style="Muted.TLabel").grid(row=2, column=0, sticky="w", pady=(6, 0))
+        self.tree.grid(row=2, column=0, sticky="nsew")
+        sb.grid(row=2, column=1, sticky="ns")
+        self.rowconfigure(2, weight=1)
+        self.rowconfigure(1, weight=0)
+        self.empty = ttk.Label(self.tree, text="Nothing here yet.\nPress Start (F5): each request the noise makes "
+                                               "shows up here with what happened on it.", style="Muted.TLabel", justify="center")
+        self.count = tk.StringVar()
+        ttk.Label(self, textvariable=self.count, style="Muted.TLabel").grid(row=3, column=0, sticky="w", pady=(6, 0))
+        self.hits: list[dict] = []
         self.last_seq = 0
         self.retheme()
 
@@ -162,59 +298,97 @@ class ActivityTab(Tab):
         self.tree.tag_configure("bad", foreground=p["bad"])
         self.tree.tag_configure("mute", foreground=p["muted"])
 
-    def update_state(self, st: dict) -> None:
-        hits = self.app.ctl.hits(self.last_seq)
-        if not hits and self.last_seq and not st.get("running") and not self.app.ctl.runner:
-            return
-        if hits and hits[0]["seq"] <= self.last_seq:
-            hits = []
-        for h in hits:                                  # oldest first, each inserted on top
-            row = L.hit_row(h)
-            self.tree.insert("", 0, iid=f"h{row[0]}", values=row[1:6], tags=(row[6],))
-            self.last_seq = max(self.last_seq, h["seq"])
-        kids = self.tree.get_children()
-        if len(kids) > L.ACTIVITY_MAX_ROWS:
-            self.tree.delete(*kids[L.ACTIVITY_MAX_ROWS:])
-        n = len(self.tree.get_children())
-        self.count.set(f"{n} recent hit{'s' if n != 1 else ''} (up to {L.ACTIVITY_MAX_ROWS} are kept)" if n
-                       else "No activity yet. Press Start on the Dashboard.")
+    def _match(self, h: dict) -> bool:
+        row = L.hit_row(h)
+        lane, kind = self.lane_f.get(), self.kind_f.get()
+        if lane not in ("", "All lanes") and row[2] != lane:
+            return False
+        if kind not in ("", "All kinds") and row[3] != kind:
+            return False
+        if self.err_f.get() and row[6] == "ok":
+            return False
+        q = self.q_f.get().strip().lower()
+        return not q or q in row[4].lower()
 
-    def reset(self) -> None:
+    def render(self) -> None:
         self.tree.delete(*self.tree.get_children())
-        self.last_seq = 0
+        shown = [h for h in L.newest_first(self.hits) if self._match(h)]
+        for h in shown:
+            r = L.hit_row(h)
+            self.tree.insert("", "end", iid=f"h{r[0]}", values=(r[1], r[2], r[3], r[4], r[5], L.hit_detail(h), L.hit_ms(h)),
+                             tags=(r[6],))
+        self.count.set(f"{len(shown)} shown of {len(self.hits)} recent hits (up to {L.ACTIVITY_MAX_ROWS} are kept)")
+        if self.hits:
+            self.empty.place_forget()
+        else:
+            self.empty.place(relx=0.5, rely=0.4, anchor="center")
+
+    def update_state(self, st: dict) -> None:
+        new = self.app.ctl.hits(self.last_seq)
+        if not new:
+            if not self.hits:
+                self.render()
+            return
+        self.hits.extend(new)
+        del self.hits[:-L.ACTIVITY_MAX_ROWS]
+        self.last_seq = max(h["seq"] for h in new)
+        self.render()
+
+    def export(self, kind: str) -> None:
+        rows = self.app.ctl.hits(0)
+        if not rows:
+            self.app.flash("Nothing to export yet.")
+            return
+        path = filedialog.asksaveasfilename(parent=self.app.root, defaultextension="." + kind,
+                                            initialfile="legalprivacy-activity." + kind)
+        if not path:
+            return
+        cols = ["seq", "ts", "lane", "engine", "url", "status", "ok", "latency_ms", "note", "role", "detail", "error"]
+
+        def go():
+            with open(path, "w", encoding="utf-8", newline="") as fh:
+                if kind == "json":
+                    json.dump(rows, fh, indent=1)
+                else:
+                    w = csv.DictWriter(fh, fieldnames=cols, extrasaction="ignore")
+                    w.writeheader()
+                    w.writerows(rows)
+        self.app.work(go, done=lambda _r: self.app.flash(f"Saved {len(rows)} rows."), error=lambda e: self.app.error("Export", e))
 
 
 # ── Live Log ────────────────────────────────────────────────────────────────
 class LogTab(Tab):
-    title = "Live Log"
+    title, icon = "Live Log", "log"
 
     def __init__(self, nb, app):
         super().__init__(nb, app)
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=1)
+        self.configure(padding=(18, 14))
         bar = ttk.Frame(self)
         bar.grid(row=0, column=0, columnspan=2, sticky="ew")
-        ttk.Label(bar, text="Show:").pack(side="left")
+        ttk.Label(bar, text="Show").pack(side="left")
         self.level = tk.StringVar(value=L.LOG_LEVEL_LABELS["info"])
         self.level_box = ttk.Combobox(bar, state="readonly", width=22, textvariable=self.level,
                                       values=[L.LOG_LEVEL_LABELS[k] for k in L.LOG_LEVEL_ORDER])
-        self.level_box.pack(side="left", padx=6)
+        self.level_box.pack(side="left", padx=8)
         self.level_box.bind("<<ComboboxSelected>>", lambda _e: self.render_all())
         self.hold = tk.BooleanVar(value=False)
         ttk.Checkbutton(bar, text="Pause scrolling", variable=self.hold).pack(side="left", padx=10)
-        ttk.Button(bar, text="Copy", command=self.copy).pack(side="left")
-        ttk.Button(bar, text="Clear", command=self.clear).pack(side="left", padx=6)
-        self.text = tk.Text(self, wrap="none", height=10, state="disabled", relief="flat", borderwidth=1,
-                            font=self.app.mono_font)
+        app.btn(bar, "Clear", None, "ghost", self.clear, "Forget everything in the live log").pack(side="right")
+        app.btn(bar, "Copy", None, "ghost", self.copy, "Copy the selection, or the whole log, to the clipboard").pack(side="right")
+        self.text = tk.Text(self, wrap="none", height=10, state="disabled", relief="flat", borderwidth=0,
+                            highlightthickness=1, font=app.fonts["mono"], padx=10, pady=8)
         sy = ttk.Scrollbar(self, orient="vertical", command=self.text.yview)
         sx = ttk.Scrollbar(self, orient="horizontal", command=self.text.xview)
         self.text.configure(yscrollcommand=sy.set, xscrollcommand=sx.set)
-        self.text.grid(row=1, column=0, sticky="nsew", pady=(6, 0))
-        sy.grid(row=1, column=1, sticky="ns", pady=(6, 0))
+        self.text.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
+        sy.grid(row=1, column=1, sticky="ns", pady=(8, 0))
         sx.grid(row=2, column=0, sticky="ew")
         self.events: list[dict] = []
         self.last_id = 0
         self.epoch = None
+        app.text_widgets.append(self.text)
         self.retheme()
 
     def min_level(self) -> str:
@@ -226,7 +400,7 @@ class LogTab(Tab):
     def retheme(self) -> None:
         p = self.app.pal
         self.text.configure(bg=p["log_bg"], fg=p["fg"], insertbackground=p["fg"], selectbackground=p["select"],
-                            selectforeground=p["fg"], highlightbackground=p["border"])
+                            selectforeground=p["fg"], highlightbackground=p["border"], highlightcolor=p["border"])
         for tag, col in (("debug", p["muted"]), ("info", p["fg"]), ("warn", p["warn"]), ("error", p["bad"])):
             self.text.tag_configure(tag, foreground=col)
 
@@ -246,6 +420,8 @@ class LogTab(Tab):
     def render_all(self) -> None:
         self.text.configure(state="normal")
         self.text.delete("1.0", "end")
+        if not self.events:
+            self.text.insert("end", "Nothing logged yet. Everything the app and Tor say appears here as it happens.\n", "debug")
         self.text.configure(state="disabled")
         self._insert(L.visible_events(self.events, self.min_level())[-L.LOG_MAX_LINES:])
 
@@ -257,10 +433,14 @@ class LogTab(Tab):
         self.epoch = ep
         new = self.app.ctl.log.since(self.last_id, "debug", limit=1000)
         if new:
+            first = not self.events
             self.last_id = new[-1]["id"]
             self.events.extend(new)
             del self.events[:-L.LOG_MAX_LINES]
-            self._insert(L.visible_events(new, self.min_level()))
+            if first:
+                self.render_all()
+            else:
+                self._insert(L.visible_events(new, self.min_level()))
 
     def copy(self) -> None:
         try:
@@ -279,297 +459,326 @@ class LogTab(Tab):
 
 # ── Tor ─────────────────────────────────────────────────────────────────────
 class TorTab(Tab):
-    title = "Tor"
+    title, icon = "Tor", "tor"
 
     def __init__(self, nb, app):
         super().__init__(nb, app)
-        self.columnconfigure(0, weight=1)
-        intro = ttk.Label(self, style="Muted.TLabel", justify="left",
-                          text="Tor is optional and off by default. When it is on, one lane visits .onion sites. "
-                               "Ordinary web noise never goes through Tor.")
-        intro.grid(row=0, column=0, sticky="w")
-        _wrap_to(self, [intro])
-        self.enabled = tk.BooleanVar(value=False)
-        ttk.Checkbutton(self, text="Use Tor for onion-site noise", variable=self.enabled,
-                        command=self.app.edited).grid(row=1, column=0, sticky="w", pady=(PAD, 0))
-        st = ttk.LabelFrame(self, text="Tor right now", padding=PAD)
-        st.grid(row=2, column=0, sticky="ew", pady=PAD)
-        st.columnconfigure(0, weight=1)
-        self.state_var, self.hint_var = tk.StringVar(), tk.StringVar()
-        ttk.Label(st, textvariable=self.state_var, style="Strong.TLabel").grid(row=0, column=0, sticky="w")
-        self.bar = ttk.Progressbar(st, mode="determinate", maximum=100)
-        self.bar.grid(row=1, column=0, sticky="ew", pady=6)
-        self.hint = ttk.Label(st, textvariable=self.hint_var, style="Muted.TLabel", justify="left")
-        self.hint.grid(row=2, column=0, sticky="w")
-        _wrap_to(st, [self.hint])
-        btns = ttk.Frame(st)
-        btns.grid(row=3, column=0, sticky="w", pady=(8, 0))
-        self.b_start = ttk.Button(btns, text="Start Tor", command=lambda: self.act("start"))
-        self.b_stop = ttk.Button(btns, text="Stop Tor", command=lambda: self.act("stop"))
-        self.b_new = ttk.Button(btns, text="New identity", command=lambda: self.act("newnym"))
-        for b in (self.b_start, self.b_stop, self.b_new):
-            b.pack(side="left", padx=(0, 6))
-        br = ttk.LabelFrame(self, text="Bridges (if your network blocks Tor)", padding=PAD)
-        br.grid(row=3, column=0, sticky="ew")
-        self.bridge_mode = tk.StringVar(value="off")
-        for i, (val, lab) in enumerate(L.BRIDGE_CHOICES):
-            ttk.Radiobutton(br, text=lab, value=val, variable=self.bridge_mode, command=self.app.edited).grid(
-                row=i, column=0, sticky="w")
-        self.bridge_auto = tk.BooleanVar(value=True)
-        ttk.Checkbutton(br, text="If Tor cannot connect directly, try the built-in bridges by itself",
-                        variable=self.bridge_auto, command=self.app.edited).grid(row=len(L.BRIDGE_CHOICES), column=0,
-                                                                              sticky="w", pady=(6, 0))
-        self.tor: dict = {}
-
-    def act(self, action: str) -> None:
-        self.app.work(lambda: self.app.ctl.tor_action(action), done=lambda _r: self.app.poll_now(),
-                      error=lambda e: self.app.error("Tor", e))
-
-    def values(self) -> dict:
-        return {"tor_enabled": self.enabled.get(), "bridge_mode": self.bridge_mode.get(),
-                "bridge_auto": self.bridge_auto.get()}
-
-    def load(self, v: dict) -> None:
-        self.enabled.set(v["tor_enabled"])
-        self.bridge_mode.set(v["bridge_mode"])
-        self.bridge_auto.set(v["bridge_auto"])
-
-    def update_state(self, st: dict) -> None:
-        tor = st.get("tor") or {}
-        state = tor.get("state") or "stopped"
-        pct = int(tor.get("bootstrap_pct") or 0)
-        want = self.enabled.get()
-        if state == "ready":
-            line = "Tor is connected." + ("" if want else " (It is switched off in the settings above.)")
-        elif state in ("bootstrapping", "starting", "installing"):
-            line = f"Tor is connecting… {pct}%" + (f" ({tor['bootstrap_summary']})" if tor.get("bootstrap_summary") else "")
-        elif state == "error":
-            line = "Tor has a problem."
-        else:
-            line = "Tor is off." if not want else "Tor is enabled and will start when you press Start."
-        self.state_var.set(line)
-        self.bar["value"] = 100 if state == "ready" else pct
-        self.hint_var.set(tor.get("error") or tor.get("hint") or
-                          ("Onion noise can run." if state == "ready" and want else ""))
-        self.b_start.state(["!disabled"] if state in ("stopped", "error") else ["disabled"])
-        self.b_stop.state(["!disabled"] if state != "stopped" else ["disabled"])
-        self.b_new.state(["!disabled"] if state == "ready" else ["disabled"])
-
-
-# ── Settings ────────────────────────────────────────────────────────────────
-class SettingsTab(Tab):
-    title = "Settings"
-
-    def __init__(self, nb, app):
-        super().__init__(nb, app)
-        self.columnconfigure(0, weight=1)
-        self.columnconfigure(1, weight=1)
-        e = app.edited
-
-        dns = ttk.LabelFrame(self, text="Where DNS lookups go", padding=PAD)
-        dns.grid(row=0, column=0, sticky="nsew", padx=(0, PAD // 2))
-        self.dns_mode = tk.StringVar(value="mix")
-        for val, lab in L.DNS_CHOICES:
-            ttk.Radiobutton(dns, text=lab, value=val, variable=self.dns_mode, command=e).pack(anchor="w")
-        note = ttk.Label(dns, style="Muted.TLabel", justify="left",
-                         text="Fine-tuning the server list is in the web dashboard (File menu).")
-        note.pack(anchor="w", pady=(6, 0))
-        _wrap_to(dns, [note], 30)
-
-        br = ttk.LabelFrame(self, text="The noise browser", padding=PAD)
-        br.grid(row=0, column=1, sticky="nsew", padx=(PAD // 2, 0))
-        ttk.Label(br, text="Window").grid(row=0, column=0, sticky="w")
-        self.window = tk.StringVar(value="hidden")
-        self.window_box = ttk.Combobox(br, state="readonly", width=26, textvariable=self.window,
-                                       values=[lab for _v, lab in L.WINDOW_CHOICES])
-        self.window_box.grid(row=0, column=1, sticky="w", padx=6)
-        self.window_box.bind("<<ComboboxSelected>>", lambda _e: e())
-        ttk.Label(br, text="Cookies last").grid(row=1, column=0, sticky="w", pady=(8, 0))
-        cf = ttk.Frame(br)
-        cf.grid(row=1, column=1, sticky="w", padx=6, pady=(8, 0))
-        self.cookie_value = tk.StringVar(value="1")
-        self.cookie_unit = tk.StringVar(value="hours")
-        sp = ttk.Spinbox(cf, from_=0, to=365, increment=1, width=6, textvariable=self.cookie_value, command=e)
-        sp.pack(side="left")
-        sp.bind("<KeyRelease>", lambda _e: e())
-        ub = ttk.Combobox(cf, state="readonly", width=7, textvariable=self.cookie_unit, values=["hours", "days"])
-        ub.pack(side="left", padx=6)
-        ub.bind("<<ComboboxSelected>>", lambda _e: e())
-        ttk.Label(br, text="then the browser starts with fresh cookies (0 = never keep any)",
-                  style="Muted.TLabel").grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
-
-        gen = ttk.LabelFrame(self, text="General", padding=PAD)
-        gen.grid(row=1, column=0, columnspan=2, sticky="ew", pady=PAD)
-        self.autostart = tk.BooleanVar()
-        self.clear_logs = tk.BooleanVar(value=True)
-        self.observe = tk.BooleanVar(value=True)
-        ttk.Checkbutton(gen, text="Start the noise by itself when this app opens", variable=self.autostart,
-                        command=e).pack(anchor="w")
-        ttk.Checkbutton(gen, text="Clear the live log each time the noise restarts", variable=self.clear_logs,
-                        command=e).pack(anchor="w")
-        ttk.Checkbutton(gen, text="Watch this computer's connection counts for the Proof tab "
-                                  "(local only, never leaves this computer)", variable=self.observe,
-                        command=e).pack(anchor="w")
-
-        pan = ttk.LabelFrame(self, text="Panic", padding=PAD)
-        pan.grid(row=2, column=0, columnspan=2, sticky="ew")
-        pan.columnconfigure(0, weight=1)
-        msg = ttk.Label(pan, style="Muted.TLabel", justify="left",
-                        text="Stop now, and optionally leave nothing behind. Your settings are never deleted.")
-        msg.grid(row=0, column=0, columnspan=3, sticky="w")
-        _wrap_to(pan, [msg])
-        for i, (lvl, label, tip) in enumerate((
-                ("soft", "Panic: stop", "Stops the noise."),
-                ("medium", "Panic: stop + clear", "Also clears the log and the noise browser's cookies."),
-                ("hard", "Panic: stop + erase everything", "Also stops Tor and deletes Proof data and log files."))):
-            f = ttk.Frame(pan)
-            f.grid(row=1, column=i, sticky="w", pady=(8, 0), padx=(0, 16))
-            ttk.Button(f, text=label, style="Danger.TButton", command=lambda lv=lvl: self.panic(lv)).pack(anchor="w")
-            ttk.Label(f, text=tip, style="Muted.TLabel", wraplength=230, justify="left").pack(anchor="w")
-
-    def panic(self, level: str) -> None:
-        what = {"soft": "Stop the noise now?",
-                "medium": "Stop the noise, clear the live log and delete the noise browser's cookies "
-                          "and any signed-in account sessions?",
-                "hard": "Stop the noise and Tor, and delete everything legalPrivacy recorded "
-                        "(Proof data, cookies, logs)? Your settings stay."}[level]
-        if not messagebox.askokcancel("Panic", what, icon="warning", default="cancel", parent=self.app.root):
-            return
-        self.app.work(lambda: self.app.ctl.panic(level),
-                      done=lambda r: (self.app.poll_now(), messagebox.showinfo(
-                          "Panic done", "\n".join("• " + d for d in r["done"]), parent=self.app.root)),
-                      error=lambda e: self.app.error("Panic", e))
-
-    def values(self) -> dict:
-        v = {"dns_mode": self.dns_mode.get(), "cookie_unit": self.cookie_unit.get(),
-             "autostart": self.autostart.get(), "clear_logs_on_restart": self.clear_logs.get(),
-             "observe": self.observe.get()}
-        for val, lab in L.WINDOW_CHOICES:
-            if lab == self.window.get():
-                v["window"] = val
-        try:
-            v["cookie_value"] = float(self.cookie_value.get())
-        except ValueError:
-            pass                                    # half-typed number: leave that setting alone for now
-        return v
-
-    def load(self, v: dict) -> None:
-        self.dns_mode.set(v["dns_mode"])
-        self.window.set(dict(L.WINDOW_CHOICES).get(v["window"], v["window"]))
-        self.cookie_value.set(f"{v['cookie_value']:g}")
-        self.cookie_unit.set(v["cookie_unit"])
-        self.autostart.set(v["autostart"])
-        self.clear_logs.set(v["clear_logs_on_restart"])
-        self.observe.set(v["observe"])
-
-
-# ── Proof ───────────────────────────────────────────────────────────────────
-class ScrollFrame(ttk.Frame):
-    def __init__(self, master, app):
-        super().__init__(master)
-        self.app = app
-        self.canvas = tk.Canvas(self, highlightthickness=0, bd=0)
-        self.vsb = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
-        self.canvas.configure(yscrollcommand=self.vsb.set)
-        self.canvas.pack(side="left", fill="both", expand=True)
-        self.vsb.pack(side="right", fill="y")
-        self.inner = ttk.Frame(self.canvas, padding=PAD)
-        self._win = self.canvas.create_window(0, 0, window=self.inner, anchor="nw")
-        self.inner.bind("<Configure>", lambda _e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
-        self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfigure(self._win, width=e.width))
-        for w in (self.canvas, self.inner):
-            w.bind("<Enter>", self._bind_wheel)
-            w.bind("<Leave>", self._unbind_wheel)
-
-    def _bind_wheel(self, _e=None) -> None:
-        r = self.winfo_toplevel()
-        r.bind_all("<MouseWheel>", self._wheel)
-        r.bind_all("<Button-4>", lambda _e: self.canvas.yview_scroll(-3, "units"))
-        r.bind_all("<Button-5>", lambda _e: self.canvas.yview_scroll(3, "units"))
-
-    def _unbind_wheel(self, _e=None) -> None:
-        r = self.winfo_toplevel()
-        for ev in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
-            r.unbind_all(ev)
-
-    def _wheel(self, e) -> None:
-        step = -1 * (e.delta // 120 if sys.platform != "darwin" else e.delta)
-        self.canvas.yview_scroll(step * 3 if sys.platform != "darwin" else step, "units")
-
-    def retheme(self) -> None:
-        self.canvas.configure(bg=self.app.pal["bg"])
-
-
-class ProofTab(Tab):
-    title = "Proof"
-    REFRESH_S = 15
-
-    def __init__(self, nb, app):
-        super().__init__(nb, app)
-        self.configure(padding=0)
-        self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
+        self.columnconfigure(0, weight=1)
         self.sf = ScrollFrame(self, app)
-        self.sf.grid(row=0, column=0, sticky="nsew")
+        self.sf.grid(sticky="nsew")
         f = self.sf.inner
         f.columnconfigure(0, weight=1)
-        self.wrap_labels: list = []
+        Banner(f, "Tor is optional. When on, it visits real .onion sites (darknet noise); ordinary web noise never goes "
+                  "through Tor. legalPrivacy runs its own private Tor in the background and never touches your system "
+                  "Tor or Tor Browser.", "tor", host=f).grid(row=0, column=0, sticky="ew", pady=(0, GAP))
 
-        head = ttk.Frame(f)
-        head.grid(row=0, column=0, sticky="ew")
-        head.columnconfigure(0, weight=1)
-        self.headline = tk.StringVar(value="Is it working?")
-        ttk.Label(head, textvariable=self.headline, style="Big.TLabel").grid(row=0, column=0, sticky="w")
-        self.run_btn = ttk.Button(head, text="Run checks", command=self.run_checks)
-        self.run_btn.grid(row=0, column=1, sticky="e")
-        self.checks = ttk.Frame(f)
-        self.checks.grid(row=1, column=0, sticky="ew", pady=(6, PAD))
-        self.checks.columnconfigure(0, weight=1)
+        top = ttk.Frame(f)
+        top.grid(row=1, column=0, sticky="ew")
+        sc = Card(top, app, "Status", "tor")
+        self.state_var = tk.StringVar(value="Stopped")
+        ttk.Label(sc.body, textvariable=self.state_var, style="KPI.TLabel").pack(anchor="w")
+        self.bar = ttk.Progressbar(sc.body, mode="determinate", maximum=100, style="Tor.Horizontal.TProgressbar")
+        self.bar.pack(fill="x", pady=8)
+        self.sum_var = tk.StringVar()
+        self.sum_lbl = ttk.Label(sc.body, textvariable=self.sum_var, style="CardMuted.TLabel", justify="left")
+        self.sum_lbl.pack(fill="x", anchor="w")
+        autowrap(self.sum_lbl, sc.body, 8)
+        dc = Card(top, app, "Details")
+        self.kv = ttk.Frame(dc.body, style="CardBody.TFrame")
+        self.kv.pack(fill="x")
+        grid_cards(top, [sc, dc], 2)
 
-        self.charts: dict = {}
-        self.verdicts: dict = {}
-        for i, (key, title, cls) in enumerate((
-                ("intended", "1. The pattern your settings are meant to produce", IntendedChart),
-                ("session", "2. What the noise actually did this session", SessionChart),
-                ("baseline", "3. Your day compared with the noise's day", BaselineChart))):
-            box = ttk.LabelFrame(f, text=title, padding=6)
-            box.grid(row=2 + i, column=0, sticky="ew", pady=(0, PAD))
-            box.columnconfigure(0, weight=1)
-            ch = cls(box, app.pal)
-            ch.grid(row=0, column=0, sticky="ew")
-            v = tk.StringVar()
-            lb = ttk.Label(box, textvariable=v, justify="left")
-            lb.grid(row=1, column=0, sticky="w", pady=(4, 0))
-            self.wrap_labels.append(lb)
-            self.charts[key], self.verdicts[key] = ch, v
+        cc = Card(f, app, "Control", "power" if False else "play")
+        cc.grid(row=2, column=0, sticky="ew", pady=(0, GAP))
+        r = cc.row()
+        self.b_start = app.btn(r, "Start Tor", "play", "tor", lambda: self.act("start"))
+        self.b_stop = app.btn(r, "Stop Tor", "stop", "secondary", lambda: self.act("stop"))
+        self.b_restart = app.btn(r, "Restart", "refresh", "secondary", lambda: self.act("restart"),
+                                 "Stop and start the Tor program: it reconnects to the Tor network from scratch (10-30 seconds).")
+        self.b_new = app.btn(r, "New identity", "bolt", "secondary", lambda: self.act("newnym"),
+                             "Tor keeps running and uses fresh circuits (a new path and exit) for new connections.")
+        self.b_install = app.btn(r, "Install / update Tor", None, "secondary", lambda: self.act("install"))
+        self.b_test = app.btn(r, "Test Tor", "check", "secondary", self.selftest,
+                              "Checks that traffic leaves through Tor and that an onion site loads.")
+        for b in (self.b_start, self.b_stop, self.b_restart, self.b_new, self.b_install, self.b_test):
+            b.pack(side="left", padx=(0, 6))
+        self.install_note = cc.note("", pady=(6, 0))
+        self.test_note = cc.note("", muted=False, pady=(2, 6))
+        self.f_check(cc, "tor_enabled", "Use Tor", "Turn the Tor lane on. Starting noise will automatically start (and if "
+                                                    "needed, install) Tor.")
+        self.f_check(cc, "tor_onion", "Visit onion sites (darknet noise)", "Only .onion addresses, never leaves the Tor network.")
+        self.f_check(cc, "tor_manage", "Let legalPrivacy manage Tor (recommended)",
+                     "Untick to use an existing Tor at the addresses below instead.")
+        r = cc.row((6, 0))
+        cc.lbl(r, "SOCKS").pack(side="left")
+        self.f_entry(r, "tor_socks", 20).pack(side="left", padx=(6, 14))
+        cc.lbl(r, "Control").pack(side="left")
+        self.f_entry(r, "tor_control", 20).pack(side="left", padx=6)
 
-        base = ttk.LabelFrame(f, text="Where your baseline comes from", padding=PAD)
-        base.grid(row=5, column=0, sticky="ew", pady=(0, PAD))
-        base.columnconfigure(0, weight=1)
-        self.base_var, self.har_var = tk.StringVar(), tk.StringVar(value="No browser recording imported.")
-        bl = ttk.Label(base, textvariable=self.base_var, justify="left")
-        bl.grid(row=0, column=0, columnspan=3, sticky="w")
-        self.wrap_labels.append(bl)
-        hl = ttk.Label(base, textvariable=self.har_var, style="Muted.TLabel", justify="left")
-        hl.grid(row=1, column=0, columnspan=3, sticky="w", pady=(6, 0))
-        self.wrap_labels.append(hl)
-        bt = ttk.Frame(base)
-        bt.grid(row=2, column=0, sticky="w", pady=(6, 0))
-        ttk.Button(bt, text="Import browser recording (.har)…", command=self.import_har).pack(side="left")
-        self.forget_btn = ttk.Button(bt, text="Forget it", command=self.forget_har)
-        self.forget_btn.pack(side="left", padx=6)
-        _wrap_to(f, self.wrap_labels, 60)
+        ci = Card(f, app, "Circuits")
+        ci.grid(row=3, column=0, sticky="ew", pady=(0, GAP))
+        self.circ_head = ci.note("", pady=(0, 4))
+        self.circ = ttk.Treeview(ci.body, columns=("id", "status", "purpose", "path"), show="headings", height=4,
+                                 selectmode="none")
+        for c, t, w in (("id", "ID", 50), ("status", "Status", 80), ("purpose", "Purpose", 140), ("path", "Path", 420)):
+            self.circ.heading(c, text=t)
+            self.circ.column(c, width=w, stretch=c == "path")
+        self.circ.pack(fill="x")
 
-        self._last = {"leak": None, "act": None}
-        self._fetching = {"leak": False, "act": False}
-        self._last_fetch = 0.0
-        self._checks_json = ""
+        mid = ttk.Frame(f)
+        mid.grid(row=4, column=0, sticky="ew")
+        sd = Card(mid, app, "Onion seed sites")
+        sd.note("One onion address per line. The recommended list is filled in; add, remove or edit freely. Every address "
+                "is checked offline before use.")
+        self.f_text(sd.body, "tor_seeds", 7, 50).pack(fill="both", expand=True)
+        r = sd.row((6, 0))
+        app.btn(r, "Reset to the recommended list", "refresh", "secondary", self.reset_seeds).pack(side="left")
+        self.builtin_seeds: list[str] = []
+        bd = Card(mid, app, "Bridges", help="Bridges are unlisted entry points into Tor. You only need them if your network "
+                                            "blocks Tor or you do not want your provider to see that you use Tor. obfs4 "
+                                            "disguises Tor as random-looking traffic; Snowflake looks like a video call; "
+                                            "meek looks like ordinary visits to a big website (slow). The built-in ones are "
+                                            "shared by many people, so they get blocked more often than your own.")
+        self.bridge_var = self.f_radios(bd, "bridge_mode", [(v, lab) for v, lab in L.BRIDGE_CHOICES])
+        self.f_text(bd.body, "tor_bridges", 4, 50).pack(fill="x", pady=(6, 0))
+        self.f_check(bd, "bridge_auto", "If Tor cannot connect directly, try the built-in bridges by itself",
+                     "obfs4, then Snowflake; on by default")
+        r = bd.row((6, 0))
+        bd.lbl(r, "Country").pack(side="left")
+        self.country = tk.StringVar()
+        ce = ttk.Entry(r, textvariable=self.country, width=4)
+        ce.pack(side="left", padx=6)
+        tip(ce, "Two-letter country code, e.g. ir, cn, ru. Leave empty to let the Tor Project detect it.")
+        self.b_get = app.btn(r, "Get bridges that work here", "web", "secondary", self.get_bridges)
+        self.b_get.pack(side="left")
+        bd.note("Request private bridges at bridges.torproject.org, Telegram @GetBridgesBot, or email "
+                "bridges@torproject.org (from Gmail or Riseup). Paste them above and choose “My own bridges”.", pady=(6, 0))
+        self.bridge_now = bd.note("", pady=(2, 0))
+        grid_cards(mid, [sd, bd], 2)
+
+        lg = Card(f, app, "Tor log", "log")
+        lg.grid(row=5, column=0, sticky="ew", pady=(0, GAP))
+        self.log = tk.Text(lg.body, height=8, wrap="none", state="disabled", relief="flat", borderwidth=0, highlightthickness=1,
+                           font=app.fonts["mono"], padx=8, pady=6)
+        self.log.pack(fill="x")
+        app.text_widgets.append(self.log)
+        self.log_last = 0
+        self.tor: dict = {}
         self.retheme()
 
     def retheme(self) -> None:
         self.sf.retheme()
-        for ch in self.charts.values():
+        p = self.app.pal
+        self.log.configure(bg=p["log_bg"], fg=p["fg"], highlightbackground=p["border"], highlightcolor=p["border"])
+
+    # -- actions
+    def act(self, action: str) -> None:
+        self.app.work(lambda: self.app.ctl.tor_action(action), done=lambda _r: self.app.poll_now(),
+                      error=lambda e: self.app.error("Tor", e))
+
+    def selftest(self) -> None:
+        self.test_note.configure(text="Testing Tor… this takes up to a minute.")
+        self.app.work(self.app.ctl.tor_selftest, done=lambda _r: self.app.poll_now(), error=lambda e: self.app.error("Tor test", e))
+
+    def reset_seeds(self) -> None:
+        self.load({"tor_seeds": "\n".join(self.builtin_seeds)})
+        self.app.edited()
+
+    def get_bridges(self) -> None:
+        if not messagebox.askokcancel("Get bridges", "Ask bridges.torproject.org for bridges that work in your country? "
+                                      "This contacts that site from your connection.", parent=self.app.root):
+            return
+        self.b_get.state(["disabled"])
+        country = self.country.get().strip()
+
+        def done(r):
+            self.b_get.state(["!disabled"])
+            if r.get("ok"):
+                self.app.flash(f"Saved {r['count']} bridge(s): {', '.join(r['types'])}. Restart Tor to use them.", 9000)
+                self.app.resync_now()
+            else:
+                messagebox.showinfo("Get bridges", r.get("message", "No bridges were found."), parent=self.app.root)
+
+        def fail(e):
+            self.b_get.state(["!disabled"])
+            self.app.error("Could not reach the bridge service", e)
+        self.app.work(lambda: self.app.ctl.get_bridges(country), done, fail)
+
+    # -- state
+    def update_state(self, st: dict) -> None:
+        self.builtin_seeds = [b["url"] for b in st.get("builtin_onion_seeds") or []]
+        t = st.get("tor") or {}
+        state = t.get("state") or "stopped"
+        pct = int(t.get("bootstrap_pct") or 0)
+        words = {"stopped": "Stopped", "installing": "Installing…", "starting": "Starting…",
+                 "bootstrapping": "Connecting…", "ready": "Ready", "error": "Error"}
+        self.state_var.set(words.get(state, state))
+        self.bar["value"] = (t.get("install_progress") or 0) * 100 if state == "installing" else (100 if state == "ready" else pct)
+        self.sum_var.set((t.get("error") or ("Downloading and verifying the official Tor bundle…" if state == "installing"
+                                              else t.get("bootstrap_summary") or "")) + (f"  ⚠ {t['hint']}" if t.get("hint") else ""))
+        kvs = [("Mode", t.get("mode")), ("Version", t.get("version") or "—"), ("SOCKS", t.get("socks") or "—"),
+               ("Control", t.get("control") or "—"), ("PID", t.get("pid") or "—"),
+               ("Uptime", L.fmt_uptime(t.get("uptime"))), ("Downloaded", L.fmt_bytes(t.get("read"))),
+               ("Uploaded", L.fmt_bytes(t.get("written"))), ("Program", t.get("binary") or "not installed")]
+        sig = repr(kvs)
+        if getattr(self, "_kv_sig", None) != sig:
+            self._kv_sig = sig
+            for w in self.kv.winfo_children():
+                w.destroy()
+            for i, (k, v) in enumerate(kvs):
+                ttk.Label(self.kv, text=k, style="CardMuted.TLabel").grid(row=i, column=0, sticky="w", padx=(0, 14))
+                ttk.Label(self.kv, text=str(v), style="Card.TLabel", wraplength=300, justify="left").grid(row=i, column=1, sticky="w")
+        busy = state in ("starting", "bootstrapping", "installing")
+        for b, on in ((self.b_start, not busy and state != "ready"), (self.b_stop, state != "stopped"),
+                      (self.b_restart, state != "stopped" and not busy), (self.b_new, state == "ready" and bool(t.get("control"))),
+                      (self.b_install, not busy)):
+            b.state(["!disabled"] if on else ["disabled"])
+        self.install_note.configure(text=(
+            "Automatic install is not available on this platform; install Tor with your package manager."
+            if not t.get("supported_platform") else "Official Tor bundle installed by legalPrivacy." if t.get("installed_bundle")
+            else "Using Tor found on this computer." if t.get("binary")
+            else "Tor is not installed yet; it will be downloaded automatically when needed."))
+        self.test_note.configure(text=L.tor_test_text(t.get("selftest")))
+        circs = t.get("circuits") or []
+        self.circ_head.configure(text=f"{t.get('circuits_built') or 0} built. Purposes starting with HS_CLIENT are onion-service connections.")
+        self.circ.delete(*self.circ.get_children())
+        for c in circs:
+            self.circ.insert("", "end", values=(c.get("id"), c.get("status"), c.get("purpose"), " → ".join(c.get("path") or [])))
+        self.circ.configure(height=max(2, min(8, len(circs))))
+        b = t.get("builtin") or {}
+        cfg = (st.get("profile") or {}).get("transports", {}).get("tor", {}).get("bridge_mode", "off")
+        self.bridge_now.configure(text=(
+            f"Right now Tor is using the built-in {t['bridge_mode']} bridges because a direct connection did not work."
+            if t.get("bridge_mode") and t["bridge_mode"] != cfg and state != "stopped"
+            else f"Tor is using {t['bridges']} bridge(s)." if t.get("bridges") else
+            f"Built in: obfs4 {b.get('obfs4', 0)}, Snowflake {b.get('snowflake', 0)}, meek {b.get('meek', 0)}."
+            if b else "Install Tor first to see the built-in bridges."))
+        evs = self.app.ctl.log.since(self.log_last, "debug", {"tor"}, 200)
+        if evs:
+            self.log_last = evs[-1]["id"]
+            self.log.configure(state="normal")
+            for e in evs:
+                self.log.insert("end", L.fmt_log_line(e) + "\n")
+            n = int(self.log.index("end-1c").split(".")[0])
+            if n > 400:
+                self.log.delete("1.0", f"{n - 400}.0")
+            self.log.configure(state="disabled")
+            self.log.see("end")
+
+
+# ── Proof ───────────────────────────────────────────────────────────────────
+class ProofTab(Tab):
+    title, icon = "Proof", "proof"
+    REFRESH_S = 15
+
+    def __init__(self, nb, app):
+        super().__init__(nb, app)
+        self.rowconfigure(0, weight=1)
+        self.columnconfigure(0, weight=1)
+        self.sf = ScrollFrame(self, app)
+        self.sf.grid(sticky="nsew")
+        f = self.sf.inner
+        f.columnconfigure(0, weight=1)
+        self.wrap_labels: list = []
+
+        cc = Card(f, app, "Is it working?", "proof",
+                  help="Each line says what you want to see, what we actually saw, and whether that is working. Nothing here "
+                       "changes your settings. “Run checks” contacts check.torproject.org once directly and once through "
+                       "Tor (only if Tor is on) to compare the two addresses.")
+        cc.grid(row=0, column=0, sticky="ew", pady=(0, GAP))
+        self.run_btn = app.btn(cc.actions, "Run checks", "play", "primary", self.run_checks)
+        self.run_btn.pack()
+        self.headline = tk.StringVar(value="Checking…")
+        ttk.Label(cc.body, textvariable=self.headline, style="CardH2.TLabel").pack(anchor="w", pady=(0, 6))
+        self.checks = ttk.Frame(cc.body, style="CardBody.TFrame")
+        self.checks.pack(fill="x")
+        self.checks.columnconfigure(0, weight=1)
+
+        self.charts: dict = {}
+        self.verdicts: dict = {}
+        for i, (key, title, cls, help_) in enumerate((
+                ("intended", "1. Intended pattern (for reference)", IntendedChart,
+                 "What your current settings are meant to produce: expected requests per hour of the day, from the same "
+                 "planner the noise uses. The shaded band is the usual spread, the line the middle."),
+                ("session", "2. This session: actual vs intended", SessionChart,
+                 "Requests the noise really made in each 10 minutes over the last 6 hours, over the planned range for that "
+                 "hour. Hours well above or below the plan are shaded red."),
+                ("baseline", "3. Your baseline vs the noise, by hour of day", BaselineChart,
+                 "Each bar is the share of that day's activity in each hour, so the shapes can be compared even though you "
+                 "and the noise do different amounts."))):
+            card = Card(f, app, title, "act", help=help_)
+            card.grid(row=1 + i, column=0, sticky="ew", pady=(0, GAP))
+            ch = cls(card.body, app.pal)
+            ch.pack(fill="x")
+            v = tk.StringVar()
+            lb = ttk.Label(card.body, textvariable=v, style="Card.TLabel", justify="left")
+            lb.pack(fill="x", anchor="w", pady=(6, 0))
+            autowrap(lb, card.body, 6)
+            self.charts[key], self.verdicts[key] = ch, v
+
+        bc = Card(f, app, "Where “how you browse” comes from", "proof",
+                  help="The comparisons need a picture of your own browsing. legalPrivacy uses the first of these that has "
+                       "enough data: a browser recording you import, minutes it saw with the noise off, then your browser "
+                       "history. With no data nothing is scored.")
+        bc.grid(row=4, column=0, sticky="ew", pady=(0, GAP))
+        self.base_var, self.har_var = tk.StringVar(), tk.StringVar()
+        bl = ttk.Label(bc.body, textvariable=self.base_var, style="Card.TLabel", justify="left")
+        bl.pack(fill="x", anchor="w")
+        autowrap(bl, bc.body, 6)
+        hl = ttk.Label(bc.body, textvariable=self.har_var, style="CardMuted.TLabel", justify="left")
+        hl.pack(fill="x", anchor="w", pady=(8, 0))
+        autowrap(hl, bc.body, 6)
+        r = bc.row((8, 0))
+        app.btn(r, "Import browser recording (.har)…", None, "secondary", self.import_har).pack(side="left")
+        self.forget_btn = app.btn(r, "Forget it", None, "ghost", self.forget_har)
+        self.forget_btn.pack(side="left", padx=6)
+
+        tl = Card(f, app, "Last 6 hours, per minute", "act",
+                  help="Bars count the different addresses connected in each minute, split by who opened them. Shaded "
+                       "stripes are minutes when the noise was on.")
+        tl.grid(row=5, column=0, sticky="ew", pady=(0, GAP))
+        self.timeline = TimelineChart(tl.body, app.pal)
+        self.timeline.pack(fill="x")
+        self.obs_note = tl.note("", pady=(6, 0))
+        self.onoff = ttk.Frame(tl.body, style="CardBody.TFrame")
+        self.onoff.pack(fill="x", pady=(6, 0))
+
+        cm = Card(f, app, "Does the noise look like you?", help="Compares the rhythm of the noise with your own traffic from "
+                                                                 "the minutes when the noise was off. 100% means an observer "
+                                                                 "could not tell them apart on that measure.")
+        cm.grid(row=6, column=0, sticky="ew", pady=(0, GAP))
+        self.cmp = ttk.Frame(cm.body, style="CardBody.TFrame")
+        self.cmp.pack(fill="x")
+
+        mp = Card(f, app, "Live network map", "web",
+                  help="Like EtherApe: each bubble is a machine this computer is talking to right now.")
+        mp.grid(row=7, column=0, sticky="ew", pady=(0, GAP))
+        mp.note("The animated map needs a web view, so it lives in the web dashboard (the backup front end).")
+        app.web_button(mp.body, "Open the network map in the web dashboard")
+
+        tr = Card(f, app, "Browser address trace", "list",
+                  help="Every address the noise browser's tabs showed recently, newest first, and what made it change. "
+                       "If you ever see a tab flicker through addresses, this list shows what it was.")
+        tr.grid(row=8, column=0, sticky="ew", pady=(0, GAP))
+        self.trace_note = tr.note("")
+        self.trace = ttk.Treeview(tr.body, columns=("time", "what", "site"), show="headings", height=5, selectmode="none")
+        for c, t, w in (("time", "Time", 80), ("what", "What made it change", 200), ("site", "Site", 380)):
+            self.trace.heading(c, text=t)
+            self.trace.column(c, width=w, stretch=c == "site")
+        self.trace.pack(fill="x")
+
+        self._last = {"leak": None, "act": None, "obs": None, "trace": None}
+        self._fetching = {"leak": False, "act": False, "obs": False, "trace": False}
+        self._last_fetch = 0.0
+        self._checks_sig = ""
+        self.retheme()
+
+    def retheme(self) -> None:
+        self.sf.retheme()
+        for ch in list(self.charts.values()) + [self.timeline]:
             ch.set_palette(self.app.pal)
+        self._checks_sig = ""
         self._render_checks()
 
     # -- data
@@ -579,40 +788,34 @@ class ProofTab(Tab):
     def update_state(self, st: dict) -> None:
         if self.app.current_tab() is not self:
             return
-        import time
         leak_running = bool((self._last["leak"] or {}).get("running"))
         if leak_running or time.time() - self._last_fetch > self.REFRESH_S:
             self.fetch(force=False, leak_only=leak_running)
 
     def fetch(self, force: bool, leak_only: bool = False) -> None:
-        import time
         self._last_fetch = time.time()
         ctl = self.app.ctl
-        if not self._fetching["leak"]:
-            self._fetching["leak"] = True
-            self.app.work(lambda: ctl.leak_runner().state(), done=self._got_leak,
-                          error=lambda e: self._fail("leak"))
-        if not leak_only and not self._fetching["act"]:
-            self._fetching["act"] = True
-            self.app.work(ctl.activity_state, done=self._got_act, error=lambda e: self._fail("act"))
-
-    def _fail(self, which: str) -> None:
-        self._fetching[which] = False
+        jobs = [("leak", lambda: ctl.leak_runner().state(), self._got_leak)]
+        if not leak_only:
+            jobs += [("act", ctl.activity_state, self._got_act), ("obs", ctl.observe_state, self._got_obs),
+                     ("trace", ctl.browser_trace, self._got_trace)]
+        for key, fn, cb in jobs:
+            if not self._fetching[key]:
+                self._fetching[key] = True
+                self.app.work(fn, done=lambda d, key=key, cb=cb: (self._fetching.__setitem__(key, False), cb(d)),
+                              error=lambda e, key=key: self._fetching.__setitem__(key, False))
 
     def _got_leak(self, data: dict) -> None:
-        self._fetching["leak"] = False
         self._last["leak"] = data
         self._render_checks()
 
     def _got_act(self, data: dict) -> None:
-        self._fetching["act"] = False
         self._last["act"] = data
         self.charts["intended"].update_data(data["intended"])
         self.charts["session"].update_data(data["session"])
         self.charts["baseline"].update_data(data["baseline"])
-        self.verdicts["intended"].set(data["intended"].get("verdict", ""))
-        self.verdicts["session"].set(data["session"].get("verdict", ""))
-        self.verdicts["baseline"].set(data["baseline"].get("verdict", ""))
+        for k in ("intended", "session", "baseline"):
+            self.verdicts[k].set(data[k].get("verdict", ""))
         self.base_var.set(L.baseline_sources_text(data["baseline"]))
         har = data.get("har") or {}
         if har.get("present"):
@@ -620,18 +823,58 @@ class ProofTab(Tab):
                              f"{har['sites']} top sites. Only times and site names were kept.")
             self.forget_btn.state(["!disabled"])
         else:
-            self.har_var.set("No browser recording imported. In your browser's developer tools, open the Network "
-                             "tab, browse as usual, then Save all as HAR.")
+            self.har_var.set("No browser recording imported. In your browser's developer tools, open the Network tab, "
+                             "browse as usual, then Save all as HAR and import it here.")
             self.forget_btn.state(["disabled"])
+
+    def _got_obs(self, o: dict) -> None:
+        self.timeline.update_data(o.get("timeline") or [])
+        notes = [f"Noise is {'ON' if o.get('running') else 'OFF'} right now."]
+        if not o.get("enabled"):
+            notes.append("Watching is off. Turn on “Watch this computer's connection counts” in Settings.")
+        elif not o.get("available"):
+            notes.append("Connection counts are not available on this system.")
+        if o.get("limited"):
+            notes.append("This system only lets legalPrivacy see its own connections, so “your apps” stays empty.")
+        self.obs_note.configure(text=" ".join(notes))
+        for w in self.onoff.winfo_children():
+            w.destroy()
+        for r, row in enumerate(L.onoff_rows(o.get("onoff") or {})):
+            for c, txt in enumerate(row):
+                ttk.Label(self.onoff, text=txt, style="Card.TLabel" if r else "CardMuted.TLabel",
+                          anchor="w" if c == 0 else "e").grid(row=r, column=c, sticky="ew", padx=(0, 18), pady=1)
+        self.onoff.columnconfigure(0, weight=1)
+        for w in self.cmp.winfo_children():
+            w.destroy()
+        for line, tone, frac in L.compare_lines(o.get("compare") or {}):
+            row = ttk.Frame(self.cmp, style="CardBody.TFrame")
+            row.pack(fill="x", pady=2)
+            if frac is None:
+                ttk.Label(row, text=line, style="Tone%s.TLabel" % tone, wraplength=700, justify="left").pack(anchor="w")
+            else:
+                name, pct = line
+                ttk.Label(row, text=name, style="Card.TLabel", width=16).pack(side="left")
+                pb = ttk.Progressbar(row, maximum=100, value=frac * 100)
+                pb.pack(side="left", fill="x", expand=True, padx=8)
+                ttk.Label(row, text=pct, style="Card.TLabel", width=8, anchor="e").pack(side="left")
+
+    def _got_trace(self, d: dict) -> None:
+        items = d.get("items") or []
+        self.trace_note.configure(text=(
+            "The noise browser is not running. Start the noise with a real browser to see its tabs here." if not d.get("running")
+            else f"{len(items)} recent address changes; {d.get('blocked', 0)} jump(s) to other sites were blocked."))
+        self.trace.delete(*self.trace.get_children())
+        for it in items[:60]:
+            self.trace.insert("", "end", values=L.trace_row(it))
 
     def _render_checks(self) -> None:
         data = self._last["leak"]
         if not data:
             return
         sig = json.dumps(data, sort_keys=True, default=str) + self.app.theme_name
-        if sig == self._checks_json:
+        if sig == self._checks_sig:
             return
-        self._checks_json = sig
+        self._checks_sig = sig
         p = self.app.pal
         for w in self.checks.winfo_children():
             w.destroy()
@@ -640,26 +883,23 @@ class ProofTab(Tab):
                           + ("  (not tested over the network yet)" if data.get("preview") else ""))
         self.run_btn.state(["disabled"] if data.get("running") else ["!disabled"])
         if data.get("error"):
-            ttk.Label(self.checks, text="The checks could not run: " + data["error"], foreground=p["bad"]).grid(
-                row=0, column=0, sticky="w")
-        labels = []
+            ttk.Label(self.checks, text="The checks could not run: " + data["error"], style="Tonebad.TLabel").grid(row=0, column=0, sticky="w")
         for i, c in enumerate(data.get("checks") or []):
             title, want, saw, hint = L.check_lines(c)
-            box = ttk.Frame(self.checks, style="Card.TFrame", padding=8)
-            box.grid(row=i, column=0, sticky="ew", pady=2)
+            tone = {"ok": "ok", "bad": "bad", "info": "info"}.get(c.get("status"), "off")
+            box = ttk.Frame(self.checks, style="Tone.TFrame", padding=(12, 8))
+            box.grid(row=i, column=0, sticky="ew", pady=3)
             box.columnconfigure(0, weight=1)
-            tone = {"ok": p["ok"], "bad": p["bad"], "info": p["info"]}.get(c.get("status"), p["muted"])
-            ttk.Label(box, text=title, style="Card.TLabel", foreground=tone, font=self.app.bold_font).grid(
-                row=0, column=0, sticky="w")
-            for r, (txt, st) in enumerate(((want, "Card.TLabel"), (saw, "Card.TLabel"), (hint, "CardMuted.TLabel")), 1):
+            lab = ttk.Label(box, text=title, style=f"Pill{tone}.TLabel")
+            lab.grid(row=0, column=0, sticky="w")
+            wl = []
+            for r, (txt, fg) in enumerate(((want, p["fg"]), (saw, p["fg"]), (hint, p["muted"])), 1):
                 if txt:
-                    lb = ttk.Label(box, text=txt, style=st, justify="left")
-                    lb.grid(row=r, column=0, sticky="w")
-                    labels.append(lb)
-        self.wrap_labels.extend(labels)
-        del self.wrap_labels[:-80]
-        _wrap_to(self.sf.inner, self.wrap_labels, 70)
-        self.sf.inner.event_generate("<Configure>")
+                    lb = tk.Label(box, text=txt, fg=fg, bg=p["code"], justify="left", anchor="w", font=self.app.fonts["base"])
+                    lb.grid(row=r, column=0, sticky="ew", pady=(3 if r == 1 else 0, 0))
+                    wl.append(lb)
+            autowrap(box, box, 24)
+            box.bind("<Configure>", lambda e, wl=wl: [x.configure(wraplength=max(200, e.width - 30)) for x in wl])
 
     # -- actions
     def run_checks(self) -> None:
@@ -696,11 +936,7 @@ class ProofTab(Tab):
         self.app.work(go, done=done, error=err)
 
     def forget_har(self) -> None:
-        if not messagebox.askokcancel("Forget recording", "Delete the imported recording's data?",
-                                      parent=self.app.root):
+        if not messagebox.askokcancel("Forget recording", "Delete the imported recording's data?", parent=self.app.root):
             return
         self.app.work(lambda: self.app.ctl.har_forget("all"), done=lambda _r: self.fetch(True),
                       error=lambda e: self.app.error("Forget", e))
-
-
-TABS = [DashboardTab, ActivityTab, LogTab, TorTab, SettingsTab, ProofTab]
