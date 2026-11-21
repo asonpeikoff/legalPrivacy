@@ -2,6 +2,7 @@
 
 ## Unreleased
 - **Native desktop app now has everything the web dashboard has** (and a more polished look): the traffic mix and activity mix as stacked bars whose sliders always add up to 100%, rate and randomness, DNS resolver table with per-server verdicts, user agent, extras, persona / interests / household, search-engine weights, realism and query sources, accounts, Tor extras (seeds editor, bridges, Get bridges, circuits, log), My List, ML, Tools, Health and Help tabs, plus the Proof tab's timeline, comparison and address trace. Card layout, drawn icons, primary/secondary/danger buttons, tooltips, empty states, light and dark themes in the web dashboard's colours, high-DPI aware. Only the animated network map is left to the web dashboard (with a button to open it).
+- **Data scientist persona now mixes in everyday life** (about 15% of its visits and searches): Gmail, Outlook, YouTube, maps, a bit of shopping and news, and ordinary searches such as "coffee shop near me", on top of the data-science sites.
 - More attribution: the README, the dashboard Help tab, the native app (Help menu and About), the package metadata and the release notes now credit and link the blog we are named after, *Legalizing Privacy* by Amy Peikoff.
 
 ## v2.12.0
