@@ -620,10 +620,8 @@ class TorTab(Tab):
 
     def values(self) -> dict:
         v = super().values()
-        if not v.get("tor_dns"):                      # sharing needs Tor DNS on, and a chosen private address
-            v["tor_dns_lan"] = False
-        elif v.get("tor_dns_lan") and not v.get("tor_dns_addr"):
-            v["tor_dns_lan"] = False
+        if not v.get("tor_dns") or (v.get("tor_dns_lan") and not v.get("tor_dns_addr")):
+            v["tor_dns_lan"] = False                  # sharing needs Tor DNS on, and a chosen private address
         return v
 
     def _dns_layout(self) -> None:

@@ -154,7 +154,7 @@ def install_scale_styles(root: tk.Misc, s: ttk.Style, p: dict) -> None:
         _scale_ids[0] += 1
         uid = f"lp{_scale_ids[0]}"
 
-        def handle(dot: float, ring: bool = False, dim: bool = False):
+        def handle(dot: float, ring: bool = False, dim: bool = False, bg: str = bg):
             acc = p["muted"] if dim else p["accent"]
             layers = []
             if ring:
@@ -300,7 +300,10 @@ def apply_theme(root: tk.Misc, s: ttk.Style, p: dict, fonts: dict) -> None:
         s.configure(f"Tone{tone}.TLabel", background=p["panel"], foreground=fg)
     # buttons: secondary (default), primary, danger, ghost
     fx = dpi_factor(root)
-    px = lambda n: int(round(n * fx))                            # paddings follow the screen density
+
+    def px(n):                                                   # paddings follow the screen density
+        return int(round(n * fx))
+
     fill, fill_hi, fill_lo = p["code"], _mix(p["code"], p["fg"], .07), _mix(p["code"], p["fg"], .14)
     s.configure("TButton", background=fill, foreground=p["fg"], padding=(px(12), px(6)), borderwidth=1, width=0,
                 relief="flat", bordercolor=p["border"], lightcolor=fill, darkcolor=fill, focuscolor=fill,
@@ -738,6 +741,6 @@ class MixBar(ttk.Frame):
         self._paint()
 
     def retheme(self) -> None:
-        for k, d in enumerate(self.dots):
+        for d in self.dots:
             d.configure(bg=self.app.pal["panel"])
         self._draw()

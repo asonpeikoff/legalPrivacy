@@ -122,7 +122,7 @@ class RelayConfig:
     acknowledged: bool = False        # the checklist was completed once (needed for autostart)
 
     def validate(self) -> None:
-        from .relay import RelayConfigError, RelaySpec
+        from .relay import RelayConfigError
         if self.mode not in ("middle", "bridge"):
             raise ConfigError(
                 "contribute.relay.mode must be 'middle' or 'bridge'; "
