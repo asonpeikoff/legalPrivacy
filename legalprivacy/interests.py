@@ -80,6 +80,16 @@ CATEGORIES: dict[str, dict] = {
                 "queries": ["{t} for beginners", "{t} routine", "how often should i do {t}", "{t} benefits"],
                 "topics": ["running", "stretching", "yoga", "cycling", "strength training", "swimming",
                            "walking", "pilates"]},
+    # Everyday life: what almost everyone also does. Mixed into the Data scientist persona so it isn't all data science.
+    "Everyday": {"sites": {"mail.google.com": 12, "outlook.live.com": 8, "outlook.office.com": 3, "www.youtube.com": 8,
+                           "maps.google.com": 5, "en.wikipedia.org": 5, "www.amazon.com": 5, "calendar.google.com": 3,
+                           "drive.google.com": 3, "news.google.com": 3, "www.weather.com": 3, "www.reddit.com": 3,
+                           "www.imdb.com": 2, "www.bbc.com": 2, "www.walmart.com": 2, "www.target.com": 1},
+                 "queries": ["{t} near me", "best {t}", "{t} reviews", "{t} price", "how to choose {t}",
+                             "what time does {t} open", "weather this weekend", "is {t} worth it"],
+                 "topics": ["pizza", "coffee shop", "running shoes", "headphones", "laptop deals", "movie times",
+                            "birthday gift ideas", "hair salon", "grocery delivery", "bike shop", "train schedule",
+                            "air fryer", "backpack", "thai food", "phone case", "board games"]},
     "Travel": {"sites": ["tripadvisor.com", "lonelyplanet.com", "booking.com", "kayak.com", "skyscanner.com",
                          "rick-steves.com", "cntraveler.com", "nomadicmatt.com"],
                "queries": ["things to do in {t}", "best time to visit {t}", "{t} itinerary", "cheap flights to {t}"],
@@ -176,7 +186,7 @@ class Interests:
 # A persona is who the noise mostly looks like: a fixed mix of themes. It's followed
 # "mostly" (Settings sets how much); the rest of the noise stays varied.
 PERSONAS: dict[str, dict[str, float]] = {
-    "Data scientist": {"Data science": 1.0},
+    "Data scientist": {"Data science": 0.85, "Everyday": 0.15},     # mostly data science, plus everyday life
     "Developer": {"Technology": 0.6, "Data science": 0.2, "Science": 0.1, "Books": 0.1},
     "Sports fan": {"Sports": 0.7, "Fitness": 0.15, "Movies & TV": 0.15},
     "Student": {"Science": 0.3, "Books": 0.25, "Technology": 0.2, "Movies & TV": 0.15, "Personal finance": 0.1},
