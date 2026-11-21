@@ -660,7 +660,11 @@ class HelpTab(Tab):
                                     "Tor, which it downloads, checks and starts for you. Many .onion sites are offline at any "
                                     "moment; those are skipped for a while, which is normal."),
                 ("Contribute to Tor.", "“legalprivacy relay gen” writes a middle-relay or bridge configuration; it never runs "
-                                       "an exit."),
+                                       "an exit. The Tor tab has two optional cards, both off by default: Tor DNS (Tor answers "
+                                       "A, AAAA and PTR lookups on a local port; exit relays resolve the names, so it is slower "
+                                       "and is a deliberate, narrow use of exits for DNS only) and Contribute to Tor: run a "
+                                       "relay (a middle relay or bridge as a separate Tor program; start with Practice mode, "
+                                       "which publishes nothing). A relay is not an exit and does not provide DNS."),
                 ("Antivirus (optional).", "The Security tab manages the ClamAV you installed yourself, offline-first. Only "
                                           "freshclam, the signature updater, ever contacts the internet, and only when you press "
                                           "Update and confirm. Scans use clamscan with this app's own signature folder, with "

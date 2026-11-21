@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- **Tor DNS (optional, off by default).** The managed Tor can answer DNS on a local port (`DNSPort`, loopback only unless you pick one private LAN address and accept the warning). A Test button sends a real lookup through it; the Proof tab gains a "Tor DNS answers" check while it is on. Only A, AAAA and PTR lookups; names are resolved by exit relays, and the Tor lane for noise stays onion-only.
+- **Run a relay (optional, off by default).** A Tor-tab screen to run a middle relay or bridge as a separate Tor process with its own data folder: checklist before a public start, read-only torrc, speed limit with a monthly estimate, live log and status, and a "Practice mode (not published)" that listens on loopback only. Never an exit; never starts by itself; stopped on quit and on Panic (hard deletes its data). The relay generator now also writes `ExitRelay 0` and rejects non-ASCII nicknames.
+- Web dashboard and native app have the same two cards.
 - **Optional antivirus (ClamAV), offline-first** (new Security tab in the web dashboard and the native app). Manages your own ClamAV with an app-owned signature folder; `freshclam` runs only from a confirmed "Update signatures" button; offline import with verification; scans with progress, Stop, results table, Copy path and explicit reversible Quarantine; on Linux the scanner runs with its network removed (`unshare`/`firejail`), on every OS its process tree is watched for any connection (a hit marks the scan NOT OFFLINE and kills it); new "Antivirus scanner stays offline" row on the Proof tab; EICAR self-test built at runtime; Panic (hard) clears quarantine and scan results. No new dependencies.
 
 ## v2.14.0

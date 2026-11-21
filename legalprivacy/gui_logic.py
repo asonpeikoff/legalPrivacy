@@ -182,6 +182,14 @@ def hits_per_minute(hits: list[dict], now: float, minutes: int = 30) -> list[int
     return out
 
 
+def relay_estimate_text(mb: float) -> str:
+    if not mb or mb <= 0:
+        return ""
+    gb = mb * 86400 * 30 / 1000
+    return (f"At full speed that is up to about {gb:,.0f} GB a month each way ({gb * 2:,.0f} GB in total). "
+            "A relay usually uses much less. Tor needs at least about 0.08 MBytes per second.")
+
+
 def tor_test_text(t: dict | None) -> str:
     if not t:
         return ""

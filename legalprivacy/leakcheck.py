@@ -100,6 +100,25 @@ def build_checks(f: dict[str, Any]) -> list[dict]:
                               "Different address, marked as Tor", saw, "ok" if ok else "bad",
                               "" if ok else "Traffic meant for Tor is not coming out of Tor. Restart Tor from the Tor tab."))
 
+    # 5b. Tor DNS answers (only when the optional Tor DNS switch is on)
+    td = f.get("tordns")
+    if td is not None:
+        want = "Answers through Tor"
+        title = "Tor DNS answers"
+        res = td.get("result")
+        if not td.get("ready"):
+            out.append(_c("tordns", title, want, "Tor isn't ready yet", "unknown",
+                          "Start Tor on the Tor tab and wait for 100%, then press “Run checks”."))
+        elif res is None:
+            out.append(_c("tordns", title, want, "Not tested yet", "unknown", "Press “Run checks”."))
+        elif res.get("ok"):
+            out.append(_c("tordns", title, want,
+                          f"{res.get('name')} answered {', '.join(res.get('answers') or [])} in {res.get('ms')} ms", "ok"))
+        else:
+            out.append(_c("tordns", title, want, res.get("error") or "No answer", "bad",
+                          "Open the Tor tab, check Tor DNS and use its Test button. Tor resolves names through its "
+                          "exit relays, so the first answer can take several seconds."))
+
     # 6. noise browser looks like yours
     if f.get("real_browser") is not None:
         out.append(_c("browser", "Noise runs in a real browser", "Real browser",
@@ -172,6 +191,13 @@ def gather(ctl, with_network: bool = True) -> dict:
         f["tor"] = {"ready": bool(tm.ready), "state": tm.state, "pct": getattr(tm, "bootstrap_pct", 0)}
         if tm.ready and with_network:
             f["exit"] = _exit_test(tm)
+    dns_info = ctl.tor_manager().dns_info() if cfg.dns_port else None
+    if dns_info and dns_info["on"] and dns_info["managed"]:
+        res = None
+        if dns_info["ready"] and with_network:
+            from . import tordns
+            res = tordns.probe(dns_info["address"], dns_info["port"], timeout=20)
+        f["tordns"] = {"ready": dns_info["ready"], "result": res}
     bi = ctl.browser_info()
     f["real_browser"] = bool(bi.get("active"))
     ident = ctl.profile.identity

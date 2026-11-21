@@ -10,6 +10,7 @@ import copy
 import hashlib
 import json
 import platform
+import re
 import random
 import socket
 import sys
@@ -78,6 +79,8 @@ class Controller:
         self._hist_thread: threading.Thread | None = None
         self.observer.baseline_fn = self._baseline
         self._feed_timer_started = False
+        from .relayrun import RelayManager
+        self.relay = RelayManager(self.log)        # optional relay: its own Tor process, never started automatically
         from .accounts import AccountsManager
         self.accounts = AccountsManager(          # optional signed-in accounts; clearnet only, never Tor
             self.log, config=lambda: self.profile.accounts,
@@ -179,13 +182,16 @@ class Controller:
         mode = "managed" if cfg.manage else "external"
         if self.tor is None or self.tor.mode != mode or self.tor.ext_socks != cfg.socks \
                 or self.tor.bridges != [b.strip() for b in cfg.bridges if b.strip()] \
-                or self.tor.configured_bridge_mode != cfg.bridge_mode or self.tor.bridge_auto != cfg.bridge_auto:
+                or self.tor.configured_bridge_mode != cfg.bridge_mode or self.tor.bridge_auto != cfg.bridge_auto \
+                or (self.tor.dns_port_cfg, self.tor.dns_lan, self.tor.dns_lan_addr) != (
+                    cfg.dns_port, cfg.dns_lan, cfg.dns_lan_addr):
             if self.tor and self.tor.state not in ("stopped",):
                 self.tor.stop()
             self.tor = TorManager(self.log, mode=mode, socks=cfg.socks, control=cfg.control,
                                   control_password=cfg.control_password,
                                   bridges=cfg.bridges, auto_install=cfg.auto_install,
-                                  bridge_mode=cfg.bridge_mode, bridge_auto=cfg.bridge_auto)
+                                  bridge_mode=cfg.bridge_mode, bridge_auto=cfg.bridge_auto,
+                                  dns_port=cfg.dns_port, dns_lan=cfg.dns_lan, dns_lan_addr=cfg.dns_lan_addr)
         return self.tor
 
     # ── DNS resolver table: health + verification ──────────────────────────
@@ -636,7 +642,122 @@ class Controller:
         d["enabled"] = self._tor_cfg().enabled
         d["circuits"] = tm.circuits()
         d["selftest"] = getattr(self, "tor_test", None)
+        d["dns_test"] = getattr(self, "_dns_test", None)
         return d
+
+    # ── Tor DNS (optional) ──────────────────────────────────────────────────
+    def tor_dns_addresses(self) -> dict:
+        """This computer's private addresses, for the 'share on my network' picker (nothing is sent)."""
+        from . import tordns
+        return {"addresses": tordns.local_private_addresses()}
+
+    def tor_dns_test(self) -> dict:
+        """User-initiated: one real A query through Tor's DNSPort for a neutral name."""
+        from . import tordns
+        info = self.tor_manager().dns_info()
+        if not info["on"]:
+            res = {"ok": False, "error": "Tor DNS is off. Switch it on and restart Tor first."}
+        elif not info["managed"]:
+            res = {"ok": False, "error": "Tor DNS works only with the Tor that legalPrivacy manages."}
+        elif not info["ready"]:
+            res = {"ok": False, "error": "Tor isn't ready yet. Start Tor and wait for 100%, then try again."}
+        else:
+            res = tordns.probe(info["address"], info["port"])
+        res["ts"] = time.time()
+        self._dns_test = res
+        self.log.add("info" if res["ok"] else "warn", "tor",
+                     "Tor DNS test: " + (f"{res['name']} -> {', '.join(res['answers'])} in {res['ms']} ms"
+                                         if res["ok"] else res["error"]))
+        return res
+
+    # ── Relay (optional; a separate Tor process; never started automatically) ──
+    RELAY_CHECKLIST = ("address", "always_on", "bandwidth", "not_exit", "public_ip")
+
+    @staticmethod
+    def _mb_from_rate(rate: str) -> float | None:
+        m = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?) ?MBytes", rate or "")
+        return float(m.group(1)) if m else None
+
+    def relay_preview(self, body: dict) -> dict:
+        """The torrc these (unsaved) settings would produce, or the plain reason they are not valid. Saves nothing."""
+        from .config import RelayConfig
+        from .relay import generate_torrc
+        cur = self.profile.relay
+        try:
+            mb = float(body.get("bandwidth_mb", self._mb_from_rate(cur.bandwidth_rate) or 1.0))
+            if not (0.1 <= mb <= 1000):
+                raise ConfigError("bandwidth cap must be between 0.1 and 1000 MBytes per second")
+            rc = RelayConfig(mode=str(body.get("mode", cur.mode)), nickname=str(body.get("nickname", cur.nickname)),
+                             contact=str(body.get("contact") or "").strip() or None,
+                             bandwidth_rate=f"{mb:g} MBytes", or_port=int(body.get("or_port", cur.or_port)),
+                             dir_port=0, practice=body.get("practice", cur.practice) is True)
+            rc.validate()
+            return {"torrc": generate_torrc(rc.spec(), data_dir="(the relay's own data folder)"), "error": None}
+        except (ConfigError, TypeError, ValueError) as exc:
+            return {"torrc": "", "error": str(exc)}
+
+    def relay_state(self) -> dict:
+        from .relayrun import monthly_estimate
+        rc = self.profile.relay
+        mb = self._mb_from_rate(rc.bandwidth_rate)
+        if mb is None:                               # a rate saved by an older version, e.g. 5Mbit
+            mb = 1.0
+        spec = rc.spec()
+        spec.dir_port = 0
+        from .relay import generate_torrc
+        torrc = self.relay.torrc if self.relay.running else generate_torrc(spec, data_dir="(the relay's own data folder)")
+        return {
+            "settings": {"mode": rc.mode, "nickname": rc.nickname, "contact": rc.contact or "",
+                         "bandwidth_mb": mb, "or_port": rc.or_port, "practice": rc.practice,
+                         "autostart": rc.autostart, "acknowledged": rc.acknowledged},
+            "status": self.relay.snapshot(), "torrc": torrc,
+            "tor_found": bool(find_tor_binary()), "estimate": monthly_estimate(mb),
+            "checklist": list(self.RELAY_CHECKLIST), "platform": sys.platform,
+        }
+
+    def relay_start(self, body: dict) -> dict:
+        """Save the relay settings and start the relay. A public relay needs every checklist item ticked."""
+        from .relay import RelayConfigError
+        cur = self.profile.relay
+        try:
+            mb = float(body.get("bandwidth_mb", self._mb_from_rate(cur.bandwidth_rate) or 1.0))
+            or_port = int(body.get("or_port", cur.or_port))
+        except (TypeError, ValueError):
+            raise ConfigError("bandwidth and port must be numbers") from None
+        if not (0.1 <= mb <= 1000):
+            raise ConfigError("bandwidth cap must be between 0.1 and 1000 MBytes per second")
+        practice = body.get("practice", cur.practice) is True
+        ticked = {str(k) for k, v in (body.get("checklist") or {}).items() if v is True} \
+            if isinstance(body.get("checklist"), dict) else set()
+        if not practice and not set(self.RELAY_CHECKLIST) <= ticked:
+            raise ConfigError("Tick every item on the checklist before starting a public relay, "
+                              "or use practice mode.")
+        raw = {"mode": str(body.get("mode", cur.mode)), "nickname": str(body.get("nickname", cur.nickname)),
+               "contact": str(body.get("contact") or "").strip() or None,
+               "bandwidth_rate": f"{mb:g} MBytes", "or_port": or_port, "dir_port": 0, "practice": practice,
+               "acknowledged": cur.acknowledged or not practice}
+        if "autostart" in body:
+            raw["autostart"] = body["autostart"] is True
+        self.apply_config({"contribute": {"relay": raw}})      # validates with relay.RelaySpec; saved on success
+        try:
+            self.relay.start(self.profile.relay.spec())
+        except RelayConfigError as exc:
+            raise ConfigError(str(exc)) from exc
+        return self.relay_state()
+
+    def relay_stop(self) -> dict:
+        self.relay.stop()
+        return self.relay_state()
+
+    def relay_autostart(self) -> None:
+        """Called once when the app opens. Starts the relay only if the person chose 'start with the app'
+        (and, for a public relay, completed the checklist before)."""
+        rc = self.profile.relay
+        if rc.autostart and (rc.practice or rc.acknowledged):
+            try:
+                self.relay.start(rc.spec())
+            except Exception as exc:
+                self.log.warn("relay", f"The relay did not start with the app: {exc}")
 
     # ── realism helpers ─────────────────────────────────────────────────────
     def browser_info(self) -> dict:
@@ -885,6 +1006,9 @@ class Controller:
             done.append("noise stopped")
         else:
             done.append("noise was already stopped")
+        if self.relay.running:
+            self.relay.stop()
+            done.append("relay stopped")
         if level in ("medium", "hard"):
             self.log.clear()
             done.append("log cleared")
@@ -916,6 +1040,10 @@ class Controller:
             except Exception:
                 pass
             done.append("Proof data and log files deleted")
+            if self.relay.wipe_data():            # only after the relay is stopped (above)
+                done.append("relay data deleted (a new relay would get a new identity)")
+            else:
+                done.append("relay data kept because the relay would not stop")
         self.log.info("app", f"Panic ({level}): " + ", ".join(done) + ".")
         return {"level": level, "done": done}
 
@@ -998,6 +1126,8 @@ class Controller:
         self.log.info("app", "Stopped.")
         if stop_tor and self.tor:
             self.tor.stop()
+        if stop_tor:
+            self.relay.stop()                     # quitting the app also stops the relay
         wipe_old_log_files()                      # the log itself lives in memory and ends with the app
 
     def pause(self, paused: bool) -> None:

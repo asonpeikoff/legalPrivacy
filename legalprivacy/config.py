@@ -81,6 +81,9 @@ class TransportConfig:
     bridges: list[str] = field(default_factory=list)       # bridge lines for censored networks
     bridge_mode: str = "off"          # off | obfs4 | snowflake | meek (built into the Tor bundle) | custom (yours)
     bridge_auto: bool = True          # if Tor can't connect directly, try the built-in bridges by itself
+    dns_port: int = 0                 # Tor DNS (optional): 0 = off, else the preferred local UDP port for Tor's DNSPort
+    dns_lan: bool = False             # share Tor DNS on one private network address (off; loopback only by default)
+    dns_lan_addr: str = ""            # which of this computer's private addresses, when dns_lan is on
 
     def validate(self, name: str) -> None:
         if self.browser not in ("auto", "on", "off"):
@@ -97,6 +100,12 @@ class TransportConfig:
                                   "'obfs4 192.0.2.1:443 FINGERPRINT cert=… iat-mode=0'); paste one bridge per line")
         if self.identities_per_circuit < 1:
             raise ConfigError(f"transport '{name}': identities_per_circuit >= 1")
+        if name == "tor":
+            from .tordns import TorDnsError, validate_dns
+            try:
+                validate_dns(self.dns_port, self.dns_lan, self.dns_lan_addr)
+            except TorDnsError as exc:
+                raise ConfigError(str(exc)) from exc
 
 
 @dataclass
@@ -108,13 +117,27 @@ class RelayConfig:
     bandwidth_rate: str = "5Mbit"
     or_port: int = 9001
     dir_port: int = 9030
+    practice: bool = True             # practice mode: loopback only, nothing published (the safe first run)
+    autostart: bool = False           # start the relay with the app: only after an explicit choice
+    acknowledged: bool = False        # the checklist was completed once (needed for autostart)
 
     def validate(self) -> None:
+        from .relay import RelayConfigError, RelaySpec
         if self.mode not in ("middle", "bridge"):
             raise ConfigError(
                 "contribute.relay.mode must be 'middle' or 'bridge'; "
                 "legalPrivacy v2 never runs an exit node"
             )
+        try:             # one set of rules (including the line-break checks) for every way a torrc is made
+            self.spec().validate()
+        except RelayConfigError as exc:
+            raise ConfigError(str(exc)) from exc
+
+    def spec(self):
+        from .relay import RelaySpec
+        return RelaySpec(mode=self.mode, nickname=self.nickname, contact=self.contact or None,
+                         bandwidth_rate=self.bandwidth_rate, or_port=self.or_port,
+                         dir_port=self.dir_port, practice=self.practice)
 
 
 RECOMMENDED_RESOLVERS = [
@@ -439,12 +462,28 @@ def apply_overrides(profile: Profile, raw: dict[str, Any]) -> Profile:
                 # goes back to hidden; a visible window someone chose stays visible.
                 raw_tr["browser_window"] = "visible" if raw_tr.get("browser_visible") else "hidden"
             merged = profile.transports[name].__dict__ | raw_tr
+            if name == "tor":
+                try:
+                    merged["dns_port"] = int(merged.get("dns_port") or 0)
+                except (TypeError, ValueError):
+                    raise ConfigError("Tor DNS port must be a whole number") from None
+                merged["dns_lan"] = merged.get("dns_lan") is True
+                merged["dns_lan_addr"] = str(merged.get("dns_lan_addr") or "").strip()
             t = profile.transports[name] = TransportConfig(
                 **{k: v for k, v in merged.items() if k in TransportConfig.__dataclass_fields__})
             t.browser_visible, t.browser_offscreen = t.browser_window == "visible", t.browser_window == "offscreen"
     contribute = p.get("contribute") or {}
     if "relay" in contribute:
         merged = profile.relay.__dict__ | contribute["relay"]
+        try:
+            for k in ("or_port", "dir_port"):
+                merged[k] = int(merged[k])
+        except (TypeError, ValueError):
+            raise ConfigError("relay ports must be whole numbers") from None
+        for k in ("enabled", "practice", "autostart", "acknowledged"):
+            merged[k] = merged[k] is True
+        merged["nickname"], merged["bandwidth_rate"] = str(merged["nickname"]), str(merged["bandwidth_rate"])
+        merged["contact"] = str(merged["contact"]) if merged.get("contact") else None
         profile.relay = RelayConfig(**{k: v for k, v in merged.items() if k in RelayConfig.__dataclass_fields__})
     if p.get("queries"):
         merged = profile.queries.__dict__ | p["queries"]
