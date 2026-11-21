@@ -25,6 +25,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from .config import valid_bridge_line
 from .events import EventLog
 from .paths import tor_dir
 from .torcontrol import TorControl, TorControlError
@@ -337,7 +338,7 @@ class TorManager:
         creation = 0x08000000 if _IS_WIN else 0     # CREATE_NO_WINDOW
         self._proc = subprocess.Popen(
             [self.binary, "-f", str(torrc)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, bufsize=1, env=env, creationflags=creation)
+            text=True, encoding="utf-8", errors="replace", bufsize=1, env=env, creationflags=creation)
         self.pid = self._proc.pid
         self.started_at = time.time()
         self.state = "bootstrapping"
@@ -365,10 +366,12 @@ class TorManager:
         for name, key in (("geoip", "GeoIPFile"), ("geoip6", "GeoIPv6File")):
             if (bundle_data / name).exists():
                 lines.append(f"{key} {_torrc_quote(bundle_data / name)}")
-        bridges = self.effective_bridges()
+        bridges = [b for b in self.effective_bridges() if valid_bridge_line(b)]   # one line each, never a setting
+        if len(bridges) != len(self.effective_bridges()):
+            self.log.warn("tor", "Ignored bridge line(s) that were not in the usual bridge format.")
         if bridges:
             lines.append("UseBridges 1")
-            for transport in sorted({b.split()[0] for b in bridges if not b.split()[0][0].isdigit()}):
+            for transport in sorted({b.split()[0] for b in bridges if re.match(r"[A-Za-z_]", b)}):
                 line = self._pt_line(transport)
                 if line:
                     lines.append(line)
@@ -481,6 +484,7 @@ class TorManager:
 
     def _monitor_loop(self) -> None:
         ctrl: TorControl | None = None
+        last_err = ""
         while not self._stop_evt.is_set() and self.state not in ("stopped", "error"):
             try:
                 if ctrl is None:
@@ -498,8 +502,13 @@ class TorManager:
                 ctrl = None
                 if self.mode == "external" or self.state == "ready":
                     self.stats.setdefault("control_error", str(exc))
-            except Exception:
+            except Exception as exc:               # a bug or odd reply: keep monitoring, but say so (once per kind)
+                if ctrl:
+                    ctrl.close()
                 ctrl = None
+                if repr(exc) != last_err:
+                    last_err = repr(exc)
+                    self.log.debug("tor", f"Tor monitor error: {last_err}")
             self._stop_evt.wait(2.0)
         if ctrl:
             ctrl.close()
@@ -607,8 +616,8 @@ def _safe_extract(archive: Path, target: Path) -> None:
             dest = (target / m.name).resolve()
             if root not in dest.parents and dest != root:
                 raise RuntimeError(f"unsafe path in archive: {m.name}")
-            if m.issym() or m.islnk():
-                continue                       # bundles don't need links; skip for safety
+            if not (m.isreg() or m.isdir()):
+                continue                       # no links, devices or pipes: the bundle needs none of them
             tf.extract(m, target)
 
 

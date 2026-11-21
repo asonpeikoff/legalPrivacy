@@ -503,6 +503,8 @@ def _make_dpi_aware() -> None:
 
 
 def main(profile_path: str | None = None, port: int | None = None) -> int:
+    from .paths import ensure_utf8_console
+    ensure_utf8_console()
     from .webui import run_ui, running_instance, start_services
     try:
         import tkinter as tk

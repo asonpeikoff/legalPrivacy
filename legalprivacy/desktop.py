@@ -16,6 +16,8 @@ TITLE = "legalPrivacy"
 
 
 def main(profile_path: str | None = None, port: int | None = None) -> int:
+    from .paths import ensure_utf8_console
+    ensure_utf8_console()
     try:
         import webview
     except ImportError:

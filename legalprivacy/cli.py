@@ -273,6 +273,8 @@ def cmd_relay(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from .paths import ensure_utf8_console
+    ensure_utf8_console()
     parser = argparse.ArgumentParser(prog="legalprivacy", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 

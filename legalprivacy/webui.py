@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
+import os
 import secrets
+import sys
 import threading
 import urllib.parse
 import webbrowser
@@ -33,6 +35,28 @@ def _index_html() -> bytes:
     return _INDEX
 
 
+def _public_error(exc: Exception) -> str:
+    """What the browser may be told about a failure: our own deliberate messages, never raw internals
+    (file paths, library text). The details go to the Logs tab instead."""
+    if isinstance(exc, (RuntimeError, ConfigError)):
+        return str(exc)[:300]
+    return f"Unexpected {type(exc).__name__}; the details are in the Logs tab."
+
+
+def _qint(q: dict, key: str, default: str) -> int:
+    try:
+        return int((q.get(key) or [default])[0])
+    except ValueError:
+        raise ConfigError(f"'{key}' must be a whole number") from None
+
+
+def _qfloat(q: dict, key: str, default: str) -> float:
+    try:
+        return float((q.get(key) or [default])[0])
+    except ValueError:
+        raise ConfigError(f"'{key}' must be a number") from None
+
+
 def _load_token() -> str:
     """Per-install dashboard token, kept between launches so a bookmarked link keeps working."""
     from .paths import app_dir
@@ -45,11 +69,23 @@ def _load_token() -> str:
         pass
     tok = secrets.token_urlsafe(18)
     try:
-        p.write_text(tok, encoding="utf-8")
-        p.chmod(0o600)
+        fd = os.open(str(p), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)     # private from the first byte
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(tok)
+        p.chmod(0o600)                       # a pre-existing file keeps its old mode with O_CREAT
     except OSError:
         pass
     return tok
+
+
+class _Server(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request, client_address) -> None:
+        """A browser tab closing mid-response is normal, not an error worth a traceback on the console."""
+        if isinstance(sys.exc_info()[1], (ConnectionError, TimeoutError)):
+            return
+        super().handle_error(request, client_address)
 
 
 class UIServer:
@@ -67,8 +103,7 @@ class UIServer:
             try:
                 # LEGALPRIVACY_BIND=0.0.0.0 is only for running inside a container, whose port is then
                 # published to 127.0.0.1 on the host (see docs/DOCKER.md). Default: this computer only.
-                srv = ThreadingHTTPServer((getenv("BIND", "127.0.0.1"), p), BaseHTTPRequestHandler)
-                srv.daemon_threads = True
+                srv = _Server((getenv("BIND", "127.0.0.1"), p), BaseHTTPRequestHandler)
                 return srv
             except OSError:
                 continue
@@ -96,6 +131,7 @@ class UIServer:
 
         class H(BaseHTTPRequestHandler):
             server_version = "legalPrivacy"
+            timeout = 120                    # a stalled or half-open client must not hold a thread forever
 
             def log_message(self, *a):       # silence default stderr logging
                 pass
@@ -107,7 +143,7 @@ class UIServer:
 
             def _auth(self, query: dict) -> bool:
                 tok = self.headers.get("X-Token") or (query.get("t") or [""])[0]
-                return secrets.compare_digest(tok, srv.token)
+                return secrets.compare_digest(tok.encode("utf-8", "replace"), srv.token.encode("utf-8"))
 
             def _send(self, code: int, body: bytes, ctype: str = "application/json",
                       extra: dict | None = None) -> None:
@@ -121,6 +157,10 @@ class UIServer:
                     self.send_header(k, v)
                 self.end_headers()
                 self.wfile.write(body)
+
+            def _fail(self, exc: Exception) -> None:
+                srv.ctl.log.error("ui", f"{self.command} {self.path.split('?')[0]} failed: {type(exc).__name__}: {exc}")
+                self._json({"error": _public_error(exc)}, 500)
 
             def _json(self, obj, code: int = 200) -> None:
                 self._send(code, json.dumps(obj).encode())
@@ -138,7 +178,8 @@ class UIServer:
                     return self._send(200, _index_html(), "text/html; charset=utf-8",
                                       {"Content-Security-Policy":
                                        "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
-                                       "connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'"})
+                                       "connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; "
+                                       "form-action 'none'"})
                 if not self._auth(q):
                     return self._json({"error": "unauthorized"}, 401)
                 ctl = srv.ctl
@@ -154,9 +195,9 @@ class UIServer:
                     if u.path == "/api/state":
                         return self._json(ctl.state())
                     if u.path == "/api/hits":
-                        return self._json({"hits": ctl.hits(int((q.get("after") or ["0"])[0]))})
+                        return self._json({"hits": ctl.hits(_qint(q, "after", "0"))})
                     if u.path == "/api/logs":
-                        after = int((q.get("after") or ["0"])[0])
+                        after = _qint(q, "after", "0")
                         level = (q.get("level") or ["debug"])[0]
                         return self._json({"events": ctl.log.since(after, level)})
                     if u.path == "/api/logs.txt":
@@ -192,12 +233,12 @@ class UIServer:
                     if u.path == "/api/tools/estimate":
                         return self._json(ctl.estimate())
                     if u.path == "/api/tools/selftest":
-                        return self._json(ctl.selftest(float((q.get("days") or ["14"])[0])))
+                        return self._json(ctl.selftest(_qfloat(q, "days", "14")))
                     if u.path == "/api/ml":
                         return self._json(ctl.ml_state())
                     if u.path == "/api/ml/predict":
                         g = lambda k, d: (q.get(k) or [d])[0]                     # noqa: E731
-                        return self._json(ctl.ml_predict(g("site", ""), int(g("hour", "12")), int(g("weekday", "2"))))
+                        return self._json(ctl.ml_predict(g("site", ""), _qint(q, "hour", "12"), _qint(q, "weekday", "2")))
                     if u.path == "/api/tools/privacy":
                         return self._json({"checks": ctl.privacy_check()})
                     if u.path == "/api/browser/trace":
@@ -216,8 +257,10 @@ class UIServer:
                         return self._send(200, ("\n".join(lines) + "\n").encode(), "text/plain; version=0.0.4")
                     if u.path == "/api/doctor":
                         return self._json({"checks": ctl.doctor()})
+                except ConfigError as exc:
+                    return self._json({"error": str(exc)}, 400)
                 except Exception as exc:
-                    return self._json({"error": str(exc)}, 500)
+                    return self._fail(exc)
                 self._json({"error": "not found"}, 404)
 
             def do_POST(self):
@@ -306,7 +349,7 @@ class UIServer:
                 except ConfigError as exc:
                     return self._json({"error": str(exc)}, 400)
                 except Exception as exc:
-                    return self._json({"error": str(exc)}, 500)
+                    return self._fail(exc)
                 self._json({"ok": True})
 
         return H

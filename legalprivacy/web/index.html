@@ -877,7 +877,9 @@ $('#bQuit').onclick=async()=>{if(confirm('Stop everything and quit legalPrivacy?
 ['tStart','tStop','tRestart','tNym','tInstall'].forEach(id=>$('#'+id).onclick=()=>act('/api/tor/'+{tStart:'start',tStop:'stop',tRestart:'restart',tNym:'newnym',tInstall:'install'}[id]));
 
 // ---------- polling
+let pollBusy=false;                                   // a slow answer must not stack up more requests behind it
 async function poll(){
+  if(pollBusy)return;pollBusy=true;
   try{
     S=await api('/api/state');
     if(S.log_epoch!==undefined&&S.log_epoch!==logEpoch){          // the app cleared its log: empty our copy too
@@ -890,6 +892,7 @@ async function poll(){
       const b=$('#errBadge');b.style.display=errCount?'':'none';b.textContent=errCount}
     render();
   }catch(e){$('#pRun').className='pill bad';$('#pRun').textContent='disconnected'}
+  finally{pollBusy=false}
 }
 setInterval(poll,1000);
 let pMap=null,pTimer=null;
@@ -898,10 +901,12 @@ async function pollTrace(){
   try{const d=await api('/api/browser/trace');
     $('#trHead').textContent=!d.running?'The noise browser isn\'t running right now.':(d.blocked?`${d.blocked} jump${d.blocked>1?'s':''} to other sites blocked since noise started.`:'No jumps to other sites so far.');
     $('#trList').innerHTML=d.items.map(n=>`<div><span class="mute">${new Date(n.ts*1000).toLocaleTimeString()}</span> tab ${n.tab} · <code>${esc(shortUrl(n.url))}</code> <span style="color:var(${n.why.startsWith('blocked')?'--warn':'--mute'})">${esc(n.why)}</span></div>`).join('')||'<span class="mute">Nothing yet.</span>'}catch(e){}}
+let proofBusy=false;
 async function pollProof(){
   if($('#t-proof').classList.contains('on'))pollTrace();
-  if(!proofOn())return;
-  try{const o=await api('/api/observe');renderProof(o)}catch(e){}
+  if(!proofOn()||proofBusy)return;
+  proofBusy=true;
+  try{const o=await api('/api/observe');renderProof(o)}catch(e){}finally{proofBusy=false}
 }
 // When the map has nothing to show, say why instead of staying blank.
 function mapWhyEmpty(o){
