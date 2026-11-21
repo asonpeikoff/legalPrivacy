@@ -275,12 +275,14 @@ class SecurityTab(Tab):
         ins = st.get("install")
         self.install_lbl.configure(text=("ClamAV is not installed.\n" + "\n".join(ins["lines"])) if ins else "")
         self.notes_lbl.configure(text="\n".join(st.get("notes") or []))
+        self._show(self.install_lbl, bool(ins))
+        self._show(self.notes_lbl, bool(st.get("notes")))
 
     def _render_scan(self, st: dict, busy) -> None:
         last = st.get("last_scan")
         live = st.get("scan") or {}
         proof = st.get("proof")
-        shown = live if (live and not live.get("running") and live.get("connections") is not None) else last
+        shown = last
         if busy in ("scan", "selftest"):
             text, tone = "Scanning…", "info"
             self.status.set(f"{live.get('found', 0)} found so far · {live.get('elapsed', 0)} s · connections watched "
