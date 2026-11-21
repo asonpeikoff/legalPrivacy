@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- **Interface polish (web and native), no behaviour change.** Web: design tokens and a designed dark theme with a light/dark toggle, `prefers-contrast` and forced-colors support, WCAG 2.2 AA pass (tab pattern with arrow keys, live status announcements, focus rings, 24px targets, inline validation), round sliders, a labelled mix bar with shaped legend swatches, empty and loading states, and a layout that works down to 360px. Native: round slider handle on a rounded track, flat buttons with hover/pressed/focus states, tidier tab strip that never truncates labels, the "settings in effect" chip in the status bar, flicker-free charts with shaped legends.
+
 ## v2.13.0
 - **Native desktop app now has everything the web dashboard has** (and a more polished look): the traffic mix and activity mix as stacked bars whose sliders always add up to 100%, rate and randomness, DNS resolver table with per-server verdicts, user agent, extras, persona / interests / household, search-engine weights, realism and query sources, accounts, Tor extras (seeds editor, bridges, Get bridges, circuits, log), My List, ML, Tools, Health and Help tabs, plus the Proof tab's timeline, comparison and address trace. Card layout, drawn icons, primary/secondary/danger buttons, tooltips, empty states, light and dark themes in the web dashboard's colours, high-DPI aware. Only the animated network map is left to the web dashboard (with a button to open it).
 - **Data scientist persona now mixes in everyday life** (about 15% of its visits and searches): Gmail, Outlook, YouTube, maps, a bit of shopping and news, and ordinary searches such as "coffee shop near me", on top of the data-science sites.
