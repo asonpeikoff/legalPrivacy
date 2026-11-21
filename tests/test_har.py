@@ -147,3 +147,8 @@ def test_har_endpoints_roundtrip():
         assert _call(base, srv.token, "/api/har/forget", {})[1] == {"present": False}
     finally:
         srv.httpd.shutdown()
+
+
+def test_absurdly_nested_json_is_a_plain_error_not_a_crash():
+    with pytest.raises(HarError):
+        parse_har("[" * 100000)

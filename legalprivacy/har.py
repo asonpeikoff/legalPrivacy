@@ -90,7 +90,7 @@ def parse_har(source, denylist: set[str] | None = None) -> dict:
             raise HarError("The file is empty.")
         try:
             source = json.loads(source)
-        except ValueError:
+        except (ValueError, RecursionError):
             raise HarError("That doesn't look like a HAR file: it isn't valid JSON (a partly saved or "
                            "cut-off file will do this). Export it again from the Network tab.") from None
     log = source.get("log") if isinstance(source, dict) else None

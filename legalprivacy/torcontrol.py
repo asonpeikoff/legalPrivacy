@@ -112,6 +112,8 @@ class TorControl:
             if "NULL" in methods:
                 self.cmd("AUTHENTICATE")
             elif "HASHEDPASSWORD" in methods and self.password:
+                if any(c in self.password for c in "\r\n\0"):
+                    raise TorControlError("the control password must not contain line breaks")
                 self.cmd('AUTHENTICATE "%s"' % self.password.replace("\\", "\\\\").replace('"', '\\"'))
             elif methods & {"COOKIE", "SAFECOOKIE"}:
                 path = self.cookie_path or cookiefile
@@ -124,6 +126,8 @@ class TorControl:
                     raise TorControlError("cookie auth required but no cookie file found "
                                           "(set LEGALPRIVACY_TOR_CONTROL_COOKIE)")
                 data = Path(path).expanduser().read_bytes()
+                if len(data) != 32:      # a real cookie is exactly 32 bytes; never send some other file's contents
+                    raise TorControlError("the auth cookie file isn't a Tor control cookie (expected 32 bytes)")
                 self.cmd("AUTHENTICATE " + binascii.hexlify(data).decode())
             else:
                 raise TorControlError(f"no usable auth method (server offers {sorted(methods)})")

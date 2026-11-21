@@ -223,15 +223,8 @@ def _write_private(path: Path, text: str) -> None:
         path.parent.chmod(0o700)
     except OSError:
         pass
-    tmp = path.with_name(f"{path.name}.{threading.get_ident()}.tmp")
-    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        fh.write(text)
-    try:
-        tmp.chmod(0o600)
-    except OSError:
-        pass
-    os.replace(tmp, path)
+    from .paths import write_private
+    write_private(path, text)
 
 
 def looks_signed_in(provider: str, state: dict | None, now: float | None = None) -> bool:

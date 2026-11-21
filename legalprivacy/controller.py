@@ -30,7 +30,7 @@ from .events import EventLog
 from .feeds import FeedStore
 from .queries import QueryConfig, QuerySource
 from .onion import BUILTIN_ONION_SEEDS, clean_seed_list
-from .paths import app_dir, config_path, resolve_resource
+from .paths import app_dir, config_path, resolve_resource, write_private
 from .scheduler import MaxFailuresExceeded, Runner, build_lanes
 from .tormanager import TorManager, find_tor_binary, port_open
 
@@ -114,9 +114,7 @@ class Controller:
             data["app"] = self.app
             path = Path(self.profile_path)
             path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = path.with_name(f"{path.name}.{threading.get_ident()}.tmp")
-            tmp.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
-            tmp.replace(path)
+            write_private(path, yaml.safe_dump(data, sort_keys=False))     # holds bridges and passwords
             self.first_run = False
 
     def wizard(self, answers: dict[str, Any]) -> dict:
@@ -518,7 +516,10 @@ class Controller:
 
     def mylist_scan(self, days: float) -> dict:
         from .history import top_sites
-        days = max(1.0, min(365.0, float(days)))
+        try:
+            days = max(1.0, min(365.0, float(days)))
+        except (TypeError, ValueError):
+            raise ConfigError("days must be a number") from None
         res = top_sites(time.time() - days * 86400, denylist=self.feeds.denylist())
         self.log.info("mylist", f"Scanned browser history (last {days:g} days): {len(res['sites'])} sites found.")
         return res
@@ -527,8 +528,11 @@ class Controller:
         from .history import top_sites
         ml = self.profile.mylist
         if action == "start":
-            self.apply_config({"mylist": {"watch_started": time.time(),
-                                          "watch_hours": float(hours or ml.watch_hours)}})
+            try:
+                length = float(hours or ml.watch_hours)
+            except (TypeError, ValueError):
+                raise ConfigError("hours must be a number") from None
+            self.apply_config({"mylist": {"watch_started": time.time(), "watch_hours": length}})
             self.log.info("mylist", f"Recording your sites for {self.profile.mylist.watch_hours:g} hours.")
             return self.mylist_state()
         if action == "cancel":
@@ -549,6 +553,8 @@ class Controller:
         extracts just the links and sends those, never titles)."""
         from .history import bookmark_sites, sites_from_urls
         if urls is not None:
+            if not isinstance(urls, list):
+                raise ConfigError("urls must be a list of addresses")
             res = sites_from_urls([str(u) for u in urls[:50_000]], self.feeds.denylist())
         else:
             res = bookmark_sites(self.feeds.denylist())
