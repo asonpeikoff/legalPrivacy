@@ -373,6 +373,29 @@ Snowflake client configuration with `legalprivacy relay gen-client --type snowfl
 **Contribute to Tor** with `legalprivacy relay gen`, which writes a middle-relay or bridge
 configuration. It never runs an exit.
 
+## Tor DNS and relays (both optional, both off by default)
+
+Both live on the Tor tab, in the web dashboard and the native app.
+
+**Tor DNS.** Switch it on and the Tor that legalPrivacy manages also answers DNS lookups on a local UDP port
+(Tor's `DNSPort`, on `127.0.0.1` unless you choose otherwise). Tor resolves the names anonymously, which means
+Tor **exit relays** do the lookup: this is a deliberate, narrow use of exits for DNS only. It does not change the
+Tor lane for noise, which stays onion-only.
+- Only A (IPv4), AAAA (IPv6) and PTR (reverse) lookups work; Tor does not handle other record types. It is slower than normal DNS.
+- **Test** sends one real lookup for `example.com` through that port and shows the answer and how long it took. The Proof tab's "Is it working?" list gains a "Tor DNS answers" row while the switch is on.
+- Operating systems send DNS to port 53, so using it for the whole computer needs a small local forwarder (for example dnsmasq or unbound) pointed at `127.0.0.1` and the port shown, or an app that lets you set a DNS port. The app does not give forwarder commands because they differ by system and have not been verified.
+- **Share on my network** is a separate, off-by-default choice. It only accepts one of this computer's private addresses (10.x.x.x, 172.16-31.x.x, 192.168.x.x, or an fc00::/7 address) that you pick from a list; `0.0.0.0` and public addresses are refused. Anyone on that network could then use your Tor exits for DNS and you would be responsible for it. Never expose it to the internet.
+- Settings: `transports.tor.dns_port` (0 = off; the port you prefer, a free one is used if it is taken), `dns_lan`, `dns_lan_addr`.
+
+**Run a relay.** "Contribute to Tor: run a relay" runs a **middle relay** or a **bridge** as a separate Tor program with its own data folder (`relay/` inside the app folder, owner-only) and its own ports (an ORPort only; no SOCKS, no control port). It uses the same generator as `legalprivacy relay gen`, which always writes `ExitPolicy reject *:*` and `ExitRelay 0`.
+- Choose the mode, nickname, a speed limit in MBytes per second (with a monthly traffic estimate), the ORPort and an optional contact. The generated settings file is shown read-only.
+- A public relay needs every item of the checklist ticked first: a public IP address or a forwarded ORPort, a computer that stays on, the speed limit, understanding that it is not an exit, and that relay IP addresses are public by design.
+- **Practice mode (not published)** is on for the first run: the ORPort listens on loopback only and nothing is announced (`PublishServerDescriptor 0`), so nobody can use it. It still downloads Tor's public relay list like any Tor program. It needs no checklist.
+- The relay never starts by itself and "running" is never remembered. Only the choice "Start the relay when this app opens" (off by default; for a public relay only after you have started it once with the checklist) starts it at launch. It stops when you quit and on Panic; Panic (hard) deletes the relay's keys and data after it has stopped.
+- **What a relay does not give you:** it is not an exit and it is not DNS. Only exit relays resolve names, and this app never runs one. The Tor lane for noise stays onion-only.
+- Router and firewall notes are in the card. See also the Tor Project's relay documentation, https://community.torproject.org/relay/.
+- Not tested here: joining the real Tor network as a public relay (this was developed where Tor could not connect out), and Windows and macOS.
+
 ## Privacy
 
 - The live log and Activity are kept in memory only and cleared when the app quits; no log file

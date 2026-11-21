@@ -679,7 +679,7 @@ body.loading .big,body.loading .kpi b{display:block;width:min(100%,5ch);color:tr
     <p><b>Getting started.</b> Everything already has the recommended setting. Press <b>Start</b>; the first action comes within seconds. Settings save themselves.</p>
     <p><b>Look like yourself.</b> Add the sites you really use on <b>My List</b>, then check the <b>ML</b> tab: it shows how easily your traffic can be told apart from the noise, and which settings help.</p>
     <p><b>Tor (optional).</b> Off by default. With Tor on, legalPrivacy can visit .onion sites through its own private Tor, which it downloads, checks and starts for you. Many .onion sites are offline at any moment; those are skipped for a while, which is normal. Ordinary web noise never goes through Tor; the Tor lane visits only .onion sites.</p>
-    <p><b>Contribute to Tor.</b> <code>legalprivacy relay gen</code> writes a middle-relay or bridge configuration; it never runs an exit.</p>
+    <p><b>Contribute to Tor.</b> <code>legalprivacy relay gen</code> writes a middle-relay or bridge configuration; it never runs an exit. The Tor tab has two optional cards, both off by default: <b>Tor DNS</b> (Tor answers A, AAAA and PTR lookups on a local port; exit relays resolve the names, so it is slower and is a deliberate, narrow use of exits for DNS only) and <b>Contribute to Tor: run a relay</b> (a middle relay or bridge as a separate Tor program; start with Practice mode, which publishes nothing). A relay is not an exit and does not provide DNS.</p>
     <p class="small mute">The dashboard is reachable only from this computer (127.0.0.1) and needs the token in its address.</p>
   </div>
 
