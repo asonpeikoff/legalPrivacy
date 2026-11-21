@@ -86,3 +86,14 @@ def tor_dir() -> Path:
     d = app_dir() / "tor"
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def relay_dir() -> Path:
+    """Where the optional relay keeps its own data (separate from the client Tor). Owner-only."""
+    d = app_dir() / "relay"
+    d.mkdir(parents=True, exist_ok=True)
+    try:
+        d.chmod(0o700)
+    except OSError:
+        pass
+    return d
