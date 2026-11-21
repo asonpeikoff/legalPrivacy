@@ -96,10 +96,12 @@ def build_app_class():
 
     from . import gui_theme as T
     from .gui_more import HealthTab, HelpTab, MLTab, MyListTab, ToolsTab
+    from .gui_security import SecurityTab
     from .gui_settings import SettingsTab
     from .gui_tabs import ActivityTab, DashboardTab, LogTab, ProofTab, TorTab
 
-    TABS = [DashboardTab, ActivityTab, LogTab, TorTab, SettingsTab, MyListTab, MLTab, ProofTab, ToolsTab, HealthTab, HelpTab]
+    TABS = [DashboardTab, ActivityTab, LogTab, TorTab, SettingsTab, MyListTab, MLTab, ProofTab, SecurityTab, ToolsTab,
+            HealthTab, HelpTab]
 
     class App:
         def __init__(self, root: tk.Tk, ctl, web_port: int = 8765):

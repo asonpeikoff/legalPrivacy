@@ -267,6 +267,24 @@ from the saved counts and site names, so revisit habits are approximate.
   automated. A spare account is safer. Nothing is ever sent, deleted or changed in the mailbox. Google sometimes refuses
   sign-in in an automated browser; if so, the account simply can't be used.
 
+## Antivirus (ClamAV), offline-first
+
+An optional **Security** tab (web and native app) manages the ClamAV you install yourself. legalPrivacy never bundles ClamAV (it is GPL); it only runs your `clamscan`, `freshclam` and `sigtool`, found on `PATH` or in the usual Windows, macOS and Homebrew folders, and shows the install hint for your system when they are missing.
+
+**What contacts the internet.** Per [docs.clamav.net](https://docs.clamav.net/), only `freshclam`, the signature updater, does: a DNS TXT lookup of `current.cvd.clamav.net`, then an HTTPS download from `database.clamav.net`. Nothing documented says `clamscan` connects anywhere, and this feature does not assume that: it proves it.
+
+**How it is prevented.**
+- Signatures live in an app-owned folder (`<app folder>/av/db`). Scans always run `clamscan --database=<that folder> --recursive --infected`, so the system's ClamAV configuration is never read or changed. `clamdscan` is detected but never used.
+- `freshclam` is never run on a schedule, as a daemon, or by a scan, detect, state or import. It runs only from the **Update signatures (contacts ClamAV's servers)** button, after a confirmation that names exactly what is contacted, with a generated minimal config (`--config-file`, `--datadir`). If you would rather stay fully offline, **Import** `main`/`daily`/`bytecode` `.cvd`/`.cld` files you downloaded elsewhere: each is checked (`sigtool --info` must report a valid digital signature, and `clamscan` must load it) in a private copy before it enters the folder; failures are rejected.
+- On Linux the scanner runs with its network removed: `unshare --net`, else `unshare -rn` (no root needed), else `firejail --net=none`. A one-time probe checks that the method really leaves only the loopback interface, caches the result, and the tab says which is active.
+- Network is not removed on Windows and macOS (no unprivileged way); there the tab says "Detection only".
+
+**How it is proven (every OS).** The scanner's whole process tree is watched with psutil about every 100 ms for any non-loopback connection or DNS lookup helper. Each result records "scanner connections: N". If N is more than 0 the scan is marked **NOT OFFLINE**, the scanner is killed and a warning is logged. The Proof tab's "Is it working?" list gets an "Antivirus scanner stays offline" row (want: 0 connections during scans), shown once you have used the tab. The **EICAR self-test** button builds the harmless standard test string at runtime from parts (it is never written whole in this repository, which would make antivirus tools flag it), scans it with the app's signatures, and deletes the file; your own antivirus may react to it.
+
+**Your files.** A scan never deletes, moves or changes anything. Each result has "Copy path" and an explicit per-file "Quarantine" (confirmation; the file goes to `<app folder>/av/quarantine`, can be restored, or deleted permanently). Panic (hard) deletes the quarantine and scan results, not your own files or the signature files.
+
+**Not verified.** Tested here with stub programs on Linux, not with real ClamAV signatures or a real `freshclam` run. The Windows and macOS code paths (tool locations, process watching, `firejail`) are untested on those systems. Without network removal the watcher can miss a connection that opens and closes between two looks; for a hard guarantee also block `clamscan` in your firewall. The Debian/Ubuntu `clamav` package may install its own background updater service; legalPrivacy does not touch it (the tab notes when a `freshclam` process is running).
+
 ## Native desktop app
 
 `legalprivacy-gui` (or `python -m legalprivacy.gui`) opens a real desktop window: no browser, no web view and no
